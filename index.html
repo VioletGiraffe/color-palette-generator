@@ -13,6 +13,7 @@
 		--line: #d8d8e0;
 		--accent: #3d6df0;
 		--warn: #b45309;
+		--swatch-hover: var(--accent);
 	}
 	@media (prefers-color-scheme: dark) {
 		:root {
@@ -86,7 +87,7 @@
 	#swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; border-radius: 6px; }
 
 	.swatch { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; cursor: pointer; background: none; padding: 0; text-align: left; display: block; width: 100%; }
-	.swatch:hover { border-color: var(--accent); }
+	.swatch:hover { border-color: var(--swatch-hover); }
 	.swatch .chip { height: 64px; }
 	.swatch .meta { padding: 5px 7px; font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1.35; color: var(--ink); }
 	.swatch .meta .hex { font-weight: 600; letter-spacing: .02em; }
@@ -381,12 +382,52 @@ function refreshExport() {
 	$("export").value = text;
 }
 
-function copy(text, button, label) {
-	navigator.clipboard.writeText(text).then(() => {
-		const original = button.textContent;
-		button.textContent = label;
-		setTimeout(() => { button.textContent = original; }, 900);
+// Holds the text each element had before its first flash: a repeat inside the window must not
+// restore the transient message.
+const pendingRestore = new WeakMap();
+
+function flashLabel(el, message) {
+	const pending = pendingRestore.get(el);
+	const original = pending ? pending.original : el.textContent;
+	if (pending)
+		clearTimeout(pending.timer);
+
+	el.textContent = message;
+	pendingRestore.set(el, {
+		original,
+		timer: setTimeout(() => { el.textContent = original; pendingRestore.delete(el); }, 900)
 	});
+}
+
+// navigator.clipboard is absent outside a secure context, and writeText rejects on a denied
+// permission or an unfocused document, so both paths fall back to a selection copy.
+function writeClipboard(text) {
+	if (navigator.clipboard)
+		return navigator.clipboard.writeText(text).catch(() => legacyCopy(text));
+	return legacyCopy(text);
+}
+
+function legacyCopy(text) {
+	const field = document.createElement("textarea");
+	field.value = text;
+	field.readOnly = true;
+	field.style.cssText = "position: fixed; top: 0; opacity: 0";
+	document.body.appendChild(field);
+
+	let copied = false;
+	try {
+		field.select();
+		copied = document.execCommand("copy");
+	} catch {
+		copied = false;
+	} finally {
+		field.remove();
+	}
+	return copied ? Promise.resolve() : Promise.reject(new Error("copy rejected"));
+}
+
+function copy(text, label, message) {
+	writeClipboard(text).then(() => flashLabel(label, message), () => flashLabel(label, "failed"));
 }
 
 function run() {
@@ -395,10 +436,22 @@ function run() {
 	render(generate(cfg), cfg);
 }
 
-for (const id of ["count", "strict", "h-min", "h-max", "s-min", "s-max", "l-min", "l-max", "seed"])
-	$(id).addEventListener("input", run);
+let runScheduled = false;
 
-$("sort").addEventListener("change", run);
+// At most one generate outstanding: a drag emits events far faster than the ~200ms a palette
+// costs at the top of the ranges, and each queued event would otherwise be worked off in turn.
+// Not requestAnimationFrame: that never fires while the tab is hidden, stranding the controls.
+function scheduleRun() {
+	if (runScheduled)
+		return;
+	runScheduled = true;
+	setTimeout(() => { runScheduled = false; run(); }, 0);
+}
+
+for (const id of ["count", "strict", "h-min", "h-max", "s-min", "s-max", "l-min", "l-max", "seed"])
+	$(id).addEventListener("input", () => { refreshLabels(); scheduleRun(); });
+
+$("sort").addEventListener("change", scheduleRun);
 $("format").addEventListener("change", refreshExport);
 $("generate").addEventListener("click", () => { $("seed").value = (+$("seed").value | 0) + 1; run(); });
 
@@ -411,7 +464,7 @@ function applyBackdrop(value) {
 	el.style.background = custom ? value : "";
 	el.style.padding = custom ? "10px" : "";
 
-	for (const prop of ["--ink", "--ink-dim", "--line"])
+	for (const prop of ["--ink", "--ink-dim", "--line", "--swatch-hover"])
 		el.style.removeProperty(prop);
 
 	if (!custom)
@@ -422,6 +475,7 @@ function applyBackdrop(value) {
 	el.style.setProperty("--ink", dark ? "#f2f2f6" : "#15151a");
 	el.style.setProperty("--ink-dim", dark ? "#c8c8d2" : "#3f3f49");
 	el.style.setProperty("--line", dark ? "rgba(255, 255, 255, .3)" : "rgba(0, 0, 0, .3)");
+	el.style.setProperty("--swatch-hover", dark ? "#ffffff" : "#000000");
 }
 
 function currentBackdrop() {
@@ -441,7 +495,7 @@ $("swatches").addEventListener("click", e => {
 	if (swatch) copy(swatch.dataset.hex.toUpperCase(), swatch.querySelector(".hex"), "copied");
 });
 
-$("copy").addEventListener("click", e => copy($("export").value, e.target, "Copied"));
+$("copy").addEventListener("click", e => copy($("export").value, e.currentTarget, "Copied"));
 
 run();
 </script>
