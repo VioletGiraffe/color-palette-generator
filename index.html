@@ -134,6 +134,7 @@
 	.swatch .chip { height: 64px; }
 	.swatch .meta { padding: 5px 7px; font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1.35; color: var(--ink); }
 	.swatch .meta .hex { font-weight: 600; letter-spacing: .02em; }
+	.swatch .meta .name::first-letter { text-transform: uppercase; }
 	.swatch .meta .coords { color: var(--ink-dim); }
 
 	/* Outline rather than a border: it is drawn outside the box, so it neither shifts the grid
@@ -389,77 +390,76 @@ function toHex(rgb) {
 
 // ---------- color naming ----------
 
-// English color families as arcs of OKLab hue, cut at the midpoints between canonical anchors
-// (#ff0000, #ffa500, #ffff00, ...). The arcs are unequal: blue and green each absorb several named
-// hues, orange and yellow are narrow. The last arc wraps through 0, so it ends above 360 and query
-// angles below the first boundary are shifted up to match.
-const FAMILIES = [
-	{ name: "red",     from:  16, to:  50 },
-	{ name: "orange",  from:  50, to:  90 },
-	{ name: "yellow",  from:  90, to: 123 },
-	{ name: "green",   from: 123, to: 173 },
-	{ name: "cyan",    from: 173, to: 226 },
-	{ name: "blue",    from: 226, to: 279 },
-	{ name: "violet",  from: 279, to: 311 },
-	{ name: "magenta", from: 311, to: 346 },
-	{ name: "pink",    from: 346, to: 376 }
-];
+// Which name a color carries, and whether people agree on it, from the c3 model of the XKCD color
+// survey - Heer and Stone, "Color Naming Models for Color Selection, Image Editing and Palette
+// Design", CHI 2012. Model data from https://github.com/StanfordHCI/c3, BSD licensed:
+//   Copyright (c) 2011, Stanford University. All rights reserved.
+// The survey binned sRGB into CIE Lab cubes 5 units on a side and tallied the words people gave to
+// each. A cell is one winning word and every bin it won, so a name's territory is as large as
+// people's use of it: green wins 1335 bins, orange 308, salmon 52.
+// Words winning by under 3.5 points of vote share are dropped as ties with a synonym, their bins
+// falling to the runner-up. 26 words survive.
+const CELL_NAMES = ["green", "purple", "blue", "pink", "brown", "grey", "red", "orange", "yellow", "light blue", "teal", "tan", "black", "olive", "lavender", "navy blue", "maroon", "dark green", "light green", "peach", "beige", "cyan", "salmon", "magenta", "white", "mauve"];
 
-// Hue does not name a color on its own: #808000 and #ffff00 share an arc, as do #008080 and
-// #00ffff, and lightness is what separates each pair. The boundaries are a compromise, families
-// dividing at different lightnesses: navy parts from blue near 36, brown from red near 55.
-const TIERS = [
-	{ name: "darkest", from:  0, to:  40 },
-	{ name: "dark",    from: 40, to:  58 },
-	{ name: "mid",     from: 58, to:  70 },
-	{ name: "light",   from: 70, to: 100 }
-];
+// Bins form a regular grid, so a color's bin is arithmetic rather than a search.
+const GRID_STEP = 5, GRID_L0 = 0, GRID_A0 = -85, GRID_B0 = -110;
+const GRID_NL = 21, GRID_NA = 38, GRID_NB = 42;
+// No sRGB color reaches these bins, three quarters of the grid.
+const OUTSIDE_GAMUT = 26;
+// Set on a bin whose winning word leads the runner-up by under 15 points: the color has a name, but
+// not one a viewer would land on twice running.
+const UNSURE = 32;
 
-// Below this OKLab chroma a color reads as a neutral: the hue angle is numerical noise there, and
-// grey, white and black are names in their own right rather than members of a hue family.
-const NEUTRAL_CHROMA = 4;
+// Run-length encoded, a (symbol, run length) byte pair per run, in L then a then b order.
+const CELL_GRID_RLE = "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AQYhASQBBAkaEQIFIgEBCCECJAEECBoQAgUiAQEJIQIkAgQHGg8CBSIBAQohAjABJgEkAgQFGg4CBSIBAQshAjABJgQkAgQCJAEaDAIFIgEBDCECJgMGAyYDJwEaCwIFIgEBDCECNwEmAgYHJgEaCwIEIgEBDCECNwMmAQYIGgoCBCIBAQwhAjcEJgEGCBoKAgMiAQEMIQI3BSYCBgcaCgIDIQEBCyECNwcmAQYHGgoCAiEBAQshAhoaAgEiAQEHGiIhAQECGv8avwABGiUABRojAAcaIQAJGh8qASACAAgaHSoBCgEqASACAAgaHCoCCgEqASABAAcgAhoaAgEiAioDIAIAAyAELQIaGAIDIgIqASUDIAMtBhoXAgQiAiUBBQQlAS0DDQQaFgIFIgEFBiUBJAcaFAIHJQEFBSUBBAgaEwIHIgEFBSUBBAkaEgIHIgEhASUBBQMlAQQKGhECBiIBIQEBAyEDJAEEChoQAgYiASEBAQYhAgQKGg8CBiIBAQghATkBJAEECRoOAgYiAQEJIQE5AiQBBAgaDQIGIQEBCiEBOQImASQCBAUkARoNAgUhAQELIQEjASYFJAQnARoMAgUhAQELIQIjAiYCBgImAycCBwEaCwIEIQEBCyECIwMmAgYFJgEnAQcBGgsCAyEBAQshAiMEJgIGByYBGgsCAiEBAQshAiMFJgIGCBoLAgEiAQELIQI3ASMGJgEGCBoLIgEBCyECNwEjByYBBggaCwELIQI3ASMJJgEGBxoLAQohAiMDGhsBCBr/GrcABBojAAcaIQAJGh8qASABAAkaHQoBKgIgAQAJGhsqAgoBKgIgAQAJGhoiASoFIAEABSAEGhkCASICKgMgAgACIAQtAxoXAgQiAioBJQQgAi0GGhYCBiIBBQUlAS0EDQMtARoUAgYiAQUGJQEkBy0BGhMCBiIBJQEFBiQBBAgaEgIHJQEFBiQBBAkaEQIHIgEhASUBBQQkAQQKGhACBiIBIQIBASEDJQEkAQQLGg4CByIBIQEBBSECOQEkAQQKGg4CBiIBAQchAjkCJAEECCQBGg0CBiEBAQghAjkCJAIEBiQBJwEaDAIFIgEhAQEJIQIjAyYBJAYnAQcBGg0CAyIBIQEBCSECIwQmAyQBJwMHAhoMAgMiASEBAQohASMCAwEjAiYFJwEHAxoNAgEiASEBAQohASMCAwMjASYCBgImAicBBwIaDSIBIQEBCiEBIwIDBCMCJgEGBCYBJwEHAhoMIQEBCiEBIwIDBiMBJgEGBiYBBwEaDAEKIQIjAgMGIwEmAQYHJgEaDAEJIQIjAwMGIwEmAQYIGgwBCCECIwQDBiMBJgIGBxoMAQchASMFAwcjAiYBBgcaDAEFIQIjBQMDGhsBBCECIwEa/xpjAAQaIwAHGiEACRofIAEAChodCgEqASABAAoaGyoBCgIqASABAAoaGioCCgIqASABAAoaGAIBIgIqBCABAAUgBRoXAgMiASoDIAMAAiACLQUaFgIEIgIqASUBBQElAiACLQcaFAIHIgEFBiUBLQcaEwIHIgEFByQIGhICByIBBQclAQQHJAEaEQIIJQEFBiUBBAoaDwIIIgElAgUEJQEECiQBGg4CByIBIQYlATkBJAEECiQBGg0CByIBIQMBAiEDOQEkAgQIJAEnARoNAgYiASECAQUhAjkCJAIEBSQCJwEHARoNAgQiASECAQYhAiMEJAYnAQcDGg0CAyIBIQEBCCEBIwY2AiQBJwIHBBoNAgIiASEBAQghASMCAwQjATYDJwEHBRoNAgEiASEBAQghASMCAwUjAjYCJwEHBRoNIgEhAQEIIQEjAgMGIwImAycBBwQaDQEJIQEjAQMJIwEmBCcBBwMaDQEIIQEjAgMJIwEmAQYDJgEnAQcDGgwBByEBIwIDCiMBJgEGBSYBJwEHARoMAQYhAiMBAwsjASYBBggaDAEFIQIjAgMLIwEmAQYIGgwBBCECIwMDCyMBJgEGCBoMAQMhAiMEAwsaFgECIQIjBAMFGh4BASEBIwQa/xoPAAQaIwAHGiEACRoeIAEACxocCgEqASABAAsaGwoCKgEgAQALGhkqAgoCKgEgAQALGhgiAioCCgEqASABAAsaFgICIgIqBCABAAUgBhoVAgQiAioCIAMAASAFLQIgAhoUAgYiAiUBBQIlAiABLQgaEwIHJQEFBiUBLQgaEQIIIgEFByUBJActARoQAggiASUBBQYlASQJGhACByIBJQEFBiUBJAoaDwIHIgIlAgUEJQEkAwQFJAMaDwIFIgIhBiUBOQEkBgQDJAInAQcBGg4CBCICIQg5AiQIJwIHAhoOAgMiAiEIIwUkBCcCBwQaDgICIgEhCSMCAwIjAjYCJAEnAgcFGg4CASIBIQkjAQME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";
 
-// Ranges are contiguous and every queried value is at or above the first, so the containing range
-// is the last one starting at or before the value. Testing containment instead would drop pure
-// white, which sits on the top boundary rather than inside it.
-function rangeIndex(ranges, value) {
-	let index = 0;
-	while (index + 1 < ranges.length && value >= ranges[index + 1].from)
-		++index;
-	return index;
+const CELL_GRID = (() => {
+	const runs = atob(CELL_GRID_RLE), grid = new Uint8Array(GRID_NL * GRID_NA * GRID_NB);
+	let at = 0;
+	for (let i = 0; i < runs.length; i += 2)
+		for (let n = runs.charCodeAt(i + 1); n > 0; --n)
+			grid[at++] = runs.charCodeAt(i);
+	return grid;
+})();
+
+// CIE Lab under D65, the space the survey binned. Distances are still measured in OKLab; this
+// exists only to find a color's bin.
+function rgbToLab(rgb) {
+	const r = srgbToLinear(rgb[0]), g = srgbToLinear(rgb[1]), b = srgbToLinear(rgb[2]);
+	const f = t => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+	const x = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047);
+	const y = f(0.2126 * r + 0.7152 * g + 0.0722 * b);
+	const z = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
+	return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
 }
 
-// How far into a range the value sits, as a fraction of the range's half-width: 1 at the centre, 0
-// on either boundary.
-const inset = (range, value) => Math.min(value - range.from, range.to - value) / ((range.to - range.from) / 2);
+const gridIndex = (value, origin, count) =>
+	Math.min(count - 1, Math.max(0, Math.round((value - origin) / GRID_STEP)));
 
-// The color's cell - a family paired with a lightness tier, or a neutral tier - and how far inside
-// that cell it sits.
-// The margin is naming confidence: a color near a cell boundary is one a viewer cannot label
-// without something to compare it against.
-// Chroma bounds the margin on both sides of NEUTRAL_CHROMA: on that boundary a color is no more
-// confidently a hue than a grey.
-// Cells are defined here alone, so a lookup fitted to color-naming survey data replaces the tables
-// above without touching the search.
-function cellOf(lab) {
-	const lightness = lab[0] * 100;
-	const chroma = Math.hypot(lab[1], lab[2]) * 100;
-	const tier = rangeIndex(TIERS, lightness);
-	const tierMargin = inset(TIERS[tier], lightness);
+const gridAt = (li, ai, bi) => CELL_GRID[(li * GRID_NA + ai) * GRID_NB + bi];
 
-	// Neutral cells sit past the end of the families, one per tier.
-	if (chroma < NEUTRAL_CHROMA)
-		return { cell: FAMILIES.length * TIERS.length + tier, margin: Math.min(tierMargin, 1 - chroma / NEUTRAL_CHROMA) };
+// The color's cell, and whether the survey settled on that name.
+// Rounding reaches a bin outside the gamut only at its edge, where a neighbour along one axis holds
+// the same name; the six of them are searched in turn rather than widening to a shell.
+function cellOf(rgb) {
+	const lab = rgbToLab(rgb);
+	const li = gridIndex(lab[0], GRID_L0, GRID_NL);
+	const ai = gridIndex(lab[1], GRID_A0, GRID_NA);
+	const bi = gridIndex(lab[2], GRID_B0, GRID_NB);
+	let symbol = gridAt(li, ai, bi);
 
-	const hue = (Math.atan2(lab[2], lab[1]) * 180 / Math.PI + 360) % 360;
-	const angle = hue < FAMILIES[0].from ? hue + 360 : hue;
-	const family = rangeIndex(FAMILIES, angle);
+	for (let n = 0; symbol === OUTSIDE_GAMUT && n < 6; ++n) {
+		const step = n % 2 ? 1 : -1;
+		symbol = gridAt(
+			Math.min(GRID_NL - 1, Math.max(0, li + (n < 2 ? step : 0))),
+			Math.min(GRID_NA - 1, Math.max(0, ai + (n >= 2 && n < 4 ? step : 0))),
+			Math.min(GRID_NB - 1, Math.max(0, bi + (n >= 4 ? step : 0))));
+	}
 
-	return {
-		cell: family * TIERS.length + tier,
-		margin: Math.min(tierMargin, inset(FAMILIES[family], angle), chroma / NEUTRAL_CHROMA - 1)
-	};
+	return { cell: symbol & ~UNSURE, confident: (symbol & UNSURE) === 0 };
 }
+
+const cellName = cell => CELL_NAMES[cell];
 
 // ---------- generation ----------
 
@@ -477,8 +477,6 @@ const CANDIDATES_PER_COLOR = 700;
 const RELOCATION_CANDIDATES = 250;
 const RELOCATIONS_PER_COLOR = 10;
 const RESTARTS = 2;
-// Below this a color sits close enough to a cell boundary that its name is unstable.
-const MIN_MARGIN = 0.25;
 
 function sampleColor(rnd, cfg) {
 	// A hue range with min > max wraps through 0.
@@ -487,16 +485,14 @@ function sampleColor(rnd, cfg) {
 	const s = (cfg.sMin + rnd() * (cfg.sMax - cfg.sMin)) / 100;
 	const l = (cfg.lMin + rnd() * (cfg.lMax - cfg.lMin)) / 100;
 	const rgb = hsl2rgb(h, s, l);
-	const lab = rgbToOklab(rgb);
-	return { h, s, l, rgb, lab, hex: toHex(rgb), ...cellOf(lab) };
+	return { h, s, l, rgb, lab: rgbToOklab(rgb), hex: toHex(rgb), ...cellOf(rgb) };
 }
 
 // Same record shape as a sampled color, so everything downstream reads a fixed color the same way.
 function colorFromHex(hex) {
 	const rgb = parseHex(hex);
 	const [h, s, l] = rgb2hsl(rgb);
-	const lab = rgbToOklab(rgb);
-	return { h, s, l, rgb, lab, hex, fixed: true, ...cellOf(lab) };
+	return { h, s, l, rgb, lab: rgbToOklab(rgb), hex, fixed: true, ...cellOf(rgb) };
 }
 
 // Every six-digit hex token in the text, whatever separates them, without repeats. Tokens are split
@@ -515,14 +511,16 @@ function clearance(lab, colors, skip) {
 	return least;
 }
 
-// A free cell outranks an occupied one, and a confident position inside a cell outranks a boundary.
-// bestCandidate settles for rank 0 only where the ranges offer no cell the palette has not taken,
-// which is where a color has to repeat a name to make up the count at all.
+// A free cell outranks an occupied one, and nothing else orders candidates: distance already keeps
+// a pair off their shared cell boundary, and how surely a color is named says nothing about how far
+// it sits from the rest.
+// Rank 0 is settled for only where the ranges offer no cell the palette has not taken, which is
+// where a color has to repeat a name to make up the count at all.
 function admissionRank(candidate, colors, skip) {
 	for (let i = 0; i < colors.length; ++i)
 		if (i !== skip && colors[i].cell === candidate.cell)
 			return 0;
-	return candidate.margin >= MIN_MARGIN ? 2 : 1;
+	return 1;
 }
 
 // The best of a batch of random candidates: cell admission decides, distance breaks the tie.
@@ -828,6 +826,7 @@ function render(result, cfg) {
 		'<button class="swatch' + marks(c) + '" data-hex="' + c.hex + '">'
 			+ '<div class="chip" style="background:' + c.hex + '"></div>'
 			+ '<div class="meta"><div class="hex">' + c.hex.toUpperCase() + '</div>'
+			+ '<div class="name">' + cellName(c.cell) + '</div>'
 			+ '<div class="coords">' + (c.fixed ? "fixed · " : "") + "hsl " + Math.round(c.h) + ", " + Math.round(c.s * 100) + "%, " + Math.round(c.l * 100) + "%</div></div>"
 		+ "</button>").join("");
 
@@ -835,7 +834,7 @@ function render(result, cfg) {
 	$("tiles").style.setProperty("--cols", Math.ceil(Math.sqrt(palette.length)));
 	$("tiles").innerHTML = palette.map(c =>
 		'<div class="' + marks(c).trim() + '" style="background:' + c.hex + '" title="'
-			+ c.hex.toUpperCase() + (c.fixed ? " (fixed)" : "") + '"></div>').join("");
+			+ c.hex.toUpperCase() + " · " + cellName(c.cell) + (c.fixed ? " (fixed)" : "") + '"></div>').join("");
 
 	drawHSPlane(cfg, palette);
 	refreshExport();
