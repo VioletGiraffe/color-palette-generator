@@ -117,7 +117,15 @@
 	#status { margin: 14px 0 12px; font-size: 13px; min-height: 20px; }
 	#status.unmet { color: var(--warn); }
 
-	#swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; border-radius: 6px; }
+	#palette-area { border-radius: 6px; }
+
+	#swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+
+	/* Square, unrounded and tightly spaced: the point is judging the colors against each other,
+	   so anything between them competes with what is being judged. Fixed-width tracks, so the
+	   block stays compact rather than stretching the tiles across the panel. */
+	#tiles { display: grid; grid-template-columns: repeat(var(--cols, 1), 34px); gap: 4px; margin-top: 12px; }
+	#tiles div { aspect-ratio: 1; }
 
 	.swatch { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; cursor: pointer; background: none; padding: 0; text-align: left; display: block; width: 100%; }
 	.swatch:hover { border-color: var(--swatch-hover); }
@@ -223,7 +231,10 @@
 	</div>
 
 	<div id="status"></div>
-	<div id="swatches"></div>
+	<div id="palette-area">
+		<div id="swatches"></div>
+		<div id="tiles"></div>
+	</div>
 
 	<div class="plane" id="hs-plane"><canvas id="hs-canvas"></canvas></div>
 	<div class="hint">Hue across, saturation up, at the in-range lightness nearest 50%. Dots are the generated colors; hatching is outside the selected ranges.</div>
@@ -554,6 +565,11 @@ function render(result, cfg) {
 			+ '<div class="coords">hsl ' + Math.round(c.h) + ", " + Math.round(c.s * 100) + "%, " + Math.round(c.l * 100) + "%</div></div>"
 		+ "</button>").join("");
 
+	// Columns from the square root, so the block's bounding box is the nearest thing to a square.
+	$("tiles").style.setProperty("--cols", Math.ceil(Math.sqrt(palette.length)));
+	$("tiles").innerHTML = palette.map(c =>
+		'<div style="background:' + c.hex + '" title="' + c.hex.toUpperCase() + '"></div>').join("");
+
 	drawHSPlane(cfg, palette);
 	refreshExport();
 }
@@ -652,7 +668,7 @@ $("generate").addEventListener("click", () => { $("seed").value = (+$("seed").va
 // Swatch text and borders read from --ink/--ink-dim/--line, so overriding those on the
 // container re-colors them for whatever backdrop is behind them.
 function applyBackdrop(value) {
-	const el = $("swatches");
+	const el = $("palette-area");
 	const custom = value !== "panel";
 
 	el.style.background = custom ? value : "";
