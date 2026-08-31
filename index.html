@@ -390,6 +390,10 @@ function toHex(rgb) {
 
 // ---------- color naming ----------
 
+// A palette color is looked at alone rather than beside the others, so recognising it is a matter
+// of the name it carries, not of its distance from the rest.
+// generate fills distinct cells first and spreads them apart second.
+//
 // Which name a color carries, and whether people agree on it, from the c3 model of the XKCD color
 // survey - Heer and Stone, "Color Naming Models for Color Selection, Image Editing and Palette
 // Design", CHI 2012. Model data from https://github.com/StanfordHCI/c3, BSD licensed:
@@ -399,6 +403,9 @@ function toHex(rgb) {
 // people's use of it: green wins 1335 bins, orange 308, salmon 52.
 // Words winning by under 3.5 points of vote share are dropped as ties with a synonym, their bins
 // falling to the runner-up. 26 words survive.
+//
+// Both tables below are generated: data/build_cells.py prints them, and --check reports whether the
+// ones here still match the model. Edits made by hand are lost at the next run.
 const CELL_NAMES = ["green", "purple", "blue", "pink", "brown", "grey", "red", "orange", "yellow", "light blue", "teal", "tan", "black", "olive", "lavender", "navy blue", "maroon", "dark green", "light green", "peach", "beige", "cyan", "salmon", "magenta", "white", "mauve"];
 
 // Bins form a regular grid, so a color's bin is arithmetic rather than a search.
