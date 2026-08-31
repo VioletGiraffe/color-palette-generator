@@ -93,14 +93,25 @@
 
 	#hue-bar { background: linear-gradient(to right, #f00 0%, #ff0 16.667%, #0f0 33.333%, #0ff 50%, #00f 66.667%, #f0f 83.333%, #f00 100%); }
 
-	/* Hatched, not a flat scrim: the lightness bar runs to black and to white, and a scrim of
-	   either tone is invisible against its own end. */
-	.range-bar .muted {
+	.sl-plane {
+		position: relative;
+		height: 110px;
+		margin: 2px 0 4px;
+		border: 1px solid var(--line);
+		border-radius: 4px;
+		overflow: hidden;
+	}
+
+	.sl-plane canvas { display: block; width: 100%; height: 100%; }
+
+	/* Hatched, not a flat scrim: the plane runs to black and to white, and a scrim of either
+	   tone is invisible against its own corner. */
+	.muted {
 		position: absolute;
-		top: 0;
-		bottom: 0;
 		background: repeating-linear-gradient(45deg, rgba(0, 0, 0, .7) 0 5px, rgba(255, 255, 255, .32) 5px 10px);
 	}
+
+	.range-bar .muted { top: 0; bottom: 0; }
 
 	#status { margin: 14px 0 12px; font-size: 13px; min-height: 20px; }
 	#status.unmet { color: var(--warn); }
@@ -153,9 +164,17 @@
 			<input type="range" id="h-max" min="0" max="360" value="360">
 		</div>
 
+		<div class="sl-plane">
+			<canvas id="sl-canvas"></canvas>
+			<div class="muted" id="sl-mask-left"></div>
+			<div class="muted" id="sl-mask-right"></div>
+			<div class="muted" id="sl-mask-top"></div>
+			<div class="muted" id="sl-mask-bottom"></div>
+		</div>
+		<div class="hint" style="margin: 0 0 12px">Saturation across, lightness up, at the range-start hue.</div>
+
 		<div class="range-pair">
 			<div class="caption"><span>Saturation</span><span class="value" id="s-value"></span></div>
-			<div class="range-bar" id="sat-bar"><div class="muted" id="sat-muted-a"></div><div class="muted" id="sat-muted-b"></div></div>
 			<div class="edge">min</div><div class="edge">max</div>
 			<input type="range" id="s-min" min="0" max="100" value="45">
 			<input type="range" id="s-max" min="0" max="100" value="90">
@@ -163,7 +182,6 @@
 
 		<div class="range-pair" style="margin-bottom:0">
 			<div class="caption"><span>Lightness</span><span class="value" id="l-value"></span></div>
-			<div class="range-bar" id="lig-bar"><div class="muted" id="lig-muted-a"></div><div class="muted" id="lig-muted-b"></div></div>
 			<div class="edge">min</div><div class="edge">max</div>
 			<input type="range" id="l-min" min="0" max="100" value="35">
 			<input type="range" id="l-max" min="0" max="100" value="65">
@@ -355,33 +373,74 @@ function readConfig() {
 	};
 }
 
-// Masks the values outside the range: two segments when the range sits in the middle, and the
-// single segment between max and min when a hue range wraps.
-function maskBar(name, min, max, scale) {
-	const segments = min <= max ? [[0, min], [max, scale]] : [[max, min], [scale, scale]];
+// Masks the hues outside the range: two segments when the range sits in the middle, and the
+// single segment between max and min when it wraps.
+function maskHueBar(min, max) {
+	const segments = min <= max ? [[0, min], [max, 360]] : [[max, min], [360, 360]];
 
 	segments.forEach((seg, i) => {
-		const el = $(name + (i === 0 ? "-muted-a" : "-muted-b"));
-		el.style.left = seg[0] / scale * 100 + "%";
-		el.style.width = (seg[1] - seg[0]) / scale * 100 + "%";
+		const el = $(i === 0 ? "hue-muted-a" : "hue-muted-b");
+		el.style.left = seg[0] / 3.6 + "%";
+		el.style.width = (seg[1] - seg[0]) / 3.6 + "%";
 	});
 }
 
-// Both gradients are drawn at the range-start hue, against the midpoint of the other range.
-// RGB is exactly linear in saturation at fixed hue and lightness, so two stops suffice there;
-// against lightness it is linear only either side of 50%, so that stop must be stated.
+let drawnHue = -1, drawnWidth = 0, drawnHeight = 0;
+
+// The plane depends only on hue, so moving an S or L slider redraws nothing.
+function drawSLPlane(hue) {
+	const canvas = $("sl-canvas");
+	const w = canvas.clientWidth, h = canvas.clientHeight;
+	if (hue === drawnHue && w === drawnWidth && h === drawnHeight)
+		return;
+
+	canvas.width = w;
+	canvas.height = h;
+
+	const ctx = canvas.getContext("2d");
+	const image = ctx.createImageData(w, h);
+	const data = image.data;
+
+	let i = 0;
+	for (let y = 0; y < h; ++y) {
+		const l = 1 - y / (h - 1);
+		for (let x = 0; x < w; ++x) {
+			const rgb = hsl2rgb(hue, x / (w - 1), l);
+			data[i++] = rgb[0] * 255;
+			data[i++] = rgb[1] * 255;
+			data[i++] = rgb[2] * 255;
+			data[i++] = 255;
+		}
+	}
+
+	ctx.putImageData(image, 0, 0);
+	drawnHue = hue;
+	drawnWidth = w;
+	drawnHeight = h;
+}
+
+// Four masks around the selected rectangle rather than a frame: overlapping hatches would
+// double their darkness at the corners. Lightness runs upward, so y is measured from the top.
+function maskPlane(cfg) {
+	const box = (id, left, width, top, height) => {
+		const style = $(id).style;
+		style.left = left + "%";
+		style.width = width + "%";
+		style.top = top + "%";
+		style.height = height + "%";
+	};
+	const span = cfg.sMax - cfg.sMin;
+
+	box("sl-mask-left", 0, cfg.sMin, 0, 100);
+	box("sl-mask-right", cfg.sMax, 100 - cfg.sMax, 0, 100);
+	box("sl-mask-top", cfg.sMin, span, 0, 100 - cfg.lMax);
+	box("sl-mask-bottom", cfg.sMin, span, 100 - cfg.lMin, cfg.lMin);
+}
+
 function refreshBars(cfg) {
-	maskBar("hue", cfg.hMin, cfg.hMax, 360);
-	maskBar("sat", cfg.sMin, cfg.sMax, 100);
-	maskBar("lig", cfg.lMin, cfg.lMax, 100);
-
-	const h = cfg.hMin;
-	const midS = (cfg.sMin + cfg.sMax) / 2;
-	const midL = (cfg.lMin + cfg.lMax) / 2;
-
-	$("sat-bar").style.background = `linear-gradient(to right, hsl(${h}, 0%, ${midL}%), hsl(${h}, 100%, ${midL}%))`;
-	$("lig-bar").style.background =
-		`linear-gradient(to right, hsl(${h}, ${midS}%, 0%), hsl(${h}, ${midS}%, 50%), hsl(${h}, ${midS}%, 100%))`;
+	maskHueBar(cfg.hMin, cfg.hMax);
+	drawSLPlane(cfg.hMin);
+	maskPlane(cfg);
 }
 
 function refreshLabels() {
