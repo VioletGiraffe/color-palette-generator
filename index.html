@@ -149,8 +149,6 @@
 </head>
 <body>
 
-<h1>Palette generator</h1>
-
 <div id="layout">
 
 <div class="panel" id="controls">
@@ -567,7 +565,7 @@ function render(result, cfg) {
 	status.classList.toggle("unmet", unmet);
 	status.textContent = unmet
 		? "Closest pair: ΔE " + achieved + " — below the requested " + cfg.threshold.toFixed(1)
-			+ ". The pair is outlined; widen the ranges or ask for fewer colors."
+			+ ". The closest pair is outlined. Widen the ranges or ask for fewer colors if you need the requirement met."
 		: "Closest pair: ΔE " + achieved;
 
 	// Only when the target was missed: with the target met there is no offending pair to point at.
