@@ -52,9 +52,9 @@
 
 	#controls { width: 340px; flex: 0 0 auto; }
 	#output { flex: 1 1 460px; min-width: 380px; }
-	#pinned { width: 280px; flex: 0 0 auto; }
+	#side { width: 280px; flex: 0 0 auto; }
 
-	.group { margin-bottom: 18px; }
+	.group { margin-bottom: 12px; }
 	.group:last-child { margin-bottom: 0; }
 
 	label.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
@@ -104,7 +104,7 @@
 
 	.plane canvas { display: block; width: 100%; height: 100%; }
 
-	#sl-plane { height: 110px; margin: 2px 0 4px; }
+	#sl-plane { height: 75px; margin: 2px 0 4px; }
 	#hs-plane { height: 120px; margin: 16px 0 0; }
 
 	/* Hatched, not a flat scrim: the plane runs to black and to white, and a scrim of either
@@ -167,7 +167,7 @@
 
 	.hint { font-size: 12px; color: var(--ink-dim); margin-top: 6px; }
 
-	hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
+	hr { border: none; border-top: 1px solid var(--line); margin: 8px 0; }
 </style>
 </head>
 <body>
@@ -188,6 +188,16 @@
 	<hr>
 
 	<div class="group">
+		<div class="bar" style="justify-content:space-between; margin-bottom:0">
+			<label class="row" style="margin:0"><span>Seed</span><input type="number" id="seed" value="1" min="0" step="1"></label>
+			<label class="row" style="margin:0"><span>Sort by hue</span><input type="checkbox" id="sort" checked></label>
+		</div>
+		<button class="primary" id="generate" style="width:100%; margin-top:10px">Generate</button>
+	</div>
+
+	<hr>
+
+	<div class="group">
 		<h2>HSL range</h2>
 
 		<div class="range-pair">
@@ -196,6 +206,7 @@
 			<div class="edge">min</div><div class="edge">max</div>
 			<input type="range" id="h-min" min="0" max="360" value="0">
 			<input type="range" id="h-max" min="0" max="360" value="360">
+			<div class="hint" style="grid-column: 1 / -1; margin: 0">Hue wraps when min &gt; max (e.g. 300 &rarr; 60 covers magenta through yellow).</div>
 		</div>
 
 		<div class="plane" id="sl-plane">
@@ -220,8 +231,6 @@
 			<input type="range" id="l-min" min="0" max="100" value="35">
 			<input type="range" id="l-max" min="0" max="100" value="65">
 		</div>
-
-		<div class="hint">Hue wraps when min &gt; max (e.g. 300 &rarr; 60 covers magenta through yellow).</div>
 	</div>
 
 	<hr>
@@ -231,32 +240,6 @@
 		<textarea id="fixed-colors" spellcheck="false" placeholder="#1a73e8&#10;#e8710a"></textarea>
 		<div id="fixed-preview"></div>
 		<div class="hint">Six-digit hex, any separator. New colors are kept distinct from these. They do not count towards Colors and are not exported.</div>
-	</div>
-
-	<hr>
-
-	<div class="group">
-		<label class="row">
-			<span>Seed</span>
-			<input type="number" id="seed" value="1" min="0" step="1">
-		</label>
-		<label class="row">
-			<span>Sort by hue</span>
-			<input type="checkbox" id="sort" checked>
-		</label>
-		<button class="primary" id="generate" style="width:100%; margin-top:10px">Generate</button>
-	</div>
-
-	<hr>
-
-	<div class="group">
-		<h2>State</h2>
-		<input type="text" id="state" spellcheck="false">
-		<div class="bar" style="margin-top:8px">
-			<button id="state-copy">Copy</button>
-			<button id="state-apply">Apply</button>
-		</div>
-		<div class="hint">Every setting, in one string. Paste one back and apply it to restore the exact palette.</div>
 	</div>
 
 </div>
@@ -302,17 +285,31 @@
 
 </div>
 
-<div class="panel" id="pinned">
+<div class="panel" id="side">
 
-	<h2>Pinned</h2>
-	<div class="bar">
-		<button id="pin-add">Pin</button>
-		<button id="pin-copy" hidden>Copy all</button>
-		<button id="pin-load">Load</button>
+	<div class="group">
+		<h2>State</h2>
+		<input type="text" id="state" spellcheck="false">
+		<div class="bar" style="margin-top:8px">
+			<button id="state-copy">Copy</button>
+			<button id="state-apply">Apply</button>
+		</div>
+		<div class="hint">Every setting, in one string. Paste one back and apply it to restore the exact palette.</div>
 	</div>
-	<textarea id="pin-paste" spellcheck="false" hidden placeholder="Paste copied lines, then press Load again"></textarea>
-	<div id="pin-list"></div>
-	<div class="hint">This session only, nothing is saved. Copy the list out to keep it, and paste it back with Load.</div>
+
+	<hr>
+
+	<div class="group">
+		<h2>Pinned</h2>
+		<div class="bar">
+			<button id="pin-add">Pin</button>
+			<button id="pin-copy" hidden>Copy all</button>
+			<button id="pin-load">Load</button>
+		</div>
+		<textarea id="pin-paste" spellcheck="false" hidden placeholder="Paste copied lines, then press Load again"></textarea>
+		<div id="pin-list"></div>
+		<div class="hint">This session only, nothing is saved. Copy the list out to keep it, and paste it back with Load.</div>
+	</div>
 
 </div>
 
