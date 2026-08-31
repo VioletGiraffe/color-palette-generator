@@ -93,16 +93,17 @@
 
 	#hue-bar { background: linear-gradient(to right, #f00 0%, #ff0 16.667%, #0f0 33.333%, #0ff 50%, #00f 66.667%, #f0f 83.333%, #f00 100%); }
 
-	.sl-plane {
+	.plane {
 		position: relative;
-		height: 110px;
-		margin: 2px 0 4px;
 		border: 1px solid var(--line);
 		border-radius: 4px;
 		overflow: hidden;
 	}
 
-	.sl-plane canvas { display: block; width: 100%; height: 100%; }
+	.plane canvas { display: block; width: 100%; height: 100%; }
+
+	#sl-plane { height: 110px; margin: 2px 0 4px; }
+	#hs-plane { height: 120px; margin: 16px 0 0; }
 
 	/* Hatched, not a flat scrim: the plane runs to black and to white, and a scrim of either
 	   tone is invisible against its own corner. */
@@ -164,7 +165,7 @@
 			<input type="range" id="h-max" min="0" max="360" value="360">
 		</div>
 
-		<div class="sl-plane">
+		<div class="plane" id="sl-plane">
 			<canvas id="sl-canvas"></canvas>
 			<div class="muted" id="sl-mask-left"></div>
 			<div class="muted" id="sl-mask-right"></div>
@@ -224,6 +225,9 @@
 	<div id="status"></div>
 	<div id="swatches"></div>
 
+	<div class="plane" id="hs-plane"><canvas id="hs-canvas"></canvas></div>
+	<div class="hint">Hue across, saturation up, at mid lightness. Dots are the generated colors; hatching is outside the selected ranges.</div>
+
 	<hr>
 
 	<div class="bar">
@@ -268,6 +272,11 @@ function parseHex(hex) {
 
 function relativeLuminance(rgb) {
 	return 0.2126 * srgbToLinear(rgb[0]) + 0.7152 * srgbToLinear(rgb[1]) + 0.0722 * srgbToLinear(rgb[2]);
+}
+
+// True where black marks out-contrast white: 0.179 is the luminance at which the two are equal.
+function isLightColor(rgb) {
+	return relativeLuminance(rgb) >= 0.179;
 }
 
 // Bjorn Ottosson's OKLab, from linear sRGB.
@@ -437,6 +446,74 @@ function maskPlane(cfg) {
 	box("sl-mask-bottom", cfg.sMin, span, 100 - cfg.lMin, cfg.lMin);
 }
 
+const DOT_RADIUS = 4;
+
+function drawDot(ctx, x, y, color) {
+	ctx.beginPath();
+	ctx.arc(x, y, DOT_RADIUS, 0, Math.PI * 2);
+	ctx.fillStyle = color.hex;
+	ctx.fill();
+	ctx.lineWidth = 1.5;
+	ctx.strokeStyle = isLightColor(color.rgb) ? "#000000" : "#ffffff";
+	ctx.stroke();
+}
+
+// Hue across, saturation up, at fixed mid lightness: a field that tracked the lightness sliders
+// would shift under the dots without making their positions any easier to read.
+// The mask is per-pixel because a wrapped hue range is two segments, which overlay bands would
+// have to cross, doubling the hatch where they met.
+function drawHSPlane(cfg, colors) {
+	const canvas = $("hs-canvas");
+	const w = canvas.clientWidth, h = canvas.clientHeight;
+	canvas.width = w;
+	canvas.height = h;
+
+	const ctx = canvas.getContext("2d");
+	const image = ctx.createImageData(w, h);
+	const data = image.data;
+
+	let i = 0;
+	for (let y = 0; y < h; ++y) {
+		const s = 1 - y / (h - 1);
+		const inSaturation = s * 100 >= cfg.sMin && s * 100 <= cfg.sMax;
+
+		for (let x = 0; x < w; ++x) {
+			const hue = x / w * 360;
+			const inHue = cfg.hMin <= cfg.hMax
+				? hue >= cfg.hMin && hue <= cfg.hMax
+				: hue >= cfg.hMin || hue <= cfg.hMax;
+			const rgb = hsl2rgb(hue, s, 0.5);
+			let r = rgb[0] * 255, g = rgb[1] * 255, b = rgb[2] * 255;
+
+			// Same hatch as the CSS masks: 5px of black at 70%, then 5px of white at 32%.
+			if (!inHue || !inSaturation) {
+				if ((x + y) % 10 < 5) {
+					r *= .3; g *= .3; b *= .3;
+				} else {
+					r = r * .68 + 81.6; g = g * .68 + 81.6; b = b * .68 + 81.6;
+				}
+			}
+
+			data[i++] = r;
+			data[i++] = g;
+			data[i++] = b;
+			data[i++] = 255;
+		}
+	}
+
+	ctx.putImageData(image, 0, 0);
+
+	// The hue axis is cyclic, so a dot within a radius of either edge is drawn again at the other.
+	for (const color of colors) {
+		const x = color.h / 360 * w, y = (1 - color.s) * (h - 1);
+		drawDot(ctx, x, y, color);
+		if (x < DOT_RADIUS)
+			drawDot(ctx, x + w, y, color);
+		else if (x > w - DOT_RADIUS)
+			drawDot(ctx, x - w, y, color);
+	}
+}
+
 function refreshBars(cfg) {
 	maskHueBar(cfg.hMin, cfg.hMax);
 	drawSLPlane(cfg.hMin);
@@ -477,6 +554,7 @@ function render(result, cfg) {
 			+ '<div class="coords">hsl ' + Math.round(c.h) + ", " + Math.round(c.s * 100) + "%, " + Math.round(c.l * 100) + "%</div></div>"
 		+ "</button>").join("");
 
+	drawHSPlane(cfg, palette);
 	refreshExport();
 }
 
@@ -565,6 +643,9 @@ for (const id of ["count", "strict", "h-min", "h-max", "s-min", "s-max", "l-min"
 	$(id).addEventListener("input", () => { refreshLabels(); scheduleRun(); });
 
 $("sort").addEventListener("change", scheduleRun);
+
+// The output panel is flexible, so its canvas needs re-sizing to each new width.
+window.addEventListener("resize", scheduleRun);
 $("format").addEventListener("change", refreshExport);
 $("generate").addEventListener("click", () => { $("seed").value = (+$("seed").value | 0) + 1; run(); });
 
@@ -583,8 +664,7 @@ function applyBackdrop(value) {
 	if (!custom)
 		return;
 
-	// 0.179 is the sRGB luminance where black and white text reach equal contrast.
-	const dark = relativeLuminance(parseHex(value)) < 0.179;
+	const dark = !isLightColor(parseHex(value));
 	el.style.setProperty("--ink", dark ? "#f2f2f6" : "#15151a");
 	el.style.setProperty("--ink-dim", dark ? "#c8c8d2" : "#3f3f49");
 	el.style.setProperty("--line", dark ? "rgba(255, 255, 255, .3)" : "rgba(0, 0, 0, .3)");
