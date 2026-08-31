@@ -807,6 +807,10 @@ function applyPastedState() {
 $("state-apply").addEventListener("click", applyPastedState);
 $("state").addEventListener("keydown", e => { if (e.key === "Enter") applyPastedState(); });
 
+// A different palette on every load. Truncated to the 32 bits mulberry32 and the state string both
+// use, so the value in the box survives a save and restore unchanged.
+$("seed").value = Date.now() >>> 0;
+
 run();
 </script>
 

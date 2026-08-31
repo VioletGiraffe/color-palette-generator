@@ -13,7 +13,7 @@ Use live online in your browser: https://violetgiraffe.github.io/color-palette-g
 - **See where the colors landed**: a hue/saturation plot with a dot for each generated color.
 - **Judge the colors together**: a tight grid of small squares, over a white, black, grey or custom backdrop.
 - **Copy the result**: hex list, CSS custom properties, JSON, or a Python list. Click any swatch to copy its hex.
-- **Get the same palette again**: each one comes from a seed you can set.
+- **Get the same palette again**: each one comes from a seed you can set. A fresh load gets a new unique seed.
 - **Save the whole setup**: the state string holds every setting. Copy it, paste it back later or on another machine, and you get the identical palette.
 
 ## How the distinctness works
