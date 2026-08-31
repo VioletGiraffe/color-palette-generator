@@ -136,8 +136,15 @@
 	.swatch .meta .coords { color: var(--ink-dim); }
 
 	/* Outline rather than a border: it is drawn outside the box, so it neither shifts the grid
-	   nor covers any of the color being judged. */
+	   nor covers any of the color being judged.
+	   .fixed comes first, so a fixed color that is also the closest pair shows the amber. */
+	.fixed { outline: 2px dashed var(--ink-dim); outline-offset: 1px; }
 	.clash { outline: 2px solid var(--warn); outline-offset: 1px; }
+
+	#fixed-colors { width: 100%; height: 56px; resize: vertical; font: 11px/1.5 ui-monospace, Consolas, monospace; }
+	#fixed-preview { display: flex; height: 18px; margin-top: 6px; border-radius: 4px; overflow: hidden; }
+	#fixed-preview:empty { display: none; }
+	#fixed-preview span { flex: 1; }
 
 	.bar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
 
@@ -218,6 +225,15 @@
 	<hr>
 
 	<div class="group">
+		<h2>Fixed colors</h2>
+		<textarea id="fixed-colors" spellcheck="false" placeholder="#1a73e8&#10;#e8710a"></textarea>
+		<div id="fixed-preview"></div>
+		<div class="hint">Six-digit hex, any separator. New colors are kept distinct from these. They do not count towards Colors and are not exported.</div>
+	</div>
+
+	<hr>
+
+	<div class="group">
 		<label class="row">
 			<span>Seed</span>
 			<input type="number" id="seed" value="1" min="0" step="1">
@@ -265,7 +281,7 @@
 	</div>
 
 	<div class="plane" id="hs-plane"><canvas id="hs-canvas"></canvas></div>
-	<div class="hint">Hue across, saturation up, at the in-range lightness nearest 50%. Dots are the generated colors; hatching is outside the selected ranges.</div>
+	<div class="hint">Hue across, saturation up, at the in-range lightness nearest 50%. Dots are the generated colors, triangles the fixed ones; hatching is outside the selected ranges.</div>
 
 	<hr>
 
@@ -310,6 +326,23 @@ function hsl2rgb(h, s, l) {
 	const x = c * (1 - Math.abs(hp % 2 - 1));
 	const seg = [[c, x, 0], [x, c, 0], [0, c, x], [0, x, c], [x, 0, c], [c, 0, x]][Math.floor(hp) % 6];
 	return [seg[0] + m, seg[1] + m, seg[2] + m];
+}
+
+// Inverse of hsl2rgb: hue in degrees, saturation and lightness as fractions.
+function rgb2hsl(rgb) {
+	const [r, g, b] = rgb;
+	const max = Math.max(r, g, b), min = Math.min(r, g, b);
+	const l = (max + min) / 2;
+	const c = max - min;
+
+	// Grey has no hue, and the saturation below divides by zero at both ends of lightness.
+	if (c === 0)
+		return [0, 0, l];
+
+	const sixth = max === r ? ((g - b) / c % 6 + 6) % 6
+		: max === g ? (b - r) / c + 2
+		: (r - g) / c + 4;
+	return [sixth * 60, c / (1 - Math.abs(2 * l - 1)), l];
 }
 
 function srgbToLinear(u) {
@@ -378,10 +411,25 @@ function sampleColor(rnd, cfg) {
 	return { h, s, l, rgb, lab: rgbToOklab(rgb), hex: toHex(rgb) };
 }
 
+// Same record shape as a sampled color, so everything downstream reads a fixed color the same way.
+function colorFromHex(hex) {
+	const rgb = parseHex(hex);
+	const [h, s, l] = rgb2hsl(rgb);
+	return { h, s, l, rgb, lab: rgbToOklab(rgb), hex, fixed: true };
+}
+
+// Every six-digit hex token in the text, whatever separates them, without repeats. Tokens are split
+// out and matched whole, so an eight-digit RGBA value is dropped rather than read as its first six.
+function parseFixedColors(text) {
+	const tokens = text.split(/[^#0-9a-f]+/i).filter(token => /^#?[0-9a-f]{6}$/i.test(token));
+	return [...new Set(tokens.map(token => "#" + token.replace("#", "").toLowerCase()))].map(colorFromHex);
+}
+
 // Rejection sampling per color, keeping the best candidate seen so the palette
 // degrades gracefully when the threshold exceeds what the ranges can deliver.
+// Seeded with the fixed colors, which every candidate is then measured against.
 function buildAttempt(rnd, cfg) {
-	const colors = [];
+	const colors = cfg.fixed.slice();
 	for (let i = 0; i < cfg.count; ++i) {
 		let best = null, bestGap = -1;
 		for (let n = 0; n < CANDIDATES_PER_COLOR; ++n) {
@@ -399,10 +447,15 @@ function buildAttempt(rnd, cfg) {
 
 // Returns the two colors as well, so a palette that misses the target can point at the pair
 // responsible. Empty pair below two colors, where no pair exists.
+// Two fixed colors are skipped: generation cannot move either, so such a pair must neither decide
+// whether the target was met nor be pointed at as the offender.
 function minimumGap(colors) {
 	let gap = Infinity, pair = null;
 	for (let i = 0; i < colors.length; ++i)
 		for (let j = i + 1; j < colors.length; ++j) {
+			if (colors[i].fixed && colors[j].fixed)
+				continue;
+
 			const apart = distance(colors[i].lab, colors[j].lab);
 			if (apart < gap) {
 				gap = apart;
@@ -437,7 +490,8 @@ function readConfig() {
 		hMin: +$("h-min").value, hMax: +$("h-max").value,
 		sMin: Math.min(+$("s-min").value, +$("s-max").value), sMax: Math.max(+$("s-min").value, +$("s-max").value),
 		lMin: Math.min(+$("l-min").value, +$("l-max").value), lMax: Math.max(+$("l-min").value, +$("l-max").value),
-		seed: +$("seed").value | 0
+		seed: +$("seed").value | 0,
+		fixed: parseFixedColors($("fixed-colors").value)
 	};
 }
 
@@ -506,10 +560,25 @@ function maskPlane(cfg) {
 }
 
 const DOT_RADIUS = 4;
+// Larger than the dot: a triangle inscribed in the same circle covers under half the area and reads
+// as the smaller mark.
+const TRIANGLE_RADIUS = 5.5;
+// The furthest a marker of either shape reaches from its centre, which is what decides an edge wrap.
+const MARKER_REACH = Math.max(DOT_RADIUS, TRIANGLE_RADIUS);
 
-function drawDot(ctx, x, y, color) {
+// Fixed colors are triangles, generated ones circles.
+function drawMarker(ctx, x, y, color) {
 	ctx.beginPath();
-	ctx.arc(x, y, DOT_RADIUS, 0, Math.PI * 2);
+	if (color.fixed) {
+		// Vertices at -90, 30 and 150 degrees: apex up, flat base.
+		const halfWidth = TRIANGLE_RADIUS * Math.sqrt(3) / 2, drop = TRIANGLE_RADIUS / 2;
+		ctx.moveTo(x, y - TRIANGLE_RADIUS);
+		ctx.lineTo(x + halfWidth, y + drop);
+		ctx.lineTo(x - halfWidth, y + drop);
+		ctx.closePath();
+	} else {
+		ctx.arc(x, y, DOT_RADIUS, 0, Math.PI * 2);
+	}
 	ctx.fillStyle = color.hex;
 	ctx.fill();
 	ctx.lineWidth = 1.5;
@@ -562,14 +631,14 @@ function drawHSPlane(cfg, colors) {
 
 	ctx.putImageData(image, 0, 0);
 
-	// The hue axis is cyclic, so a dot within a radius of either edge is drawn again at the other.
+	// The hue axis is cyclic, so a marker within a radius of either edge is drawn again at the other.
 	for (const color of colors) {
 		const x = color.h / 360 * w, y = (1 - color.s) * (h - 1);
-		drawDot(ctx, x, y, color);
-		if (x < DOT_RADIUS)
-			drawDot(ctx, x + w, y, color);
-		else if (x > w - DOT_RADIUS)
-			drawDot(ctx, x - w, y, color);
+		drawMarker(ctx, x, y, color);
+		if (x < MARKER_REACH)
+			drawMarker(ctx, x + w, y, color);
+		else if (x > w - MARKER_REACH)
+			drawMarker(ctx, x - w, y, color);
 	}
 }
 
@@ -587,6 +656,7 @@ function refreshLabels() {
 	$("h-value").textContent = cfg.hMin + "–" + cfg.hMax + "°" + (cfg.hMin > cfg.hMax ? " (wraps)" : "");
 	$("s-value").textContent = cfg.sMin + "–" + cfg.sMax + "%";
 	$("l-value").textContent = cfg.lMin + "–" + cfg.lMax + "%";
+	$("fixed-preview").innerHTML = cfg.fixed.map(color => '<span style="background:' + color.hex + '"></span>').join("");
 }
 
 function render(result, cfg) {
@@ -599,7 +669,8 @@ function render(result, cfg) {
 
 	const status = $("status");
 	const achieved = result.gap === Infinity ? "n/a" : result.gap.toFixed(1);
-	const unmet = cfg.count > 1 && result.gap < cfg.threshold - 0.05;
+	// An infinite gap means no measurable pair at all: one color and nothing fixed to place it against.
+	const unmet = result.gap !== Infinity && result.gap < cfg.threshold - 0.05;
 	status.classList.toggle("unmet", unmet);
 	status.textContent = unmet
 		? "Closest pair: ΔE " + achieved + " — below the requested " + cfg.threshold.toFixed(1)
@@ -608,26 +679,28 @@ function render(result, cfg) {
 
 	// Only when the target was missed: with the target met there is no offending pair to point at.
 	const clashing = new Set(unmet ? result.pair : []);
-	const clash = c => clashing.has(c) ? " clash" : "";
+	const marks = c => (c.fixed ? " fixed" : "") + (clashing.has(c) ? " clash" : "");
 
 	$("swatches").innerHTML = palette.map(c =>
-		'<button class="swatch' + clash(c) + '" data-hex="' + c.hex + '">'
+		'<button class="swatch' + marks(c) + '" data-hex="' + c.hex + '">'
 			+ '<div class="chip" style="background:' + c.hex + '"></div>'
 			+ '<div class="meta"><div class="hex">' + c.hex.toUpperCase() + '</div>'
-			+ '<div class="coords">hsl ' + Math.round(c.h) + ", " + Math.round(c.s * 100) + "%, " + Math.round(c.l * 100) + "%</div></div>"
+			+ '<div class="coords">' + (c.fixed ? "fixed · " : "") + "hsl " + Math.round(c.h) + ", " + Math.round(c.s * 100) + "%, " + Math.round(c.l * 100) + "%</div></div>"
 		+ "</button>").join("");
 
 	// Columns from the square root, so the block's bounding box is the nearest thing to a square.
 	$("tiles").style.setProperty("--cols", Math.ceil(Math.sqrt(palette.length)));
 	$("tiles").innerHTML = palette.map(c =>
-		'<div class="' + clash(c).trim() + '" style="background:' + c.hex + '" title="' + c.hex.toUpperCase() + '"></div>').join("");
+		'<div class="' + marks(c).trim() + '" style="background:' + c.hex + '" title="'
+			+ c.hex.toUpperCase() + (c.fixed ? " (fixed)" : "") + '"></div>').join("");
 
 	drawHSPlane(cfg, palette);
 	refreshExport();
 }
 
+// Fixed colors are excluded: the export is the set that was generated, which the caller does not have.
 function refreshExport() {
-	const hexes = palette.map(c => c.hex.toUpperCase());
+	const hexes = palette.filter(c => !c.fixed).map(c => c.hex.toUpperCase());
 	const format = $("format").value;
 	let text;
 	if (format === "hex")
@@ -644,7 +717,7 @@ function refreshExport() {
 // ---------- state string ----------
 
 // The string is the version tag, these fields in order, then the sort flag, the backdrop, the
-// custom backdrop color and the export format.
+// custom backdrop color, the export format and the comma-joined fixed colors.
 const STATE_VERSION = "v1";
 const STATE_SEPARATOR = "|";
 const STATE_IDS = ["count", "strict", "h-min", "h-max", "s-min", "s-max", "l-min", "l-max", "seed"];
@@ -658,7 +731,8 @@ const stripHash = value => value.replace("#", "");
 function stateString(cfg) {
 	return [STATE_VERSION, cfg.count, cfg.threshold, cfg.hMin, cfg.hMax, cfg.sMin, cfg.sMax,
 		cfg.lMin, cfg.lMax, cfg.seed >>> 0, $("sort").checked ? 1 : 0,
-		stripHash($("backdrop").value), stripHash($("backdrop-color").value), $("format").value
+		stripHash($("backdrop").value), stripHash($("backdrop-color").value), $("format").value,
+		cfg.fixed.map(color => stripHash(color.hex)).join(",")
 	].join(STATE_SEPARATOR);
 }
 
@@ -673,16 +747,19 @@ function findOption(id, stored) {
 // inputs, which clamp to their own min and max.
 function applyStateString(text) {
 	const [tag, ...fields] = text.trim().split(STATE_SEPARATOR);
-	// The sort flag, backdrop, custom color and export format follow the nine control values.
-	if (tag !== STATE_VERSION || fields.length !== STATE_IDS.length + 4)
+	// The sort flag, backdrop, custom color, export format and fixed colors follow the nine control
+	// values. One field short is a string written before fixed colors existed, and has none.
+	const withoutFixed = STATE_IDS.length + 4;
+	if (tag !== STATE_VERSION || (fields.length !== withoutFixed && fields.length !== withoutFixed + 1))
 		return false;
 
 	const numbers = fields.slice(0, STATE_IDS.length + 1).map(f => f.trim() === "" ? NaN : Number(f));
-	const [backdrop, custom, format] = fields.slice(STATE_IDS.length + 1);
+	const [backdrop, custom, format, fixed = ""] = fields.slice(STATE_IDS.length + 1);
 	const backdropOption = findOption("backdrop", backdrop);
 	const formatOption = findOption("format", format);
 
-	if (numbers.some(n => !Number.isFinite(n)) || !backdropOption || !formatOption || !/^[0-9a-f]{6}$/i.test(custom))
+	if (numbers.some(n => !Number.isFinite(n)) || !backdropOption || !formatOption || !/^[0-9a-f]{6}$/i.test(custom)
+		|| !(fixed === "" || /^[0-9a-f]{6}(,[0-9a-f]{6})*$/i.test(fixed)))
 		return false;
 
 	STATE_IDS.forEach((id, i) => $(id).value = numbers[i]);
@@ -690,6 +767,8 @@ function applyStateString(text) {
 	$("backdrop").value = backdropOption.value;
 	$("backdrop-color").value = "#" + custom.toLowerCase();
 	$("format").value = formatOption.value;
+	// One per line: the string carries the parsed colors, not the text they were typed in.
+	$("fixed-colors").value = fixed.split(",").filter(Boolean).map(hex => "#" + hex.toLowerCase()).join("\n");
 
 	// Assigning a select's value fires no change event, so the backdrop is applied by hand.
 	applyBackdrop(currentBackdrop());
@@ -771,7 +850,7 @@ function scheduleRun() {
 	setTimeout(() => { runScheduled = false; run(); }, 0);
 }
 
-for (const id of STATE_IDS)
+for (const id of [...STATE_IDS, "fixed-colors"])
 	$(id).addEventListener("input", () => { refreshLabels(); scheduleRun(); });
 
 $("sort").addEventListener("change", scheduleRun);

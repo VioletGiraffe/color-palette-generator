@@ -9,6 +9,7 @@ Use live online in your browser: https://violetgiraffe.github.io/color-palette-g
 - **Choose how many colors** you need, from 1 to 40.
 - **Set how distinct they have to be**: one slider controls the minimum perceived difference between any two colors.
 - **Restrict the color space**: min and max sliders for hue, saturation and lightness. The hue range wraps around, so 300-60 covers magenta through yellow.
+- **Generate around colors you already have**: paste any number of hex values as fixed colors. New colors are kept distinct from them. They are shown alongside the result but not counted in Colors and not exported.
 - **See the selected range**: a hue bar and a saturation/lightness plane, with everything outside the range hatched out.
 - **See where the colors landed**: a hue/saturation plot with a dot for each generated color.
 - **Judge the colors together**: a tight grid of small squares, over a white, black, grey or custom backdrop.
