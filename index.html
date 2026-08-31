@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Palette generator</title>
+<style>
+	:root {
+		--bg: #f4f4f6;
+		--panel: #ffffff;
+		--ink: #1a1a1e;
+		--ink-dim: #6a6a76;
+		--line: #d8d8e0;
+		--accent: #3d6df0;
+		--warn: #b45309;
+	}
+	@media (prefers-color-scheme: dark) {
+		:root {
+			--bg: #17171a;
+			--panel: #212127;
+			--ink: #ececf0;
+			--ink-dim: #9a9aa6;
+			--line: #35353f;
+			--accent: #6f95ff;
+			--warn: #e0a33a;
+		}
+	}
+
+	* { box-sizing: border-box; }
+
+	body {
+		margin: 0;
+		padding: 20px;
+		background: var(--bg);
+		color: var(--ink);
+		font: 14px/1.45 system-ui, "Segoe UI", sans-serif;
+	}
+
+	h1 { font-size: 18px; margin: 0 0 16px; font-weight: 600; }
+	h2 { font-size: 13px; margin: 0 0 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-dim); }
+
+	#layout { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+
+	.panel {
+		background: var(--panel);
+		border: 1px solid var(--line);
+		border-radius: 8px;
+		padding: 16px;
+	}
+
+	#controls { width: 340px; flex: 0 0 auto; }
+	#output { flex: 1 1 460px; min-width: 380px; }
+
+	.group { margin-bottom: 18px; }
+	.group:last-child { margin-bottom: 0; }
+
+	label.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+	label.row > span:first-child { white-space: nowrap; }
+
+	.value { font-variant-numeric: tabular-nums; color: var(--ink-dim); }
+
+	input[type=range] { width: 100%; accent-color: var(--accent); }
+	input[type=number] { width: 68px; }
+	input[type=color] { width: 34px; height: 28px; padding: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 5px; cursor: pointer; }
+
+	input[type=number], select, button, textarea {
+		font: inherit;
+		color: var(--ink);
+		background: var(--bg);
+		border: 1px solid var(--line);
+		border-radius: 5px;
+		padding: 4px 7px;
+	}
+
+	button { cursor: pointer; }
+	button:hover { border-color: var(--accent); }
+	button.primary { background: var(--accent); color: #fff; border-color: transparent; font-weight: 600; padding: 7px 14px; }
+
+	.range-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin-bottom: 12px; }
+	.range-pair .caption { grid-column: 1 / -1; display: flex; justify-content: space-between; }
+	.range-pair .edge { font-size: 12px; color: var(--ink-dim); }
+
+	#status { margin: 14px 0 12px; font-size: 13px; min-height: 20px; }
+	#status.unmet { color: var(--warn); }
+
+	#swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; border-radius: 6px; }
+
+	.swatch { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; cursor: pointer; background: none; padding: 0; text-align: left; display: block; width: 100%; }
+	.swatch:hover { border-color: var(--accent); }
+	.swatch .chip { height: 64px; }
+	.swatch .meta { padding: 5px 7px; font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1.35; color: var(--ink); }
+	.swatch .meta .hex { font-weight: 600; letter-spacing: .02em; }
+	.swatch .meta .coords { color: var(--ink-dim); }
+
+	.bar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+
+	#export { width: 100%; height: 150px; margin-top: 8px; resize: vertical; font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre; }
+
+	.hint { font-size: 12px; color: var(--ink-dim); margin-top: 6px; }
+
+	hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
+</style>
+</head>
+<body>
+
+<h1>Palette generator</h1>
+
+<div id="layout">
+
+<div class="panel" id="controls">
+
+	<div class="group">
+		<label class="row"><span>Colors</span><span class="value" id="count-value">8</span></label>
+		<input type="range" id="count" min="1" max="40" value="8">
+
+		<label class="row" style="margin-top:12px"><span>Distinctness</span><span class="value" id="strict-value">18</span></label>
+		<input type="range" id="strict" min="0" max="50" step="0.5" value="18">
+		<div class="hint">Required minimum OKLab distance between any two colors. 0 accepts anything; above ~30 only a handful of colors fit.</div>
+	</div>
+
+	<hr>
+
+	<div class="group">
+		<h2>HSL range</h2>
+
+		<div class="range-pair">
+			<div class="caption"><span>Hue</span><span class="value" id="h-value"></span></div>
+			<div class="edge">min</div><div class="edge">max</div>
+			<input type="range" id="h-min" min="0" max="360" value="0">
+			<input type="range" id="h-max" min="0" max="360" value="360">
+		</div>
+
+		<div class="range-pair">
+			<div class="caption"><span>Saturation</span><span class="value" id="s-value"></span></div>
+			<div class="edge">min</div><div class="edge">max</div>
+			<input type="range" id="s-min" min="0" max="100" value="45">
+			<input type="range" id="s-max" min="0" max="100" value="90">
+		</div>
+
+		<div class="range-pair" style="margin-bottom:0">
+			<div class="caption"><span>Lightness</span><span class="value" id="l-value"></span></div>
+			<div class="edge">min</div><div class="edge">max</div>
+			<input type="range" id="l-min" min="0" max="100" value="35">
+			<input type="range" id="l-max" min="0" max="100" value="65">
+		</div>
+
+		<div class="hint">Hue wraps when min &gt; max (e.g. 300 &rarr; 60 covers magenta through yellow).</div>
+	</div>
+
+	<hr>
+
+	<div class="group">
+		<label class="row">
+			<span>Seed</span>
+			<input type="number" id="seed" value="1" min="0" step="1">
+		</label>
+		<label class="row">
+			<span>Sort by hue</span>
+			<input type="checkbox" id="sort" checked>
+		</label>
+		<button class="primary" id="generate" style="width:100%; margin-top:10px">Generate</button>
+	</div>
+
+</div>
+
+<div class="panel" id="output">
+
+	<div class="bar">
+		<h2 style="margin:0; flex:1">Palette</h2>
+		<span style="font-size:12px; color:var(--ink-dim)">Backdrop</span>
+		<select id="backdrop">
+			<option value="panel" selected>Panel</option>
+			<option value="#ffffff">White</option>
+			<option value="#000000">Black</option>
+			<option value="#808080">Mid grey</option>
+			<option value="custom">Custom</option>
+		</select>
+		<input type="color" id="backdrop-color" value="#3c6ea5" title="Custom backdrop">
+	</div>
+
+	<div id="status"></div>
+	<div id="swatches"></div>
+
+	<hr>
+
+	<div class="bar">
+		<h2 style="margin:0; flex:1">Export</h2>
+		<select id="format">
+			<option value="hex">Hex list</option>
+			<option value="css">CSS custom properties</option>
+			<option value="json">JSON array</option>
+			<option value="python">Python list</option>
+		</select>
+		<button id="copy">Copy</button>
+	</div>
+	<textarea id="export" readonly spellcheck="false"></textarea>
+	<div class="hint">Click any swatch to copy its hex.</div>
+
+</div>
+
+</div>
+
+<script>
+"use strict";
+
+// ---------- color math ----------
+
+function hsl2rgb(h, s, l) {
+	const c = (1 - Math.abs(2 * l - 1)) * s;
+	const m = l - c / 2;
+	const hp = ((h % 360) + 360) % 360 / 60;
+	const x = c * (1 - Math.abs(hp % 2 - 1));
+	const seg = [[c, x, 0], [x, c, 0], [0, c, x], [0, x, c], [x, 0, c], [c, 0, x]][Math.floor(hp) % 6];
+	return [seg[0] + m, seg[1] + m, seg[2] + m];
+}
+
+function srgbToLinear(u) {
+	return u <= 0.04045 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4);
+}
+
+function parseHex(hex) {
+	const n = parseInt(hex.slice(1), 16);
+	return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255];
+}
+
+function relativeLuminance(rgb) {
+	return 0.2126 * srgbToLinear(rgb[0]) + 0.7152 * srgbToLinear(rgb[1]) + 0.0722 * srgbToLinear(rgb[2]);
+}
+
+// Bjorn Ottosson's OKLab, from linear sRGB.
+function rgbToOklab(rgb) {
+	const r = srgbToLinear(rgb[0]), g = srgbToLinear(rgb[1]), b = srgbToLinear(rgb[2]);
+	const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+	const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+	const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+	return [
+		0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+		1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+		0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+	];
+}
+
+// Scaled x100 so the useful range reads like CIE delta-E rather than 0.01 steps.
+function distance(a, b) {
+	const dl = a[0] - b[0], da = a[1] - b[1], db = a[2] - b[2];
+	return Math.sqrt(dl * dl + da * da + db * db) * 100;
+}
+
+function toHex(rgb) {
+	return "#" + rgb.map(v => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, "0")).join("");
+}
+
+// ---------- generation ----------
+
+function mulberry32(seed) {
+	let a = seed >>> 0;
+	return function () {
+		a = (a + 0x6D2B79F5) >>> 0;
+		let t = Math.imul(a ^ (a >>> 15), 1 | a);
+		t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+	};
+}
+
+const CANDIDATES_PER_COLOR = 2000;
+const RESTARTS = 6;
+
+function sampleColor(rnd, cfg) {
+	// A hue range with min > max wraps through 0.
+	const span = cfg.hMin <= cfg.hMax ? cfg.hMax - cfg.hMin : 360 - cfg.hMin + cfg.hMax;
+	const h = (cfg.hMin + rnd() * span) % 360;
+	const s = (cfg.sMin + rnd() * (cfg.sMax - cfg.sMin)) / 100;
+	const l = (cfg.lMin + rnd() * (cfg.lMax - cfg.lMin)) / 100;
+	const rgb = hsl2rgb(h, s, l);
+	return { h, s, l, rgb, lab: rgbToOklab(rgb), hex: toHex(rgb) };
+}
+
+// Rejection sampling per color, keeping the best candidate seen so the palette
+// degrades gracefully when the threshold exceeds what the ranges can deliver.
+function buildAttempt(rnd, cfg) {
+	const colors = [];
+	for (let i = 0; i < cfg.count; ++i) {
+		let best = null, bestGap = -1;
+		for (let n = 0; n < CANDIDATES_PER_COLOR; ++n) {
+			const candidate = sampleColor(rnd, cfg);
+			let gap = Infinity;
+			for (const c of colors)
+				gap = Math.min(gap, distance(candidate.lab, c.lab));
+			if (gap > bestGap) { bestGap = gap; best = candidate; }
+			if (gap >= cfg.threshold) break;
+		}
+		colors.push(best);
+	}
+	return colors;
+}
+
+function minimumGap(colors) {
+	let gap = Infinity;
+	for (let i = 0; i < colors.length; ++i)
+		for (let j = i + 1; j < colors.length; ++j)
+			gap = Math.min(gap, distance(colors[i].lab, colors[j].lab));
+	return gap;
+}
+
+function generate(cfg) {
+	let bestColors = null, bestGap = -1;
+	for (let attempt = 0; attempt < RESTARTS; ++attempt) {
+		const rnd = mulberry32(cfg.seed + attempt * 7919);
+		const colors = buildAttempt(rnd, cfg);
+		const gap = minimumGap(colors);
+		if (gap > bestGap) { bestGap = gap; bestColors = colors; }
+		if (gap >= cfg.threshold) break;
+	}
+	return { colors: bestColors, gap: bestGap };
+}
+
+// ---------- ui ----------
+
+const $ = id => document.getElementById(id);
+let palette = [];
+
+function readConfig() {
+	return {
+		count: +$("count").value,
+		threshold: +$("strict").value,
+		hMin: +$("h-min").value, hMax: +$("h-max").value,
+		sMin: Math.min(+$("s-min").value, +$("s-max").value), sMax: Math.max(+$("s-min").value, +$("s-max").value),
+		lMin: Math.min(+$("l-min").value, +$("l-max").value), lMax: Math.max(+$("l-min").value, +$("l-max").value),
+		seed: +$("seed").value | 0
+	};
+}
+
+function refreshLabels() {
+	const cfg = readConfig();
+	$("count-value").textContent = cfg.count;
+	$("strict-value").textContent = cfg.threshold.toFixed(1);
+	$("h-value").textContent = cfg.hMin + "–" + cfg.hMax + "°" + (cfg.hMin > cfg.hMax ? " (wraps)" : "");
+	$("s-value").textContent = cfg.sMin + "–" + cfg.sMax + "%";
+	$("l-value").textContent = cfg.lMin + "–" + cfg.lMax + "%";
+}
+
+function render(result, cfg) {
+	palette = result.colors;
+	if ($("sort").checked) {
+		// Ordered from the range start, so a wrapped hue range stays contiguous.
+		const offset = c => (c.h - cfg.hMin + 360) % 360;
+		palette = palette.slice().sort((a, b) => offset(a) - offset(b));
+	}
+
+	const status = $("status");
+	const achieved = result.gap === Infinity ? "n/a" : result.gap.toFixed(1);
+	const unmet = cfg.count > 1 && result.gap < cfg.threshold - 0.05;
+	status.classList.toggle("unmet", unmet);
+	status.textContent = unmet
+		? "Closest pair: ΔE " + achieved + " — below the requested " + cfg.threshold.toFixed(1)
+			+ ". Widen the ranges or ask for fewer colors."
+		: "Closest pair: ΔE " + achieved;
+
+	$("swatches").innerHTML = palette.map(c =>
+		'<button class="swatch" data-hex="' + c.hex + '">'
+			+ '<div class="chip" style="background:' + c.hex + '"></div>'
+			+ '<div class="meta"><div class="hex">' + c.hex.toUpperCase() + '</div>'
+			+ '<div class="coords">hsl ' + Math.round(c.h) + ", " + Math.round(c.s * 100) + "%, " + Math.round(c.l * 100) + "%</div></div>"
+		+ "</button>").join("");
+
+	refreshExport();
+}
+
+function refreshExport() {
+	const hexes = palette.map(c => c.hex.toUpperCase());
+	const format = $("format").value;
+	let text;
+	if (format === "hex")
+		text = hexes.join("\n");
+	else if (format === "css")
+		text = ":root {\n" + hexes.map((h, i) => "\t--color-" + (i + 1) + ": " + h + ";").join("\n") + "\n}";
+	else if (format === "json")
+		text = JSON.stringify(hexes, null, "\t");
+	else
+		text = "COLORS = [\n" + hexes.map(h => '\t"' + h + '",').join("\n") + "\n]";
+	$("export").value = text;
+}
+
+function copy(text, button, label) {
+	navigator.clipboard.writeText(text).then(() => {
+		const original = button.textContent;
+		button.textContent = label;
+		setTimeout(() => { button.textContent = original; }, 900);
+	});
+}
+
+function run() {
+	refreshLabels();
+	const cfg = readConfig();
+	render(generate(cfg), cfg);
+}
+
+for (const id of ["count", "strict", "h-min", "h-max", "s-min", "s-max", "l-min", "l-max", "seed"])
+	$(id).addEventListener("input", run);
+
+$("sort").addEventListener("change", run);
+$("format").addEventListener("change", refreshExport);
+$("generate").addEventListener("click", () => { $("seed").value = (+$("seed").value | 0) + 1; run(); });
+
+// Swatch text and borders read from --ink/--ink-dim/--line, so overriding those on the
+// container re-colors them for whatever backdrop is behind them.
+function applyBackdrop(value) {
+	const el = $("swatches");
+	const custom = value !== "panel";
+
+	el.style.background = custom ? value : "";
+	el.style.padding = custom ? "10px" : "";
+
+	for (const prop of ["--ink", "--ink-dim", "--line"])
+		el.style.removeProperty(prop);
+
+	if (!custom)
+		return;
+
+	// 0.179 is the sRGB luminance where black and white text reach equal contrast.
+	const dark = relativeLuminance(parseHex(value)) < 0.179;
+	el.style.setProperty("--ink", dark ? "#f2f2f6" : "#15151a");
+	el.style.setProperty("--ink-dim", dark ? "#c8c8d2" : "#3f3f49");
+	el.style.setProperty("--line", dark ? "rgba(255, 255, 255, .3)" : "rgba(0, 0, 0, .3)");
+}
+
+function currentBackdrop() {
+	const preset = $("backdrop").value;
+	return preset === "custom" ? $("backdrop-color").value : preset;
+}
+
+$("backdrop").addEventListener("change", () => applyBackdrop(currentBackdrop()));
+
+$("backdrop-color").addEventListener("input", () => {
+	$("backdrop").value = "custom";
+	applyBackdrop($("backdrop-color").value);
+});
+
+$("swatches").addEventListener("click", e => {
+	const swatch = e.target.closest(".swatch");
+	if (swatch) copy(swatch.dataset.hex.toUpperCase(), swatch.querySelector(".hex"), "copied");
+});
+
+$("copy").addEventListener("click", e => copy($("export").value, e.target, "Copied"));
+
+run();
+</script>
+
+</body>
+</html>
