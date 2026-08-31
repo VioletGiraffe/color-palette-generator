@@ -14,6 +14,7 @@ Use live online in your browser: https://violetgiraffe.github.io/color-palette-g
 - **Judge the colors together**: a tight grid of small squares, over a white, black, grey or custom backdrop.
 - **Copy the result**: hex list, CSS custom properties, JSON, or a Python list. Click any swatch to copy its hex.
 - **Get the same palette again**: each one comes from a seed you can set.
+- **Save the whole setup**: the state string holds every setting. Copy it, paste it back later or on another machine, and you get the identical palette.
 
 ## How the distinctness works
 

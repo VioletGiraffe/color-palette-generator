@@ -64,7 +64,7 @@
 	input[type=number] { width: 68px; }
 	input[type=color] { width: 34px; height: 28px; padding: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 5px; cursor: pointer; }
 
-	input[type=number], select, button, textarea {
+	input[type=number], input[type=text], select, button, textarea {
 		font: inherit;
 		color: var(--ink);
 		background: var(--bg);
@@ -141,6 +141,7 @@
 	.bar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
 
 	#export { width: 100%; height: 150px; margin-top: 8px; resize: vertical; font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre; }
+	#state { width: 100%; font: 12px/1.5 ui-monospace, Consolas, monospace; }
 
 	.hint { font-size: 12px; color: var(--ink-dim); margin-top: 6px; }
 
@@ -213,6 +214,18 @@
 			<input type="checkbox" id="sort" checked>
 		</label>
 		<button class="primary" id="generate" style="width:100%; margin-top:10px">Generate</button>
+	</div>
+
+	<hr>
+
+	<div class="group">
+		<h2>State</h2>
+		<input type="text" id="state" spellcheck="false">
+		<div class="bar" style="margin-top:8px">
+			<button id="state-copy">Copy</button>
+			<button id="state-apply">Apply</button>
+		</div>
+		<div class="hint">Every setting, in one string. Paste one back and apply it to restore the exact palette.</div>
 	</div>
 
 </div>
@@ -603,6 +616,69 @@ function refreshExport() {
 	$("export").value = text;
 }
 
+// ---------- state string ----------
+
+// The string is the version tag, these fields in order, then the sort flag, the backdrop, the
+// custom backdrop color and the export format.
+const STATE_VERSION = "v1";
+const STATE_SEPARATOR = "|";
+const STATE_IDS = ["count", "strict", "h-min", "h-max", "s-min", "s-max", "l-min", "l-max", "seed"];
+
+// The '#' is stripped from both colors: it would truncate the string inside a URL.
+const stripHash = value => value.replace("#", "");
+
+// Carries the config rather than the raw slider values, so saturation and lightness come back
+// ordered. The seed is written unsigned, which mulberry32 treats as identical and which keeps a
+// minus sign out of the fields.
+function stateString(cfg) {
+	return [STATE_VERSION, cfg.count, cfg.threshold, cfg.hMin, cfg.hMax, cfg.sMin, cfg.sMax,
+		cfg.lMin, cfg.lMax, cfg.seed >>> 0, $("sort").checked ? 1 : 0,
+		stripHash($("backdrop").value), stripHash($("backdrop-color").value), $("format").value
+	].join(STATE_SEPARATOR);
+}
+
+// Matched by stored value rather than by position, so reordering the options cannot remap an old
+// string onto a different one. Null where the value is not offered.
+function findOption(id, stored) {
+	return [...$(id).options].find(option => stripHash(option.value) === stored) || null;
+}
+
+// Applies nothing at all unless the whole string parses: a partial restore would produce a palette
+// matching neither the pasted state nor the one on screen. Out-of-range numbers are left to the
+// inputs, which clamp to their own min and max.
+function applyStateString(text) {
+	const [tag, ...fields] = text.trim().split(STATE_SEPARATOR);
+	// The sort flag, backdrop, custom color and export format follow the nine control values.
+	if (tag !== STATE_VERSION || fields.length !== STATE_IDS.length + 4)
+		return false;
+
+	const numbers = fields.slice(0, STATE_IDS.length + 1).map(f => f.trim() === "" ? NaN : Number(f));
+	const [backdrop, custom, format] = fields.slice(STATE_IDS.length + 1);
+	const backdropOption = findOption("backdrop", backdrop);
+	const formatOption = findOption("format", format);
+
+	if (numbers.some(n => !Number.isFinite(n)) || !backdropOption || !formatOption || !/^[0-9a-f]{6}$/i.test(custom))
+		return false;
+
+	STATE_IDS.forEach((id, i) => $(id).value = numbers[i]);
+	$("sort").checked = numbers[STATE_IDS.length] !== 0;
+	$("backdrop").value = backdropOption.value;
+	$("backdrop-color").value = "#" + custom.toLowerCase();
+	$("format").value = formatOption.value;
+
+	// Assigning a select's value fires no change event, so the backdrop is applied by hand.
+	applyBackdrop(currentBackdrop());
+	run();
+	return true;
+}
+
+// Not while the field has focus: rewriting it would drop a string being pasted. Refreshing on blur
+// instead would fire on the way to the Apply button, dropping it there.
+function refreshState() {
+	if (document.activeElement !== $("state"))
+		$("state").value = stateString(readConfig());
+}
+
 // Holds the text each element had before its first flash: a repeat inside the window must not
 // restore the transient message.
 const pendingRestore = new WeakMap();
@@ -653,6 +729,7 @@ function copy(text, label, message) {
 
 function run() {
 	refreshLabels();
+	refreshState();
 	const cfg = readConfig();
 	render(generate(cfg), cfg);
 }
@@ -669,14 +746,14 @@ function scheduleRun() {
 	setTimeout(() => { runScheduled = false; run(); }, 0);
 }
 
-for (const id of ["count", "strict", "h-min", "h-max", "s-min", "s-max", "l-min", "l-max", "seed"])
+for (const id of STATE_IDS)
 	$(id).addEventListener("input", () => { refreshLabels(); scheduleRun(); });
 
 $("sort").addEventListener("change", scheduleRun);
 
 // The output panel is flexible, so its canvas needs re-sizing to each new width.
 window.addEventListener("resize", scheduleRun);
-$("format").addEventListener("change", refreshExport);
+$("format").addEventListener("change", () => { refreshExport(); refreshState(); });
 $("generate").addEventListener("click", () => { $("seed").value = (+$("seed").value | 0) + 1; run(); });
 
 // Swatch text and borders read from --ink/--ink-dim/--line, so overriding those on the
@@ -706,11 +783,12 @@ function currentBackdrop() {
 	return preset === "custom" ? $("backdrop-color").value : preset;
 }
 
-$("backdrop").addEventListener("change", () => applyBackdrop(currentBackdrop()));
+$("backdrop").addEventListener("change", () => { applyBackdrop(currentBackdrop()); refreshState(); });
 
 $("backdrop-color").addEventListener("input", () => {
 	$("backdrop").value = "custom";
 	applyBackdrop($("backdrop-color").value);
+	refreshState();
 });
 
 $("swatches").addEventListener("click", e => {
@@ -719,6 +797,15 @@ $("swatches").addEventListener("click", e => {
 });
 
 $("copy").addEventListener("click", e => copy($("export").value, e.currentTarget, "Copied"));
+
+$("state-copy").addEventListener("click", e => copy($("state").value, e.currentTarget, "Copied"));
+
+function applyPastedState() {
+	flashLabel($("state-apply"), applyStateString($("state").value) ? "Applied" : "Bad string");
+}
+
+$("state-apply").addEventListener("click", applyPastedState);
+$("state").addEventListener("keydown", e => { if (e.key === "Enter") applyPastedState(); });
 
 run();
 </script>
