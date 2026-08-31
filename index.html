@@ -155,6 +155,7 @@
 	/* Wide enough for the ten digits a load-time seed always has, spinner included. */
 	#seed { width: 120px; }
 
+	#pin-paste { width: 100%; height: 64px; resize: vertical; font: 11px/1.5 ui-monospace, Consolas, monospace; }
 	#pin-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 	#pin-list:empty { display: none; }
 	.pin { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -307,9 +308,11 @@
 	<div class="bar">
 		<button id="pin-add">Pin</button>
 		<button id="pin-copy" hidden>Copy all</button>
+		<button id="pin-load">Load</button>
 	</div>
+	<textarea id="pin-paste" spellcheck="false" hidden placeholder="Paste copied lines, then press Load again"></textarea>
 	<div id="pin-list"></div>
-	<div class="hint">This session only, nothing is saved. Copy a state string to keep one.</div>
+	<div class="hint">This session only, nothing is saved. Copy the list out to keep it, and paste it back with Load.</div>
 
 </div>
 
@@ -484,13 +487,16 @@ function generate(cfg) {
 const $ = id => document.getElementById(id);
 let palette = [];
 
+const ordered = (a, b) => a <= b ? [a, b] : [b, a];
+
 function readConfig() {
+	const [sMin, sMax] = ordered(+$("s-min").value, +$("s-max").value);
+	const [lMin, lMax] = ordered(+$("l-min").value, +$("l-max").value);
 	return {
 		count: +$("count").value,
 		threshold: +$("strict").value,
 		hMin: +$("h-min").value, hMax: +$("h-max").value,
-		sMin: Math.min(+$("s-min").value, +$("s-max").value), sMax: Math.max(+$("s-min").value, +$("s-max").value),
-		lMin: Math.min(+$("l-min").value, +$("l-max").value), lMax: Math.max(+$("l-min").value, +$("l-max").value),
+		sMin, sMax, lMin, lMax,
 		seed: +$("seed").value | 0,
 		fixed: parseFixedColors($("fixed-colors").value)
 	};
@@ -660,13 +666,14 @@ function refreshLabels() {
 	$("fixed-preview").innerHTML = cfg.fixed.map(color => '<span style="background:' + color.hex + '"></span>').join("");
 }
 
+// Ordered from the range start, so a wrapped hue range stays contiguous.
+function sortedByHue(colors, hMin) {
+	const offset = c => (c.h - hMin + 360) % 360;
+	return colors.slice().sort((a, b) => offset(a) - offset(b));
+}
+
 function render(result, cfg) {
-	palette = result.colors;
-	if ($("sort").checked) {
-		// Ordered from the range start, so a wrapped hue range stays contiguous.
-		const offset = c => (c.h - cfg.hMin + 360) % 360;
-		palette = palette.slice().sort((a, b) => offset(a) - offset(b));
-	}
+	palette = $("sort").checked ? sortedByHue(result.colors, cfg.hMin) : result.colors;
 
 	const status = $("status");
 	const achieved = result.gap === Infinity ? "n/a" : result.gap.toFixed(1);
@@ -743,16 +750,15 @@ function findOption(id, stored) {
 	return [...$(id).options].find(option => stripHash(option.value) === stored) || null;
 }
 
-// Applies nothing at all unless the whole string parses: a partial restore would produce a palette
-// matching neither the pasted state nor the one on screen. Out-of-range numbers are left to the
-// inputs, which clamp to their own min and max.
-function applyStateString(text) {
+// The fields of a state string, or null when it does not parse. Separate from applying them, so a
+// palette can be generated from a string without disturbing the controls.
+function parseState(text) {
 	const [tag, ...fields] = text.trim().split(STATE_SEPARATOR);
 	// The sort flag, backdrop, custom color, export format and fixed colors follow the nine control
 	// values. One field short is a string written before fixed colors existed, and has none.
 	const withoutFixed = STATE_IDS.length + 4;
 	if (tag !== STATE_VERSION || (fields.length !== withoutFixed && fields.length !== withoutFixed + 1))
-		return false;
+		return null;
 
 	const numbers = fields.slice(0, STATE_IDS.length + 1).map(f => f.trim() === "" ? NaN : Number(f));
 	const [backdrop, custom, format, fixed = ""] = fields.slice(STATE_IDS.length + 1);
@@ -761,15 +767,36 @@ function applyStateString(text) {
 
 	if (numbers.some(n => !Number.isFinite(n)) || !backdropOption || !formatOption || !/^[0-9a-f]{6}$/i.test(custom)
 		|| !(fixed === "" || /^[0-9a-f]{6}(,[0-9a-f]{6})*$/i.test(fixed)))
+		return null;
+
+	return { numbers, backdrop: backdropOption.value, custom, format: formatOption.value, fixed };
+}
+
+const fixedFromField = field => field.split(",").filter(Boolean).map(hex => "#" + hex.toLowerCase());
+
+// The generator's view of a parsed state. Ranges are ordered the same way readConfig orders them,
+// so a palette built from here matches the one the controls produce once the string is applied.
+function configFromState(parsed) {
+	const [count, threshold, hMin, hMax, s1, s2, l1, l2, seed] = parsed.numbers;
+	const [sMin, sMax] = ordered(s1, s2);
+	const [lMin, lMax] = ordered(l1, l2);
+	return { count, threshold, hMin, hMax, sMin, sMax, lMin, lMax, seed: seed | 0,
+		fixed: fixedFromField(parsed.fixed).map(colorFromHex) };
+}
+
+// Out-of-range numbers are left to the inputs, which clamp to their own min and max.
+function applyStateString(text) {
+	const parsed = parseState(text);
+	if (!parsed)
 		return false;
 
-	STATE_IDS.forEach((id, i) => $(id).value = numbers[i]);
-	$("sort").checked = numbers[STATE_IDS.length] !== 0;
-	$("backdrop").value = backdropOption.value;
-	$("backdrop-color").value = "#" + custom.toLowerCase();
-	$("format").value = formatOption.value;
+	STATE_IDS.forEach((id, i) => $(id).value = parsed.numbers[i]);
+	$("sort").checked = parsed.numbers[STATE_IDS.length] !== 0;
+	$("backdrop").value = parsed.backdrop;
+	$("backdrop-color").value = "#" + parsed.custom.toLowerCase();
+	$("format").value = parsed.format;
 	// One per line: the string carries the parsed colors, not the text they were typed in.
-	$("fixed-colors").value = fixed.split(",").filter(Boolean).map(hex => "#" + hex.toLowerCase()).join("\n");
+	$("fixed-colors").value = fixedFromField(parsed.fixed).join("\n");
 
 	// Assigning a select's value fires no change event, so the backdrop is applied by hand.
 	applyBackdrop(currentBackdrop());
@@ -949,6 +976,55 @@ $("pin-add").addEventListener("click", () => {
 // Tab-separated: a name may contain spaces, and the lines paste into a sheet as two columns.
 $("pin-copy").addEventListener("click", e =>
 	copy(pins.map(entry => entry.name + "\t" + entry.state).join("\n"), e.currentTarget, "Copied"));
+
+// One entry per line, the name before the first tab. A line that is only a state string is taken as
+// one, so a single string pastes in as well. Appends, skipping states already listed.
+// Each entry's strip has to be generated: the copied text carries no colors.
+function loadPins(text) {
+	const known = new Set(pins.map(entry => entry.state));
+	let added = 0;
+
+	for (const line of text.split("\n")) {
+		const tab = line.indexOf("\t");
+		const name = tab < 0 ? "" : line.slice(0, tab).trim();
+		const state = (tab < 0 ? line : line.slice(tab + 1)).trim();
+		if (known.has(state))
+			continue;
+
+		const parsed = parseState(state);
+		if (!parsed)
+			continue;
+
+		const cfg = configFromState(parsed);
+		const colors = generate(cfg).colors;
+		const sorted = parsed.numbers[STATE_IDS.length] !== 0;
+		known.add(state);
+		pins.push({
+			name: name || "Palette " + (++pinCount),
+			state,
+			hexes: (sorted ? sortedByHue(colors, cfg.hMin) : colors).map(c => c.hex)
+		});
+		++added;
+	}
+
+	renderPins();
+	return added;
+}
+
+// Two presses: the first opens the box, the second reads it. An empty box closes without loading.
+$("pin-load").addEventListener("click", e => {
+	const box = $("pin-paste");
+	if (box.hidden) {
+		box.hidden = false;
+		box.focus();
+		return;
+	}
+
+	const added = loadPins(box.value);
+	box.value = "";
+	box.hidden = true;
+	flashLabel(e.currentTarget, added ? "+" + added : "none");
+});
 
 // Renaming leaves the list alone: rebuilding it would take the focus out of the field mid-word.
 $("pin-list").addEventListener("input", e => {
