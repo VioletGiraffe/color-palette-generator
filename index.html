@@ -387,6 +387,80 @@ function toHex(rgb) {
 	return "#" + rgb.map(v => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, "0")).join("");
 }
 
+// ---------- color naming ----------
+
+// English color families as arcs of OKLab hue, cut at the midpoints between canonical anchors
+// (#ff0000, #ffa500, #ffff00, ...). The arcs are unequal: blue and green each absorb several named
+// hues, orange and yellow are narrow. The last arc wraps through 0, so it ends above 360 and query
+// angles below the first boundary are shifted up to match.
+const FAMILIES = [
+	{ name: "red",     from:  16, to:  50 },
+	{ name: "orange",  from:  50, to:  90 },
+	{ name: "yellow",  from:  90, to: 123 },
+	{ name: "green",   from: 123, to: 173 },
+	{ name: "cyan",    from: 173, to: 226 },
+	{ name: "blue",    from: 226, to: 279 },
+	{ name: "violet",  from: 279, to: 311 },
+	{ name: "magenta", from: 311, to: 346 },
+	{ name: "pink",    from: 346, to: 376 }
+];
+
+// Hue does not name a color on its own: #808000 and #ffff00 share an arc, as do #008080 and
+// #00ffff, and lightness is what separates each pair. The boundaries are a compromise, families
+// dividing at different lightnesses: navy parts from blue near 36, brown from red near 55.
+const TIERS = [
+	{ name: "darkest", from:  0, to:  40 },
+	{ name: "dark",    from: 40, to:  58 },
+	{ name: "mid",     from: 58, to:  70 },
+	{ name: "light",   from: 70, to: 100 }
+];
+
+// Below this OKLab chroma a color reads as a neutral: the hue angle is numerical noise there, and
+// grey, white and black are names in their own right rather than members of a hue family.
+const NEUTRAL_CHROMA = 4;
+
+// Ranges are contiguous and every queried value is at or above the first, so the containing range
+// is the last one starting at or before the value. Testing containment instead would drop pure
+// white, which sits on the top boundary rather than inside it.
+function rangeIndex(ranges, value) {
+	let index = 0;
+	while (index + 1 < ranges.length && value >= ranges[index + 1].from)
+		++index;
+	return index;
+}
+
+// How far into a range the value sits, as a fraction of the range's half-width: 1 at the centre, 0
+// on either boundary.
+const inset = (range, value) => Math.min(value - range.from, range.to - value) / ((range.to - range.from) / 2);
+
+// The color's cell - a family paired with a lightness tier, or a neutral tier - and how far inside
+// that cell it sits.
+// The margin is naming confidence: a color near a cell boundary is one a viewer cannot label
+// without something to compare it against.
+// Chroma bounds the margin on both sides of NEUTRAL_CHROMA: on that boundary a color is no more
+// confidently a hue than a grey.
+// Cells are defined here alone, so a lookup fitted to color-naming survey data replaces the tables
+// above without touching the search.
+function cellOf(lab) {
+	const lightness = lab[0] * 100;
+	const chroma = Math.hypot(lab[1], lab[2]) * 100;
+	const tier = rangeIndex(TIERS, lightness);
+	const tierMargin = inset(TIERS[tier], lightness);
+
+	// Neutral cells sit past the end of the families, one per tier.
+	if (chroma < NEUTRAL_CHROMA)
+		return { cell: FAMILIES.length * TIERS.length + tier, margin: Math.min(tierMargin, 1 - chroma / NEUTRAL_CHROMA) };
+
+	const hue = (Math.atan2(lab[2], lab[1]) * 180 / Math.PI + 360) % 360;
+	const angle = hue < FAMILIES[0].from ? hue + 360 : hue;
+	const family = rangeIndex(FAMILIES, angle);
+
+	return {
+		cell: family * TIERS.length + tier,
+		margin: Math.min(tierMargin, inset(FAMILIES[family], angle), chroma / NEUTRAL_CHROMA - 1)
+	};
+}
+
 // ---------- generation ----------
 
 function mulberry32(seed) {
@@ -399,8 +473,12 @@ function mulberry32(seed) {
 	};
 }
 
-const CANDIDATES_PER_COLOR = 2000;
-const RESTARTS = 6;
+const CANDIDATES_PER_COLOR = 700;
+const RELOCATION_CANDIDATES = 250;
+const RELOCATIONS_PER_COLOR = 10;
+const RESTARTS = 2;
+// Below this a color sits close enough to a cell boundary that its name is unstable.
+const MIN_MARGIN = 0.25;
 
 function sampleColor(rnd, cfg) {
 	// A hue range with min > max wraps through 0.
@@ -409,14 +487,16 @@ function sampleColor(rnd, cfg) {
 	const s = (cfg.sMin + rnd() * (cfg.sMax - cfg.sMin)) / 100;
 	const l = (cfg.lMin + rnd() * (cfg.lMax - cfg.lMin)) / 100;
 	const rgb = hsl2rgb(h, s, l);
-	return { h, s, l, rgb, lab: rgbToOklab(rgb), hex: toHex(rgb) };
+	const lab = rgbToOklab(rgb);
+	return { h, s, l, rgb, lab, hex: toHex(rgb), ...cellOf(lab) };
 }
 
 // Same record shape as a sampled color, so everything downstream reads a fixed color the same way.
 function colorFromHex(hex) {
 	const rgb = parseHex(hex);
 	const [h, s, l] = rgb2hsl(rgb);
-	return { h, s, l, rgb, lab: rgbToOklab(rgb), hex, fixed: true };
+	const lab = rgbToOklab(rgb);
+	return { h, s, l, rgb, lab, hex, fixed: true, ...cellOf(lab) };
 }
 
 // Every six-digit hex token in the text, whatever separates them, without repeats. Tokens are split
@@ -426,24 +506,76 @@ function parseFixedColors(text) {
 	return [...new Set(tokens.map(token => "#" + token.replace("#", "").toLowerCase()))].map(colorFromHex);
 }
 
-// Rejection sampling per color, keeping the best candidate seen so the palette
-// degrades gracefully when the threshold exceeds what the ranges can deliver.
-// Seeded with the fixed colors, which every candidate is then measured against.
+// Smallest distance from lab to the palette, ignoring the entry at `skip`.
+function clearance(lab, colors, skip) {
+	let least = Infinity;
+	for (let i = 0; i < colors.length; ++i)
+		if (i !== skip)
+			least = Math.min(least, distance(lab, colors[i].lab));
+	return least;
+}
+
+// A free cell outranks an occupied one, and a confident position inside a cell outranks a boundary.
+// bestCandidate settles for rank 0 only where the ranges offer no cell the palette has not taken,
+// which is where a color has to repeat a name to make up the count at all.
+function admissionRank(candidate, colors, skip) {
+	for (let i = 0; i < colors.length; ++i)
+		if (i !== skip && colors[i].cell === candidate.cell)
+			return 0;
+	return candidate.margin >= MIN_MARGIN ? 2 : 1;
+}
+
+// The best of a batch of random candidates: cell admission decides, distance breaks the tie.
+// `skip` is the entry being replaced, or -1 when appending.
+function bestCandidate(rnd, cfg, colors, skip, budget) {
+	let color = null, rank = -1, gap = -1;
+	for (let n = 0; n < budget; ++n) {
+		const candidate = sampleColor(rnd, cfg);
+		const candidateRank = admissionRank(candidate, colors, skip);
+		if (candidateRank < rank)
+			continue;
+
+		const candidateGap = clearance(candidate.lab, colors, skip);
+		if (candidateRank > rank || candidateGap > gap) {
+			color = candidate;
+			rank = candidateRank;
+			gap = candidateGap;
+		}
+	}
+	return { color, rank, gap };
+}
+
+// Seeded with the fixed colors, which occupy cells and are measured against like any other.
 function buildAttempt(rnd, cfg) {
 	const colors = cfg.fixed.slice();
-	for (let i = 0; i < cfg.count; ++i) {
-		let best = null, bestGap = -1;
-		for (let n = 0; n < CANDIDATES_PER_COLOR; ++n) {
-			const candidate = sampleColor(rnd, cfg);
-			let gap = Infinity;
-			for (const c of colors)
-				gap = Math.min(gap, distance(candidate.lab, c.lab));
-			if (gap > bestGap) { bestGap = gap; best = candidate; }
-			if (gap >= cfg.threshold) break;
-		}
-		colors.push(best);
-	}
+	for (let i = 0; i < cfg.count; ++i)
+		colors.push(bestCandidate(rnd, cfg, colors, -1, CANDIDATES_PER_COLOR).color);
 	return colors;
+}
+
+// Moves whichever generated color has the least clearance, repeatedly. A replacement may not give
+// up cell admission, so a palette that reached every cell holds them while it spreads further.
+function relocate(rnd, cfg, colors, rounds) {
+	for (let round = 0; round < rounds; ++round) {
+		let victim = -1, least = Infinity;
+		for (let i = 0; i < colors.length; ++i) {
+			if (colors[i].fixed)
+				continue;
+
+			const gap = clearance(colors[i].lab, colors, i);
+			if (gap < least) {
+				least = gap;
+				victim = i;
+			}
+		}
+		if (victim < 0)
+			return;
+
+		const held = admissionRank(colors[victim], colors, victim);
+		const found = bestCandidate(rnd, cfg, colors, victim, RELOCATION_CANDIDATES);
+		if (found.rank >= held && found.gap > least)
+			colors[victim] = found.color;
+	}
 }
 
 // Returns the two colors as well, so a palette that misses the target can point at the pair
@@ -466,15 +598,19 @@ function minimumGap(colors) {
 	return { gap, pair };
 }
 
+// Attempts are ranked by name count first and spread second: a palette color is read on its own,
+// where its name is what identifies it.
 function generate(cfg) {
 	let best = null;
 	for (let attempt = 0; attempt < RESTARTS; ++attempt) {
 		const rnd = mulberry32(cfg.seed + attempt * 7919);
 		const colors = buildAttempt(rnd, cfg);
+		relocate(rnd, cfg, colors, cfg.count * RELOCATIONS_PER_COLOR);
+
 		const { gap, pair } = minimumGap(colors);
-		if (!best || gap > best.gap)
-			best = { colors, gap, pair };
-		if (gap >= cfg.threshold) break;
+		const named = new Set(colors.map(color => color.cell)).size;
+		if (!best || named > best.named || (named === best.named && gap > best.gap))
+			best = { colors, gap, pair, named };
 	}
 	return best;
 }
@@ -676,11 +812,13 @@ function render(result, cfg) {
 	const achieved = result.gap === Infinity ? "n/a" : result.gap.toFixed(1);
 	// An infinite gap means no measurable pair at all: one color and nothing fixed to place it against.
 	const unmet = result.gap !== Infinity && result.gap < cfg.threshold - 0.05;
+	// Fewer names than colors once every cell the ranges can reach is already occupied.
+	const repeated = result.colors.length - result.named;
 	status.classList.toggle("unmet", unmet);
-	status.textContent = unmet
-		? "Closest pair: ΔE " + achieved + " — below the requested " + cfg.threshold.toFixed(1)
-			+ ". The closest pair is outlined. Widen the ranges or ask for fewer colors if you need the requirement met."
-		: "Closest pair: ΔE " + achieved;
+	status.textContent = "Closest pair: ΔE " + achieved
+		+ (unmet ? " — below the requested " + cfg.threshold.toFixed(1) + ", closest pair outlined" : "")
+		+ " · " + result.named + " distinct color name" + (result.named === 1 ? "" : "s")
+		+ (repeated ? ", " + repeated + " repeating one of them — widen the ranges or ask for fewer colors" : "");
 
 	// Only when the target was missed: with the target met there is no offending pair to point at.
 	const clashing = new Set(unmet ? result.pair : []);
