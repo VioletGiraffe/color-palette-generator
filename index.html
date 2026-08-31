@@ -51,6 +51,7 @@
 
 	#controls { width: 340px; flex: 0 0 auto; }
 	#output { flex: 1 1 460px; min-width: 380px; }
+	#favorites { width: 280px; flex: 0 0 auto; }
 
 	.group { margin-bottom: 18px; }
 	.group:last-child { margin-bottom: 0; }
@@ -141,7 +142,19 @@
 	.bar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
 
 	#export { width: 100%; height: 150px; margin-top: 8px; resize: vertical; font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre; }
-	#state { width: 100%; font: 12px/1.5 ui-monospace, Consolas, monospace; }
+	/* Smaller than the export text: the string is copied, not read. */
+	#state { width: 100%; font: 11px/1.5 ui-monospace, Consolas, monospace; }
+	/* Wide enough for the ten digits a load-time seed always has, spinner included. */
+	#seed { width: 120px; }
+
+	#memories { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+	#memories:empty { display: none; }
+	.memory { display: flex; flex-wrap: wrap; gap: 4px; }
+	.memory-name { flex: 1; min-width: 0; }
+	.memory-drop { padding: 2px 8px; line-height: 1; }
+	/* The strip is the restore control: the largest target in the row, and it shows what it restores. */
+	.memory-strip { flex: 0 0 100%; display: flex; height: 18px; padding: 0; overflow: hidden; }
+	.memory-strip span { flex: 1; }
 
 	.hint { font-size: 12px; color: var(--ink-dim); margin-top: 6px; }
 
@@ -268,6 +281,18 @@
 	</div>
 	<textarea id="export" readonly spellcheck="false"></textarea>
 	<div class="hint">Click any swatch to copy its hex.</div>
+
+</div>
+
+<div class="panel" id="favorites">
+
+	<h2>Remembered</h2>
+	<div class="bar">
+		<button id="remember">Remember</button>
+		<button id="remember-copy" hidden>Copy all</button>
+	</div>
+	<div id="memories"></div>
+	<div class="hint">This session only, nothing is saved. Copy a state string to keep one.</div>
 
 </div>
 
@@ -806,6 +831,65 @@ function applyPastedState() {
 
 $("state-apply").addEventListener("click", applyPastedState);
 $("state").addEventListener("keydown", e => { if (e.key === "Enter") applyPastedState(); });
+
+// ---------- remembered palettes ----------
+
+// Held for the session only. Each entry keeps the state string that reproduces it, so copying one
+// out is the way to keep it; the hexes are the strip drawn in the list and are never read back.
+const remembered = [];
+let rememberedCount = 0;
+
+// The name is user text going into an attribute, so it must not be able to close it.
+const escapeAttribute = text => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+
+const rowIndex = el => +el.closest(".memory").dataset.index;
+
+function renderRemembered() {
+	$("remember-copy").hidden = remembered.length === 0;
+	$("memories").innerHTML = remembered.map((entry, i) =>
+		'<div class="memory" data-index="' + i + '">'
+			+ '<input type="text" class="memory-name" spellcheck="false" value="' + escapeAttribute(entry.name) + '">'
+			+ '<button class="memory-drop" title="Forget this palette">×</button>'
+			+ '<button class="memory-strip" title="Restore this palette">'
+				+ entry.hexes.map(hex => '<span style="background:' + hex + '"></span>').join("")
+			+ "</button>"
+		+ "</div>").join("");
+}
+
+// Taken from the config rather than from the state field, which is not refreshed while it has focus.
+$("remember").addEventListener("click", () => {
+	remembered.push({
+		name: "Palette " + (++rememberedCount),
+		state: stateString(readConfig()),
+		hexes: palette.map(c => c.hex)
+	});
+	renderRemembered();
+});
+
+// Tab-separated: a name may contain spaces, and the lines paste into a sheet as two columns.
+$("remember-copy").addEventListener("click", e =>
+	copy(remembered.map(entry => entry.name + "\t" + entry.state).join("\n"), e.currentTarget, "Copied"));
+
+// Renaming leaves the list alone: rebuilding it would take the focus out of the field mid-word.
+$("memories").addEventListener("input", e => {
+	const field = e.target.closest(".memory-name");
+	if (field)
+		remembered[rowIndex(field)].name = field.value;
+});
+
+$("memories").addEventListener("click", e => {
+	const strip = e.target.closest(".memory-strip");
+	if (strip) {
+		applyStateString(remembered[rowIndex(strip)].state);
+		return;
+	}
+
+	const drop = e.target.closest(".memory-drop");
+	if (drop) {
+		remembered.splice(rowIndex(drop), 1);
+		renderRemembered();
+	}
+});
 
 // A different palette on every load. Truncated to the 32 bits mulberry32 and the state string both
 // use, so the value in the box survives a save and restore unchanged.
