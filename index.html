@@ -81,7 +81,7 @@
 	.range-pair .caption { grid-column: 1 / -1; display: flex; justify-content: space-between; }
 	.range-pair .edge { font-size: 12px; color: var(--ink-dim); }
 
-	.hue-bar {
+	.range-bar {
 		grid-column: 1 / -1;
 		position: relative;
 		height: 16px;
@@ -89,10 +89,18 @@
 		border: 1px solid var(--line);
 		border-radius: 4px;
 		overflow: hidden;
-		background: linear-gradient(to right, #f00 0%, #ff0 16.667%, #0f0 33.333%, #0ff 50%, #00f 66.667%, #f0f 83.333%, #f00 100%);
 	}
 
-	.hue-bar .muted { position: absolute; top: 0; bottom: 0; background: rgba(0, 0, 0, .62); }
+	#hue-bar { background: linear-gradient(to right, #f00 0%, #ff0 16.667%, #0f0 33.333%, #0ff 50%, #00f 66.667%, #f0f 83.333%, #f00 100%); }
+
+	/* Hatched, not a flat scrim: the lightness bar runs to black and to white, and a scrim of
+	   either tone is invisible against its own end. */
+	.range-bar .muted {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		background: repeating-linear-gradient(45deg, rgba(0, 0, 0, .7) 0 5px, rgba(255, 255, 255, .32) 5px 10px);
+	}
 
 	#status { margin: 14px 0 12px; font-size: 13px; min-height: 20px; }
 	#status.unmet { color: var(--warn); }
@@ -139,7 +147,7 @@
 
 		<div class="range-pair">
 			<div class="caption"><span>Hue</span><span class="value" id="h-value"></span></div>
-			<div class="hue-bar"><div class="muted" id="hue-muted-a"></div><div class="muted" id="hue-muted-b"></div></div>
+			<div class="range-bar" id="hue-bar"><div class="muted" id="hue-muted-a"></div><div class="muted" id="hue-muted-b"></div></div>
 			<div class="edge">min</div><div class="edge">max</div>
 			<input type="range" id="h-min" min="0" max="360" value="0">
 			<input type="range" id="h-max" min="0" max="360" value="360">
@@ -147,6 +155,7 @@
 
 		<div class="range-pair">
 			<div class="caption"><span>Saturation</span><span class="value" id="s-value"></span></div>
+			<div class="range-bar" id="sat-bar"><div class="muted" id="sat-muted-a"></div><div class="muted" id="sat-muted-b"></div></div>
 			<div class="edge">min</div><div class="edge">max</div>
 			<input type="range" id="s-min" min="0" max="100" value="45">
 			<input type="range" id="s-max" min="0" max="100" value="90">
@@ -154,6 +163,7 @@
 
 		<div class="range-pair" style="margin-bottom:0">
 			<div class="caption"><span>Lightness</span><span class="value" id="l-value"></span></div>
+			<div class="range-bar" id="lig-bar"><div class="muted" id="lig-muted-a"></div><div class="muted" id="lig-muted-b"></div></div>
 			<div class="edge">min</div><div class="edge">max</div>
 			<input type="range" id="l-min" min="0" max="100" value="35">
 			<input type="range" id="l-max" min="0" max="100" value="65">
@@ -345,23 +355,38 @@ function readConfig() {
 	};
 }
 
-// Dims the hues outside the range: unselected is two segments when the range sits in the
-// middle, and the single segment between max and min when it wraps.
-function refreshHueBar(cfg) {
-	const segments = cfg.hMin <= cfg.hMax
-		? [[0, cfg.hMin], [cfg.hMax, 360]]
-		: [[cfg.hMax, cfg.hMin], [360, 360]];
+// Masks the values outside the range: two segments when the range sits in the middle, and the
+// single segment between max and min when a hue range wraps.
+function maskBar(name, min, max, scale) {
+	const segments = min <= max ? [[0, min], [max, scale]] : [[max, min], [scale, scale]];
 
 	segments.forEach((seg, i) => {
-		const el = $(i === 0 ? "hue-muted-a" : "hue-muted-b");
-		el.style.left = seg[0] / 3.6 + "%";
-		el.style.width = (seg[1] - seg[0]) / 3.6 + "%";
+		const el = $(name + (i === 0 ? "-muted-a" : "-muted-b"));
+		el.style.left = seg[0] / scale * 100 + "%";
+		el.style.width = (seg[1] - seg[0]) / scale * 100 + "%";
 	});
+}
+
+// Both gradients are drawn at the range-start hue, against the midpoint of the other range.
+// RGB is exactly linear in saturation at fixed hue and lightness, so two stops suffice there;
+// against lightness it is linear only either side of 50%, so that stop must be stated.
+function refreshBars(cfg) {
+	maskBar("hue", cfg.hMin, cfg.hMax, 360);
+	maskBar("sat", cfg.sMin, cfg.sMax, 100);
+	maskBar("lig", cfg.lMin, cfg.lMax, 100);
+
+	const h = cfg.hMin;
+	const midS = (cfg.sMin + cfg.sMax) / 2;
+	const midL = (cfg.lMin + cfg.lMax) / 2;
+
+	$("sat-bar").style.background = `linear-gradient(to right, hsl(${h}, 0%, ${midL}%), hsl(${h}, 100%, ${midL}%))`;
+	$("lig-bar").style.background =
+		`linear-gradient(to right, hsl(${h}, ${midS}%, 0%), hsl(${h}, ${midS}%, 50%), hsl(${h}, ${midS}%, 100%))`;
 }
 
 function refreshLabels() {
 	const cfg = readConfig();
-	refreshHueBar(cfg);
+	refreshBars(cfg);
 	$("count-value").textContent = cfg.count;
 	$("strict-value").textContent = cfg.threshold.toFixed(1);
 	$("h-value").textContent = cfg.hMin + "–" + cfg.hMax + "°" + (cfg.hMin > cfg.hMax ? " (wraps)" : "");
