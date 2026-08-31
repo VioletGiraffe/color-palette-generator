@@ -226,7 +226,7 @@
 	<div id="swatches"></div>
 
 	<div class="plane" id="hs-plane"><canvas id="hs-canvas"></canvas></div>
-	<div class="hint">Hue across, saturation up, at mid lightness. Dots are the generated colors; hatching is outside the selected ranges.</div>
+	<div class="hint">Hue across, saturation up, at the in-range lightness nearest 50%. Dots are the generated colors; hatching is outside the selected ranges.</div>
 
 	<hr>
 
@@ -458,8 +458,7 @@ function drawDot(ctx, x, y, color) {
 	ctx.stroke();
 }
 
-// Hue across, saturation up, at fixed mid lightness: a field that tracked the lightness sliders
-// would shift under the dots without making their positions any easier to read.
+// Drawn at the in-range lightness nearest 50, where chroma peaks and the field reads clearest.
 // The mask is per-pixel because a wrapped hue range is two segments, which overlay bands would
 // have to cross, doubling the hatch where they met.
 function drawHSPlane(cfg, colors) {
@@ -471,6 +470,7 @@ function drawHSPlane(cfg, colors) {
 	const ctx = canvas.getContext("2d");
 	const image = ctx.createImageData(w, h);
 	const data = image.data;
+	const lightness = Math.min(Math.max(50, cfg.lMin), cfg.lMax) / 100;
 
 	let i = 0;
 	for (let y = 0; y < h; ++y) {
@@ -482,7 +482,7 @@ function drawHSPlane(cfg, colors) {
 			const inHue = cfg.hMin <= cfg.hMax
 				? hue >= cfg.hMin && hue <= cfg.hMax
 				: hue >= cfg.hMin || hue <= cfg.hMax;
-			const rgb = hsl2rgb(hue, s, 0.5);
+			const rgb = hsl2rgb(hue, s, lightness);
 			let r = rgb[0] * 255, g = rgb[1] * 255, b = rgb[2] * 255;
 
 			// Same hatch as the CSS masks: 5px of black at 70%, then 5px of white at 32%.
