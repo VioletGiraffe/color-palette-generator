@@ -2,6 +2,8 @@
 
 Generates a set of visually distinct colors, fully customizable, with rich visualization. One HTML file, no dependencies: open `index.html` in a browser.
 
+Use live online in your browser: https://violetgiraffe.github.io/color-palette-generator/
+
 ## What you can do
 
 - **Choose how many colors** you need, from 1 to 40.
