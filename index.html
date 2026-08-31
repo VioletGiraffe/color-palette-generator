@@ -51,7 +51,7 @@
 
 	#controls { width: 340px; flex: 0 0 auto; }
 	#output { flex: 1 1 460px; min-width: 380px; }
-	#favorites { width: 280px; flex: 0 0 auto; }
+	#pinned { width: 280px; flex: 0 0 auto; }
 
 	.group { margin-bottom: 18px; }
 	.group:last-child { margin-bottom: 0; }
@@ -147,14 +147,14 @@
 	/* Wide enough for the ten digits a load-time seed always has, spinner included. */
 	#seed { width: 120px; }
 
-	#memories { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
-	#memories:empty { display: none; }
-	.memory { display: flex; flex-wrap: wrap; gap: 4px; }
-	.memory-name { flex: 1; min-width: 0; }
-	.memory-drop { padding: 2px 8px; line-height: 1; }
+	#pin-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+	#pin-list:empty { display: none; }
+	.pin { display: flex; flex-wrap: wrap; gap: 4px; }
+	.pin-name { flex: 1; min-width: 0; }
+	.pin-drop { padding: 2px 8px; line-height: 1; }
 	/* The strip is the restore control: the largest target in the row, and it shows what it restores. */
-	.memory-strip { flex: 0 0 100%; display: flex; height: 18px; padding: 0; overflow: hidden; }
-	.memory-strip span { flex: 1; }
+	.pin-strip { flex: 0 0 100%; display: flex; height: 18px; padding: 0; overflow: hidden; }
+	.pin-strip span { flex: 1; }
 
 	.hint { font-size: 12px; color: var(--ink-dim); margin-top: 6px; }
 
@@ -284,14 +284,14 @@
 
 </div>
 
-<div class="panel" id="favorites">
+<div class="panel" id="pinned">
 
-	<h2>Remembered</h2>
+	<h2>Pinned</h2>
 	<div class="bar">
-		<button id="remember">Remember</button>
-		<button id="remember-copy" hidden>Copy all</button>
+		<button id="pin-add">Pin</button>
+		<button id="pin-copy" hidden>Copy all</button>
 	</div>
-	<div id="memories"></div>
+	<div id="pin-list"></div>
 	<div class="hint">This session only, nothing is saved. Copy a state string to keep one.</div>
 
 </div>
@@ -832,62 +832,62 @@ function applyPastedState() {
 $("state-apply").addEventListener("click", applyPastedState);
 $("state").addEventListener("keydown", e => { if (e.key === "Enter") applyPastedState(); });
 
-// ---------- remembered palettes ----------
+// ---------- pinned palettes ----------
 
 // Held for the session only. Each entry keeps the state string that reproduces it, so copying one
 // out is the way to keep it; the hexes are the strip drawn in the list and are never read back.
-const remembered = [];
-let rememberedCount = 0;
+const pins = [];
+let pinCount = 0;
 
 // The name is user text going into an attribute, so it must not be able to close it.
 const escapeAttribute = text => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
-const rowIndex = el => +el.closest(".memory").dataset.index;
+const rowIndex = el => +el.closest(".pin").dataset.index;
 
-function renderRemembered() {
-	$("remember-copy").hidden = remembered.length === 0;
-	$("memories").innerHTML = remembered.map((entry, i) =>
-		'<div class="memory" data-index="' + i + '">'
-			+ '<input type="text" class="memory-name" spellcheck="false" value="' + escapeAttribute(entry.name) + '">'
-			+ '<button class="memory-drop" title="Forget this palette">×</button>'
-			+ '<button class="memory-strip" title="Restore this palette">'
+function renderPins() {
+	$("pin-copy").hidden = pins.length === 0;
+	$("pin-list").innerHTML = pins.map((entry, i) =>
+		'<div class="pin" data-index="' + i + '">'
+			+ '<input type="text" class="pin-name" spellcheck="false" value="' + escapeAttribute(entry.name) + '">'
+			+ '<button class="pin-drop" title="Unpin">×</button>'
+			+ '<button class="pin-strip" title="Restore this palette">'
 				+ entry.hexes.map(hex => '<span style="background:' + hex + '"></span>').join("")
 			+ "</button>"
 		+ "</div>").join("");
 }
 
 // Taken from the config rather than from the state field, which is not refreshed while it has focus.
-$("remember").addEventListener("click", () => {
-	remembered.push({
-		name: "Palette " + (++rememberedCount),
+$("pin-add").addEventListener("click", () => {
+	pins.push({
+		name: "Palette " + (++pinCount),
 		state: stateString(readConfig()),
 		hexes: palette.map(c => c.hex)
 	});
-	renderRemembered();
+	renderPins();
 });
 
 // Tab-separated: a name may contain spaces, and the lines paste into a sheet as two columns.
-$("remember-copy").addEventListener("click", e =>
-	copy(remembered.map(entry => entry.name + "\t" + entry.state).join("\n"), e.currentTarget, "Copied"));
+$("pin-copy").addEventListener("click", e =>
+	copy(pins.map(entry => entry.name + "\t" + entry.state).join("\n"), e.currentTarget, "Copied"));
 
 // Renaming leaves the list alone: rebuilding it would take the focus out of the field mid-word.
-$("memories").addEventListener("input", e => {
-	const field = e.target.closest(".memory-name");
+$("pin-list").addEventListener("input", e => {
+	const field = e.target.closest(".pin-name");
 	if (field)
-		remembered[rowIndex(field)].name = field.value;
+		pins[rowIndex(field)].name = field.value;
 });
 
-$("memories").addEventListener("click", e => {
-	const strip = e.target.closest(".memory-strip");
+$("pin-list").addEventListener("click", e => {
+	const strip = e.target.closest(".pin-strip");
 	if (strip) {
-		applyStateString(remembered[rowIndex(strip)].state);
+		applyStateString(pins[rowIndex(strip)].state);
 		return;
 	}
 
-	const drop = e.target.closest(".memory-drop");
+	const drop = e.target.closest(".pin-drop");
 	if (drop) {
-		remembered.splice(rowIndex(drop), 1);
-		renderRemembered();
+		pins.splice(rowIndex(drop), 1);
+		renderPins();
 	}
 });
 
