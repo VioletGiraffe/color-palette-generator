@@ -757,18 +757,46 @@ function drawMarker(ctx, x, y, color) {
 	ctx.stroke();
 }
 
-// Cumulative OKLab arc length around the full-saturation hue circle, one entry per degree.
-// Positions on the plot's hue axis follow it, so equal widths cover equal perceived change:
-// in plain HSL degrees green sprawls and red-to-yellow is squeezed.
-function hueArc(lightness) {
-	const cumulative = new Float64Array(361);
-	let prev = rgbToOklab(hsl2rgb(0, 1, lightness));
-	for (let deg = 1; deg <= 360; ++deg) {
-		const lab = rgbToOklab(hsl2rgb(deg % 360, 1, lightness));
-		cumulative[deg] = cumulative[deg - 1] + distance(prev, lab);
+// Cumulative OKLab arc length along a color ramp, in `n` steps of `colorAt`. Plot axes follow arc
+// position, so equal distances on screen cover equal perceived change: in plain HSL units green
+// sprawls across the hue axis and red-to-yellow is squeezed.
+function arcAlong(n, colorAt) {
+	const cumulative = new Float64Array(n + 1);
+	let prev = rgbToOklab(colorAt(0));
+	for (let k = 1; k <= n; ++k) {
+		const lab = rgbToOklab(colorAt(k / n));
+		cumulative[k] = cumulative[k - 1] + distance(prev, lab);
 		prev = lab;
 	}
 	return cumulative;
+}
+
+// Axis position of ramp fraction `t`: how far along the arc it sits, 0 to 1.
+// An identity when the arc has no length: every hue at lightness 0 or 1 is the same black or white.
+function arcFraction(arc, t) {
+	const total = arc[arc.length - 1];
+	if (!total)
+		return t;
+	const scaled = Math.min(t, 1) * (arc.length - 1);
+	const k = Math.min(arc.length - 2, Math.floor(scaled));
+	return (arc[k] + (scaled - k) * (arc[k + 1] - arc[k])) / total;
+}
+
+// The inverse of arcFraction for `steps` evenly spaced axis positions: the ramp fraction drawn at
+// each. Both walk the same direction, so the cursor never rewinds.
+// `last` is the axis position of the final step: 1 where the axis ends at the ramp's extreme,
+// below 1 for the cyclic hue axis, whose final pixel stops short of wrapping back to the start.
+function invertArc(arc, steps, last) {
+	const out = new Float64Array(steps);
+	const total = arc[arc.length - 1];
+	for (let r = 0, k = 0; r < steps; ++r) {
+		const along = r / (steps - 1) * last;
+		const length = along * total;
+		while (k + 2 < arc.length && arc[k + 1] < length)
+			++k;
+		out[r] = total ? (k + (length - arc[k]) / (arc[k + 1] - arc[k])) / (arc.length - 1) : along;
+	}
+	return out;
 }
 
 // Drawn at the in-range lightness nearest 50, where chroma peaks and the field reads clearest.
@@ -785,28 +813,22 @@ function drawHSPlane(cfg, colors) {
 	const data = image.data;
 	const lightness = Math.min(Math.max(50, cfg.lMin), cfg.lMax) / 100;
 
-	const arc = hueArc(lightness);
-	// Zero span at lightness 0 and 1, where every hue is the same black or white: degrees stand in.
-	const span = arc[360];
-	// The inverse map, a hue per pixel column: both walk left to right, so the cursor never rewinds.
-	const hueAt = new Float64Array(w);
-	for (let x = 0, deg = 0; x < w; ++x) {
-		const length = x / w * span;
-		while (arc[deg + 1] < length)
-			++deg;
-		hueAt[x] = span ? deg + (length - arc[deg]) / (arc[deg + 1] - arc[deg]) : x / w * 360;
-	}
+	// The hue arc is sampled finer than the pixel grid, the saturation arcs once per pixel row:
+	// the remap's resolution is set by the canvas, not by a fixed table.
+	const hueArc = arcAlong(4 * w, t => hsl2rgb(t * 360, 1, lightness));
+	const hueAt = invertArc(hueArc, w, (w - 1) / w);
 
-	let i = 0;
-	for (let y = 0; y < h; ++y) {
-		const s = 1 - y / (h - 1);
-		const inSaturation = s * 100 >= cfg.sMin && s * 100 <= cfg.sMax;
+	for (let x = 0; x < w; ++x) {
+		const hue = hueAt[x] * 360;
+		const inHue = cfg.hMin <= cfg.hMax
+			? hue >= cfg.hMin && hue <= cfg.hMax
+			: hue >= cfg.hMin || hue <= cfg.hMax;
+		// Saturation is remapped per column: how fast it changes depends on the hue.
+		const sAt = invertArc(arcAlong(h - 1, t => hsl2rgb(hue, t, lightness)), h, 1);
 
-		for (let x = 0; x < w; ++x) {
-			const hue = hueAt[x];
-			const inHue = cfg.hMin <= cfg.hMax
-				? hue >= cfg.hMin && hue <= cfg.hMax
-				: hue >= cfg.hMin || hue <= cfg.hMax;
+		for (let y = 0; y < h; ++y) {
+			const s = sAt[h - 1 - y];
+			const inSaturation = s * 100 >= cfg.sMin && s * 100 <= cfg.sMax;
 			const rgb = hsl2rgb(hue, s, lightness);
 			let r = rgb[0] * 255, g = rgb[1] * 255, b = rgb[2] * 255;
 
@@ -819,24 +841,21 @@ function drawHSPlane(cfg, colors) {
 				}
 			}
 
-			data[i++] = r;
-			data[i++] = g;
-			data[i++] = b;
-			data[i++] = 255;
+			const at = (y * w + x) * 4;
+			data[at] = r;
+			data[at + 1] = g;
+			data[at + 2] = b;
+			data[at + 3] = 255;
 		}
 	}
 
 	ctx.putImageData(image, 0, 0);
 
 	// The hue axis is cyclic, so a marker within a radius of either edge is drawn again at the other.
-	const xOf = hue => {
-		if (!span)
-			return hue / 360 * w;
-		const deg = Math.min(359, Math.floor(hue));
-		return (arc[deg] + (hue - deg) * (arc[deg + 1] - arc[deg])) / span * w;
-	};
 	for (const color of colors) {
-		const x = xOf(color.h), y = (1 - color.s) * (h - 1);
+		const x = arcFraction(hueArc, color.h / 360) * w;
+		const sArc = arcAlong(h - 1, t => hsl2rgb(color.h, t, lightness));
+		const y = (1 - arcFraction(sArc, color.s)) * (h - 1);
 		drawMarker(ctx, x, y, color);
 		if (x < MARKER_REACH)
 			drawMarker(ctx, x + w, y, color);
@@ -1068,14 +1087,20 @@ function run() {
 
 let runScheduled = false;
 
-// At most one generate outstanding: a drag emits events far faster than the ~200ms a palette
-// costs at the top of the ranges, and each queued event would otherwise be worked off in turn.
-// Not requestAnimationFrame: that never fires while the tab is hidden, stranding the controls.
+// At most one generate outstanding, fired on the next animation frame: a drag emits events far
+// faster than the ~200ms a palette costs at the top of the ranges, and the frame boundary lets
+// the browser paint between runs.
+// A hidden tab gets no frames, so there a timer stands in: the work must not strand until the
+// tab is shown.
 function scheduleRun() {
 	if (runScheduled)
 		return;
 	runScheduled = true;
-	setTimeout(() => { runScheduled = false; run(); }, 0);
+	const fire = () => { runScheduled = false; run(); };
+	if (document.hidden)
+		setTimeout(fire, 0);
+	else
+		requestAnimationFrame(fire);
 }
 
 for (const id of [...STATE_IDS, "fixed-colors"])
