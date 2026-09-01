@@ -1,0 +1,11 @@
+{
+	"version": "0.0.1",
+	"configurations": [
+		{
+			"name": "oklab-3d-demo",
+			"runtimeExecutable": "python",
+			"runtimeArgs": ["-m", "http.server", "8734", "--directory", "E:/Development/Projects/Personal/color-palette-generator"],
+			"port": 8734
+		}
+	]
+}
