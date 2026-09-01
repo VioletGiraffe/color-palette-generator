@@ -15,6 +15,7 @@ Use live online in your browser: https://violetgiraffe.github.io/color-palette-g
 - **See the selected range**: a hue bar and a saturation/lightness plane, with everything outside the range hatched out.
 - **See where the colors landed**: three slices of the perceptual color space (OKLab) at the low, middle and high lightness of the selected range, with a dot for each color on the slice nearest its lightness. Equal distance is equal perceived difference in any direction; a slider sweeps the slices through lightness.
 - **Judge the colors together**: a tight grid of small squares, over a white, black, grey or custom backdrop.
+- **Switch light or dark**: the page follows the system theme; the selector overrides it for the session.
 - **Copy the result**: hex list, CSS custom properties, JSON, or a Python list. Click any swatch to copy its hex.
 - **Get the same palette again**: each one comes from a seed you can set. A fresh load gets a new unique seed.
 - **Save the whole setup**: the state string holds every setting. Copy it, paste it back later or on another machine, and you get the identical palette.

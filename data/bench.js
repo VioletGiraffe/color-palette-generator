@@ -13,8 +13,13 @@ const fs = require("fs");
 const path = require("path");
 
 const pagePath = process.argv[2] || path.join(__dirname, "..", "index.html");
-const source = fs.readFileSync(pagePath, "utf8").match(/<script>([\s\S]*)<\/script>/)[1];
-const body = source.slice(0, source.indexOf("// ---------- ui ----------"));
+
+// The page holds several scripts; the generator's is the one reaching the ui section, and only the
+// part above it runs here - everything below touches the DOM.
+const UI_SECTION = "// ---------- ui ----------";
+const source = [...fs.readFileSync(pagePath, "utf8").matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)]
+	.map(match => match[1]).find(script => script.includes(UI_SECTION));
+const body = source.slice(0, source.indexOf(UI_SECTION));
 globalThis.atob = s => Buffer.from(s, "base64").toString("binary");
 (0, eval)(body + "; globalThis.__page = { generate, CELL_NAMES };");
 
