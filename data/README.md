@@ -35,11 +35,13 @@ notice be kept; `index.html` carries it above the tables.
    agree on; the page marks them with a tilde. They are not excluded from palettes — being hard to
    name is not a defect, and some cells hold little else.
 4. The grid is run-length encoded and base64'd, one symbol per bin carrying the cell and the flag.
+5. A cell-by-cell name overlap matrix (cosine similarity of the cells' mean vote distributions)
+   is emitted alongside: the page's generator uses it to keep same-worded cells apart.
 
 ## Running it
 
 ```
-python data/build_cells.py            # print the two lines to paste into index.html
+python data/build_cells.py            # print the const lines to paste into index.html
 python data/build_cells.py --check    # verify index.html matches; non-zero exit if not
 node data/bench.js [page.html]        # end-to-end: generate palettes, score identification
 ```

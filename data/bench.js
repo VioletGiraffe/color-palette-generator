@@ -110,7 +110,7 @@ for (const box of boxes)
 		let names = 0, gap = 0, score = 0, floor = 0, unsure = 0, ms = 0;
 		for (const seed of seeds) {
 			const t0 = Date.now();
-			const result = __page.generate({ count, seed, fixed: [], ...box });
+			const result = __page.generate({ count, seed, fixed: [], scale: 30, ...box });
 			ms += Date.now() - t0;
 			names += result.named;
 			gap += result.gap;

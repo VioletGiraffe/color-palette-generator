@@ -1,13 +1,14 @@
 # Color palette generator
 
-Generates a set of visually distinct colors, fully customizable, with rich visualization. One HTML file, no dependencies: open `index.html` in a browser.
+Generates a set of colors made to be recognized one at a time, not just told apart side by side - each as nameable and as far from the others as the requested count allows. Fully customizable, with rich visualization. One HTML file, no dependencies: open `index.html` in a browser.
 
 Use live online in your browser: https://violetgiraffe.github.io/color-palette-generator/
 
 ## What you can do
 
 - **Choose how many colors** you need, from 1 to 40.
-- **Set how distinct they have to be**: one slider controls the minimum perceived difference between any two colors.
+- **Set how distinct they have to be**: one slider controls how far apart similarly-named colors must sit to count as distinct. At 0 any visible difference is enough; higher demands colors you could label from memory.
+- **See what each color is called**: every swatch carries the name people most often give that color, from the [xkcd color survey](https://blog.xkcd.com/2010/05/03/color-survey-results/). A tilde marks a color people never settled a name for - as usable as any other, just harder to call something.
 - **Restrict the color space**: min and max sliders for hue, saturation and lightness. The hue range wraps around, so 300-60 covers magenta through yellow.
 - **Generate around colors you already have**: paste any number of hex values as fixed colors. New colors are kept distinct from them. They are shown alongside the result but not counted in Colors and not exported.
 - **See the selected range**: a hue bar and a saturation/lightness plane, with everything outside the range hatched out.
@@ -18,10 +19,24 @@ Use live online in your browser: https://violetgiraffe.github.io/color-palette-g
 - **Save the whole setup**: the state string holds every setting. Copy it, paste it back later or on another machine, and you get the identical palette.
 - **Pin the ones you like**: park any generation in a named list and click it to get it back. This session only, nothing is stored: copy the list out to keep it, and paste it back with Load next time.
 
-## How the distinctness works
+## How the generation works
 
-Colors are picked in HSL, but compared in OKLab. OKLab is perceptually uniform, so equal distances look equally different.
+Two colors can be trivial to tell apart side by side yet impossible to identify alone: shown one
+pale green in isolation, you cannot say which of two pale greens it was. The generator optimizes
+for that isolated recognition, not just pairwise difference.
 
-The slider sets the minimum distance allowed between any two colors. Roughly, 2 is a just-noticeable difference, and 15 to 25 is comfortably distinguishable. At 0 the colors are random and may repeat.
+- Colors are picked in HSL and compared in OKLab, a perceptually uniform space where equal
+  distances look equally different.
+- Every color carries a name, looked up in a partition of color space derived from the xkcd
+  survey's millions of votes (see `data/README.md` for the derivation).
+- Two palette entries are confusable to the degree people use the same words for both colors AND
+  the colors sit close in OKLab. Either alone is survivable: same-named colors far apart are told
+  apart by memory of the color itself.
+- The generator maximizes the identifiability of the worst-off entry. Repeating a name is allowed
+  when the repeat sits far enough away - sometimes that beats a mediocre new name.
+- The Distinctness slider sets how far apart same-named colors must sit before memory is trusted
+  to separate them. It is the strictness of "recognizable alone": 0 falls back to pure OKLab
+  spread, side-by-side distinctness only.
 
-If the range is too narrow / too many colors requested and the target distance is impossible, you get the best palette it could find. The closest pair is reported above the swatches so you can see how far off it was.
+You always get the best palette found; nothing fails outright. The pair likeliest to be mixed up
+is reported above the swatches with its OKLab distance, and outlined.

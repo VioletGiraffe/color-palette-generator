@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Derives the color-naming tables that index.html embeds, from the c3 color naming model.
 
-Run with no arguments to print the two lines to paste into index.html, or with --check to verify
+Run with no arguments to print the const lines to paste into index.html, or with --check to verify
 that the ones already there match what this script produces:
 
     python data/build_cells.py
@@ -153,12 +153,36 @@ def build():
     cells = [(index[term], unsure) for term, unsure in owners]
     rle, axes = encode(model, cells)
     names = [DISPLAY.get(model["terms"][t], model["terms"][t]) for t in order]
-    return names, rle, axes, cells
+    return names, rle, axes, cells, cell_overlap(tallies, cells)
 
 
-def source_lines(names, rle):
+def cell_overlap(tallies, cells):
+    """Name overlap between every pair of cells: cosine similarity of their mean vote
+    distributions, quantized to a byte. The full square matrix, row-major by cell index."""
+    width = 1 + max(term for tally in tallies for term in tally)
+    means = defaultdict(lambda: [0.0] * width)
+    counts = Counter()
+    for tally, (cell, _) in zip(tallies, cells):
+        total = sum(tally.values())
+        for term, count in tally.items():
+            means[cell][term] += count / total
+        counts[cell] += 1
+
+    n = len(means)
+    vecs = [means[cell] for cell in range(n)]
+    norms = [sum(v * v for v in vec) ** 0.5 for vec in vecs]
+    out = bytearray()
+    for a in range(n):
+        for b in range(n):
+            dot = sum(x * y for x, y in zip(vecs[a], vecs[b]))
+            out.append(round(255 * dot / (norms[a] * norms[b])))
+    return base64.b64encode(bytes(out)).decode()
+
+
+def source_lines(names, rle, overlap):
     return ("const CELL_NAMES = [%s];" % ", ".join('"%s"' % n for n in names),
-            'const CELL_GRID_RLE = "%s";' % rle)
+            'const CELL_GRID_RLE = "%s";' % rle,
+            'const CELL_OVERLAP_B64 = "%s";' % overlap)
 
 
 def main():
@@ -166,8 +190,8 @@ def main():
     parser.add_argument("--check", action="store_true", help="compare against index.html instead of printing")
     args = parser.parse_args()
 
-    names, rle, axes, cells = build()
-    names_line, rle_line = source_lines(names, rle)
+    names, rle, axes, cells, overlap = build()
+    names_line, rle_line, overlap_line = source_lines(names, rle, overlap)
 
     if not args.check:
         print("// grid: L %d..%d, a %d..%d, b %d..%d, step %d"
@@ -177,11 +201,13 @@ def main():
               % (len(names), sum(1 for _, unsure in cells if unsure), len(cells)))
         print(names_line)
         print(rle_line)
+        print(overlap_line)
         return
 
     with open(PAGE, encoding="utf-8") as f:
         page = f.read()
-    stale = [label for label, line in (("CELL_NAMES", names_line), ("CELL_GRID_RLE", rle_line))
+    stale = [label for label, line in (("CELL_NAMES", names_line), ("CELL_GRID_RLE", rle_line),
+                                       ("CELL_OVERLAP_B64", overlap_line))
              if line not in page]
     if stale:
         sys.exit("index.html is out of date with this script: " + ", ".join(stale))
