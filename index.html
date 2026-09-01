@@ -632,12 +632,92 @@ const SAMPLING_HEADROOM = 4;
 const ALL_INCLUDED = Array.from({ length: NAME_SLOTS }, () => true);
 const NO_GROUPS = Array.from({ length: NAME_SLOTS }, (_, cell) => cell);
 
+// Drawing evenly across the HSL box does not draw evenly across OKLab, the space every distance
+// here is measured in: over a default box the candidates per unit of perceived difference vary
+// about 17x, thickest around green and thinnest around blue, which alone differ by 5.6x. The table
+// below records how much OKLab volume each part of the box stands for, and a draw is kept in
+// proportion to it.
+// The grid is coarse deliberately. What survives is a spread of 1.1x against that 17x, and the
+// cells it gets worst - those collapsing towards black or white - are the ones it rejects almost
+// entirely anyway.
+const DENSITY_GRID = [24, 12, 12];
+const DENSITY_STEP = 1e-4;
+
+// OKLab volume per unit of HSL at one point: the determinant of the map's Jacobian, by central
+// differences. Steps past the 0 and 1 ends of saturation and lightness stay continuous through
+// hsl2rgb and rgbToOklab, so edge nodes need no case of their own.
+function oklabVolume(h, s, l) {
+	const slope = (dh, ds, dl) => {
+		const ahead = rgbToOklab(hsl2rgb(h + dh, s + ds, l + dl));
+		const behind = rgbToOklab(hsl2rgb(h - dh, s - ds, l - dl));
+		return ahead.map((value, i) => (value - behind[i]) / (2 * DENSITY_STEP));
+	};
+	const x = slope(DENSITY_STEP, 0, 0), y = slope(0, DENSITY_STEP, 0), z = slope(0, 0, DENSITY_STEP);
+	return Math.abs(x[0] * (y[1] * z[2] - y[2] * z[1])
+		- y[0] * (x[1] * z[2] - x[2] * z[1])
+		+ z[0] * (x[1] * y[2] - x[2] * y[1]));
+}
+
+// Built once per generate, read for every candidate: a few milliseconds against the hundreds of
+// thousands of draws a run makes.
+function buildDensity(cfg) {
+	const [nh, ns, nl] = DENSITY_GRID;
+	const density = {
+		table: new Float64Array((nh + 1) * (ns + 1) * (nl + 1)),
+		peak: 0,
+		// A hue range with min > max wraps through 0.
+		h0: cfg.hMin, hSpan: cfg.hMin <= cfg.hMax ? cfg.hMax - cfg.hMin : 360 - cfg.hMin + cfg.hMax,
+		s0: cfg.sMin / 100, sSpan: (cfg.sMax - cfg.sMin) / 100,
+		l0: cfg.lMin / 100, lSpan: (cfg.lMax - cfg.lMin) / 100
+	};
+
+	for (let i = 0; i <= nh; ++i)
+		for (let j = 0; j <= ns; ++j)
+			for (let k = 0; k <= nl; ++k) {
+				const volume = oklabVolume((density.h0 + density.hSpan * i / nh) % 360,
+					density.s0 + density.sSpan * j / ns, density.l0 + density.lSpan * k / nl);
+				density.table[(i * (ns + 1) + j) * (nl + 1) + k] = volume;
+				density.peak = Math.max(density.peak, volume);
+			}
+	return density;
+}
+
+// The point's position in grid cells along one axis, held inside the last cell so both nodes it
+// interpolates between exist. A collapsed range spans no cells and sits at its single node.
+const densityAxis = (offset, span, divisions) =>
+	span > 0 ? Math.min(divisions - 1e-9, Math.max(0, offset / span * divisions)) : 0;
+
+// Trilinear between the eight nodes around the point.
+function densityAt(density, h, s, l) {
+	const [nh, ns, nl] = DENSITY_GRID;
+	const u = densityAxis((h - density.h0 + 360) % 360, density.hSpan, nh);
+	const v = densityAxis(s - density.s0, density.sSpan, ns);
+	const w = densityAxis(l - density.l0, density.lSpan, nl);
+	const i = Math.floor(u), j = Math.floor(v), k = Math.floor(w);
+	const fu = u - i, fv = v - j, fw = w - k;
+	const at = (di, dj, dk) => density.table[((i + di) * (ns + 1) + j + dj) * (nl + 1) + k + dk];
+
+	return at(0, 0, 0) * (1 - fu) * (1 - fv) * (1 - fw) + at(1, 0, 0) * fu * (1 - fv) * (1 - fw)
+		+ at(0, 1, 0) * (1 - fu) * fv * (1 - fw) + at(1, 1, 0) * fu * fv * (1 - fw)
+		+ at(0, 0, 1) * (1 - fu) * (1 - fv) * fw + at(1, 0, 1) * fu * (1 - fv) * fw
+		+ at(0, 1, 1) * (1 - fu) * fv * fw + at(1, 1, 1) * fu * fv * fw;
+}
+
+// A box that is nearly all degenerate - a lightness range pressed against black - accepts rarely,
+// so the tries are capped and the last draw stands. Such a box takes 6 tries on average and was
+// measured to reach 60, so the cap is set well clear of it rather than just above.
+const UNIFORM_TRIES = 256;
+
 function sampleColor(rnd, cfg) {
-	// A hue range with min > max wraps through 0.
-	const span = cfg.hMin <= cfg.hMax ? cfg.hMax - cfg.hMin : 360 - cfg.hMin + cfg.hMax;
-	const h = (cfg.hMin + rnd() * span) % 360;
-	const s = (cfg.sMin + rnd() * (cfg.sMax - cfg.sMin)) / 100;
-	const l = (cfg.lMin + rnd() * (cfg.lMax - cfg.lMin)) / 100;
+	const density = cfg.density;
+	let h = 0, s = 0, l = 0;
+	for (let n = 0; n < UNIFORM_TRIES; ++n) {
+		h = (density.h0 + rnd() * density.hSpan) % 360;
+		s = density.s0 + rnd() * density.sSpan;
+		l = density.l0 + rnd() * density.lSpan;
+		if (rnd() * density.peak <= densityAt(density, h, s, l))
+			break;
+	}
 	const rgb = hsl2rgb(h, s, l);
 	return { h, s, l, rgb, lab: rgbToOklab(rgb), hex: toHex(rgb), ...cellOf(rgb) };
 }
@@ -784,7 +864,8 @@ const betterAttempt = (a, b) => a.excluded !== b.excluded ? a.excluded < b.exclu
 // Callers that set no name tables generate as though every name were included and none merged,
 // which is what the page did before either could be chosen.
 function generate(cfg) {
-	const settings = { ...cfg, included: cfg.included || ALL_INCLUDED, groupOf: cfg.groupOf || NO_GROUPS };
+	const settings = { ...cfg, included: cfg.included || ALL_INCLUDED, groupOf: cfg.groupOf || NO_GROUPS,
+		density: buildDensity(cfg) };
 	let best = null;
 	for (let n = 0; n < RESTARTS; ++n) {
 		const rnd = mulberry32(settings.seed + n * 7919);

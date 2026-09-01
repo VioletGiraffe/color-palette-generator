@@ -27,7 +27,8 @@ pale green in isolation, you cannot say which of two pale greens it was. The gen
 for that isolated recognition, not just pairwise difference.
 
 - Colors are picked in HSL and compared in OKLab, a perceptually uniform space where equal
-  distances look equally different.
+  distances look equally different. Candidates are drawn evenly through OKLab rather than through
+  HSL, which packs far more colors into some regions than others.
 - Every color carries a name, looked up in a partition of color space derived from the xkcd
   survey's millions of votes (see `data/README.md` for the derivation).
 - Two palette entries are confusable to the degree people use the same words for both colors AND
