@@ -19,8 +19,8 @@
 	}
 	@media (prefers-color-scheme: dark) {
 		:root {
-			--bg: #17171a;
-			--panel: #212127;
+			--bg: #0a0a0c;
+			--panel: #131317;
 			--ink: #ececf0;
 			--ink-dim: #9a9aa6;
 			--line: #35353f;
@@ -34,7 +34,7 @@
 
 	body {
 		margin: 0;
-		padding: 20px;
+		padding: 0 20px 20px;
 		background: var(--bg);
 		color: var(--ink);
 		font: 14px/1.45 system-ui, "Segoe UI", sans-serif;
@@ -189,7 +189,7 @@
 	#name-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 	.name-group { display: flex; gap: 4px; }
 	/* Boxed only once it holds more than one name, which is when the box means something. */
-	.name-group.merged { padding: 4px; border: 1px solid var(--accent); border-radius: 8px; }
+	.name-group.merged { padding: 4px; border: 2px solid var(--accent); border-radius: 8px; }
 	.name-chip { position: relative; width: 104px; border: 1px solid var(--line); border-radius: 6px;
 		overflow: hidden; cursor: grab; background: none; touch-action: none; user-select: none; }
 	/* Its own dark plate, so the glyph carries over whatever territory is behind it. */
