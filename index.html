@@ -143,9 +143,11 @@
 
 	/* Outline rather than a border: it is drawn outside the box, so it neither shifts the grid
 	   nor covers any of the color being judged.
-	   .fixed comes first, so a fixed color that is also the closest pair shows the amber. */
+	   .fixed comes first, so a fixed color that is also the closest pair shows the amber;
+	   .hilite last, so the hovered color shows over either. */
 	.fixed { outline: 2px dashed var(--ink-dim); outline-offset: 1px; }
 	.clash { outline: 2px solid var(--warn); outline-offset: 1px; }
+	.hilite { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 	#fixed-colors { width: 100%; height: 56px; resize: vertical; font: 11px/1.5 ui-monospace, Consolas, monospace; }
 	#fixed-preview { display: flex; height: 18px; margin-top: 6px; border-radius: 4px; overflow: hidden; }
@@ -283,7 +285,7 @@
 	<div class="hint">Slices of the color space (OKLab) at the low, middle and high lightness of the selected range: angle is hue, distance from the grey centre is vividness. Equal distance is equal perceived difference in any direction; rings are 10 &Delta;E apart. Dots are the generated colors on the slice nearest their lightness, triangles the fixed ones; hatching is outside the selected ranges. The slider sweeps the slices through lightness.</div>
 
 	<div class="plane" id="gamut-3d"></div>
-	<div class="hint">The sRGB gamut in OKLab: lightness up, the slices' hue-vividness plane around it. The solid body is what the selected H/S/L ranges leave; the translucent shell is the rest of the gamut. Spheres are the generated colors, cones the fixed ones, rings the three slice planes. Drag to rotate, wheel to zoom.</div>
+	<div class="hint">The sRGB gamut in OKLab: lightness up, the slices' hue-vividness plane around it. The solid body is what the selected H/S/L ranges leave; the translucent shell is the rest of the gamut. Spheres are the generated colors, cones the fixed ones, rings the three slice planes; the amber line joins the hardest pair to tell apart. Drag to rotate, wheel to zoom. Hovering a color - swatch, slice dot or sphere - highlights it in every view.</div>
 
 	<hr>
 
@@ -682,6 +684,13 @@ let palette = [];
 // The slice lightness levels last drawn: the 3D module reads them when it loads, after the
 // first drawSlices has already run.
 let lastSliceLevels = [];
+// The last result's hardest pair: read by the 3D module at load for the same reason.
+let lastWorstPair = null;
+// Per slice: the canvas, the kept field image and the drawn marker positions, so a highlight
+// change repaints markers and hovering hit-tests them without recomputing the field.
+let sliceDraws = [];
+// The color hovered in any view, highlighted in all of them.
+let highlightedColor = null;
 
 const ordered = (a, b) => a <= b ? [a, b] : [b, a];
 
@@ -797,13 +806,8 @@ const RING_STEP = 0.1;       // 10 deltaE between rings
 const greyOklabL = l => Math.cbrt(srgbToLinear(l));
 
 // The mask is per-pixel: the in-range region of a slice is curved, no overlay bands can follow it.
-function drawSlice(canvas, level, cfg, colors) {
-	const w = canvas.clientWidth, h = canvas.clientHeight;
-	canvas.width = w;
-	canvas.height = h;
-
-	const ctx = canvas.getContext("2d");
-	const image = ctx.createImageData(w, h);
+function sliceField(w, h, level, cfg) {
+	const image = new ImageData(w, h);
 	const data = image.data;
 	const L = greyOklabL(level / 100);
 	const cx = w / 2, cy = h / 2, scale = Math.min(w, h) / 2 / SLICE_EXTENT;
@@ -837,6 +841,16 @@ function drawSlice(canvas, level, cfg, colors) {
 			data[i + 3] = 255;
 		}
 
+	return image;
+}
+
+// Rings and markers over the kept field image: a highlight change repaints without recomputing
+// the per-pixel field. Records each marker's position for the hover hit-test.
+function paintSlice(slice) {
+	const { canvas, image, colors } = slice;
+	const cx = canvas.width / 2, cy = canvas.height / 2;
+	const scale = Math.min(canvas.width, canvas.height) / 2 / SLICE_EXTENT;
+	const ctx = canvas.getContext("2d");
 	ctx.putImageData(image, 0, 0);
 
 	ctx.strokeStyle = "rgba(200, 200, 200, 0.4)";
@@ -847,8 +861,17 @@ function drawSlice(canvas, level, cfg, colors) {
 		ctx.stroke();
 	}
 
-	for (const color of colors)
-		drawMarker(ctx, cx + color.lab[1] * scale, cy - color.lab[2] * scale, color);
+	slice.marks = colors.map(color => ({ x: cx + color.lab[1] * scale, y: cy - color.lab[2] * scale, color }));
+	for (const { x, y, color } of slice.marks) {
+		drawMarker(ctx, x, y, color);
+		if (color === highlightedColor) {
+			ctx.beginPath();
+			ctx.arc(x, y, (color.fixed ? TRIANGLE_RADIUS : DOT_RADIUS) + 4, 0, Math.PI * 2);
+			ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue("--accent").trim();
+			ctx.lineWidth = 2;
+			ctx.stroke();
+		}
+	}
 }
 
 // The sweep slider's lightness in the middle, the range's half-width to either side: at the
@@ -874,10 +897,15 @@ function drawSlices(cfg, colors) {
 		perSlice[at].push(color);
 	}
 
-	for (let i = 0; i < levels.length; ++i) {
-		$("slice-label-" + i).textContent = "L " + Math.round(levels[i]) + "%";
-		drawSlice($("slice-" + i), levels[i], cfg, perSlice[i]);
-	}
+	sliceDraws = levels.map((level, i) => {
+		$("slice-label-" + i).textContent = "L " + Math.round(level) + "%";
+		const canvas = $("slice-" + i);
+		canvas.width = canvas.clientWidth;
+		canvas.height = canvas.clientHeight;
+		const slice = { canvas, image: sliceField(canvas.width, canvas.height, level, cfg), colors: perSlice[i] };
+		paintSlice(slice);
+		return slice;
+	});
 }
 
 function refreshBars(cfg) {
@@ -912,6 +940,9 @@ function sortedByHue(colors, hMin) {
 
 function render(result, cfg) {
 	palette = $("sort").checked ? sortedByHue(result.colors, cfg.hMin) : result.colors;
+	lastWorstPair = result.pair;
+	// Every view is rebuilt below without a highlight; the hovered object may not even survive.
+	highlightedColor = null;
 
 	const status = $("status");
 	// A null pair means no measurable one at all: one color and nothing fixed to place it against.
@@ -923,8 +954,8 @@ function render(result, cfg) {
 	const clashing = new Set(result.pair || []);
 	const marks = c => (c.fixed ? " fixed" : "") + (clashing.has(c) ? " clash" : "");
 
-	$("swatches").innerHTML = palette.map(c =>
-		'<button class="swatch' + marks(c) + '" data-hex="' + c.hex + '">'
+	$("swatches").innerHTML = palette.map((c, i) =>
+		'<button class="swatch' + marks(c) + '" data-hex="' + c.hex + '" data-index="' + i + '">'
 			+ '<div class="chip" style="background:' + c.hex + '"></div>'
 			+ '<div class="meta"><div class="hex">' + c.hex.toUpperCase() + '</div>'
 			+ '<div class="name"' + (c.confident ? "" : UNSURE_TITLE) + '>' + cellLabel(c) + '</div>'
@@ -933,13 +964,13 @@ function render(result, cfg) {
 
 	// Columns from the square root, so the block's bounding box is the nearest thing to a square.
 	$("tiles").style.setProperty("--cols", Math.ceil(Math.sqrt(palette.length)));
-	$("tiles").innerHTML = palette.map(c =>
-		'<div class="' + marks(c).trim() + '" style="background:' + c.hex + '" title="'
+	$("tiles").innerHTML = palette.map((c, i) =>
+		'<div class="' + marks(c).trim() + '" data-index="' + i + '" style="background:' + c.hex + '" title="'
 			+ c.hex.toUpperCase() + " · " + cellLabel(c) + (c.fixed ? " (fixed)" : "") + '"></div>').join("");
 
 	drawSlices(cfg, palette);
 	if (window.update3D)
-		window.update3D(cfg, palette);
+		window.update3D(cfg, palette, result.pair);
 	refreshExport();
 }
 
@@ -1185,6 +1216,56 @@ $("swatches").addEventListener("click", e => {
 	if (swatch) copy(swatch.dataset.hex.toUpperCase(), swatch.querySelector(".hex"), "copied");
 });
 
+// ---------- cross-view highlight ----------
+
+// The hovered color, marked in every view at once: swatch and tile outline, a ring on its slice
+// dot, the enlarged 3D marker. Null clears.
+function setHighlight(color) {
+	if (color === highlightedColor)
+		return;
+	highlightedColor = color;
+	const index = color ? palette.indexOf(color) : -1;
+	for (const box of ["swatches", "tiles"])
+		[...$(box).children].forEach((el, i) => el.classList.toggle("hilite", i === index));
+	sliceDraws.forEach(paintSlice);
+	if (window.highlight3D)
+		window.highlight3D(color);
+}
+
+for (const id of ["swatches", "tiles"]) {
+	$(id).addEventListener("mouseover", e => {
+		const el = e.target.closest("[data-index]");
+		if (el)
+			setHighlight(palette[+el.dataset.index]);
+	});
+	$(id).addEventListener("mouseleave", () => setHighlight(null));
+}
+
+// Slice dots are canvas pixels, so hovering one is a hit-test against the recorded positions.
+const SLICE_HIT_RADIUS = 10;
+for (let i = 0; i < 3; ++i) {
+	const canvas = $("slice-" + i);
+	canvas.addEventListener("mousemove", e => {
+		const slice = sliceDraws.find(s => s.canvas === canvas);
+		if (!slice)
+			return;
+		const rect = canvas.getBoundingClientRect();
+		const x = e.clientX - rect.left, y = e.clientY - rect.top;
+		let hit = null, nearest = SLICE_HIT_RADIUS ** 2;
+		for (const mark of slice.marks) {
+			const apart = (mark.x - x) ** 2 + (mark.y - y) ** 2;
+			if (apart < nearest) {
+				nearest = apart;
+				hit = mark.color;
+			}
+		}
+		canvas.style.cursor = hit ? "pointer" : "";
+		canvas.title = hit ? hit.hex.toUpperCase() + " · " + cellLabel(hit) : "";
+		setHighlight(hit);
+	});
+	canvas.addEventListener("mouseleave", () => setHighlight(null));
+}
+
 $("copy").addEventListener("click", e => copy($("export").value, e.currentTarget, "Copied"));
 
 $("state-copy").addEventListener("click", e => copy($("state").value, e.currentTarget, "Copied"));
@@ -1390,8 +1471,9 @@ scene.add(new THREE.Line(
 	new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, -0.5, 0), new THREE.Vector3(0, 0.5, 0)]),
 	new THREE.LineBasicMaterial({ color: 0x9298a4 })));
 
-const regionGroup = new THREE.Group(), markerGroup = new THREE.Group(), ringGroup = new THREE.Group();
-scene.add(regionGroup, markerGroup, ringGroup);
+const regionGroup = new THREE.Group(), markerGroup = new THREE.Group(),
+	ringGroup = new THREE.Group(), pairGroup = new THREE.Group();
+scene.add(regionGroup, markerGroup, ringGroup, pairGroup);
 
 // Every rebuilt mesh owns its geometry and material, so a rebuild can dispose both.
 function clearGroup(group) {
@@ -1435,6 +1517,7 @@ function markerMeshes(colors) {
 		const ghosted = { transparent: true, opacity: 0.45, depthFunc: THREE.GreaterDepth, depthWrite: false };
 
 		const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: color.hex }));
+		mesh.userData.color = color;
 		mesh.position.set(...toScene(color.lab));
 		for (const [settings, order, scale] of [
 			[{ color: contrast, side: THREE.BackSide }, 0, 1.35],
@@ -1463,13 +1546,64 @@ function ringMeshes(levels) {
 	});
 }
 
-window.update3D = (cfg, colors) => {
+// The hardest pair, joined in the warning amber of the swatch outlines. Depth testing is off:
+// the line is an annotation over the scene, not a body in it.
+function pairMesh(pair) {
+	const ends = pair.map(color => new THREE.Vector3(...toScene(color.lab)));
+	const direction = ends[1].clone().sub(ends[0]);
+	if (direction.length() < 1e-4)
+		return null;
+
+	// Trimmed at both ends: drawn over everything, the line would otherwise cross the markers.
+	const trim = Math.min(0.018, direction.length() / 3);
+	const warn = getComputedStyle(document.body).getPropertyValue("--warn").trim();
+	const mesh = new THREE.Mesh(
+		new THREE.CylinderGeometry(0.004, 0.004, direction.length() - 2 * trim, 8),
+		new THREE.MeshBasicMaterial({ color: warn, transparent: true, opacity: 0.9, depthTest: false }));
+	mesh.position.copy(ends[0]).add(ends[1]).multiplyScalar(0.5);
+	mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+	mesh.renderOrder = 3;
+	return mesh;
+}
+
+window.update3D = (cfg, colors, pair) => {
 	clearGroup(regionGroup);
 	regionGroup.add(...regionMeshes(cfg));
 	clearGroup(markerGroup);
 	if (colors.length)
 		markerGroup.add(...markerMeshes(colors));
+	clearGroup(pairGroup);
+	const line = pair ? pairMesh(pair) : null;
+	if (line)
+		pairGroup.add(line);
 };
+
+window.highlight3D = color => {
+	for (const marker of markerGroup.children)
+		marker.scale.setScalar(marker.userData.color === color ? 1.7 : 1);
+};
+
+// Marker hover: the shared highlight, plus a pointer cursor and a hex-and-name tooltip.
+const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
+renderer.domElement.addEventListener("pointermove", e => {
+	// Buttons down means the pointer is steering the camera.
+	if (e.buttons)
+		return;
+
+	const rect = renderer.domElement.getBoundingClientRect();
+	pointer.set((e.clientX - rect.left) / rect.width * 2 - 1, 1 - (e.clientY - rect.top) / rect.height * 2);
+	raycaster.setFromCamera(pointer, camera);
+	const hit = raycaster.intersectObjects(markerGroup.children, true)[0];
+	let marker = hit ? hit.object : null;
+	while (marker && marker.parent !== markerGroup)
+		marker = marker.parent;
+
+	const color = marker ? marker.userData.color : null;
+	renderer.domElement.style.cursor = color ? "pointer" : "";
+	renderer.domElement.title = color ? color.hex.toUpperCase() + " · " + cellLabel(color) : "";
+	setHighlight(color);
+});
+renderer.domElement.addEventListener("pointerleave", () => setHighlight(null));
 
 window.update3DSlices = levels => {
 	clearGroup(ringGroup);
@@ -1490,7 +1624,7 @@ window.addEventListener("resize", resize);
 resize();
 
 // The classic script has already generated and drawn: pick up its state, then follow its hooks.
-window.update3D(readConfig(), palette);
+window.update3D(readConfig(), palette, lastWorstPair);
 window.update3DSlices(lastSliceLevels);
 
 // The loop runs only while the panel is on screen. A hidden tab needs no handling of its own:
