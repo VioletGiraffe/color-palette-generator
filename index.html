@@ -168,7 +168,10 @@
 	   so anything between them competes with what is being judged. Fixed-width tracks, so the
 	   block stays compact rather than stretching the tiles across the panel. */
 	#tiles { display: grid; grid-template-columns: repeat(var(--cols, 1), 24px); gap: 4px; margin-top: 12px; }
-	#tiles div { aspect-ratio: 1; }
+	/* Thinner and fainter than the same marks on the swatches: against a 24px tile, the outlines in
+	   the block below read as a frame competing with the color rather than a mark on it.
+	   --mark is the marker's color, set by whichever of those rules applies. */
+	#tiles div { aspect-ratio: 1; outline-width: 1px; outline-color: color-mix(in srgb, var(--mark) 60%, transparent); }
 
 	.swatch { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; cursor: pointer; background: none; padding: 0; text-align: left; display: block; width: 100%; }
 	.swatch:hover { border-color: var(--swatch-hover); }
@@ -182,10 +185,10 @@
 	   nor covers any of the color being judged.
 	   The later rule wins: .fixed and .off-name come before .clash, so a color that is also the
 	   closest pair shows the amber, and .hilite last, so a hovered color shows over all of them. */
-	.fixed { outline: 2px dashed var(--ink-dim); outline-offset: 1px; }
-	.off-name { outline: 2px dotted var(--warn); outline-offset: 1px; }
-	.clash { outline: 2px solid var(--warn); outline-offset: 1px; }
-	.hilite { outline: 2px solid var(--accent); outline-offset: 1px; }
+	.fixed { --mark: var(--ink-dim); outline: 2px dashed var(--mark); outline-offset: 1px; }
+	.off-name { --mark: var(--warn); outline: 2px dotted var(--mark); outline-offset: 1px; }
+	.clash { --mark: var(--warn); outline: 2px solid var(--mark); outline-offset: 1px; }
+	.hilite { --mark: var(--accent); outline: 2px solid var(--mark); outline-offset: 1px; }
 
 	/* A name chip carries the chip height of a palette swatch, so a name's territory reads at the
 	   size the colors themselves do. */
