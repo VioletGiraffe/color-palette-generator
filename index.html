@@ -175,11 +175,30 @@
 
 	/* Outline rather than a border: it is drawn outside the box, so it neither shifts the grid
 	   nor covers any of the color being judged.
-	   .fixed comes first, so a fixed color that is also the closest pair shows the amber;
-	   .hilite last, so the hovered color shows over either. */
+	   The later rule wins: .fixed and .off-name come before .clash, so a color that is also the
+	   closest pair shows the amber, and .hilite last, so a hovered color shows over all of them. */
 	.fixed { outline: 2px dashed var(--ink-dim); outline-offset: 1px; }
+	.off-name { outline: 2px dotted var(--warn); outline-offset: 1px; }
 	.clash { outline: 2px solid var(--warn); outline-offset: 1px; }
 	.hilite { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+	/* A name chip carries the chip height of a palette swatch, so a name's territory reads at the
+	   size the colors themselves do. */
+	#name-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+	.name-group { display: flex; gap: 4px; }
+	/* Boxed only once it holds more than one name, which is when the box means something. */
+	.name-group.merged { padding: 4px; border: 1px solid var(--accent); border-radius: 8px; }
+	.name-chip { width: 104px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden;
+		cursor: grab; background: none; touch-action: none; user-select: none; }
+	.name-chip:hover { border-color: var(--swatch-hover); }
+	.name-chip canvas { display: block; width: 100%; height: 64px; }
+	.name-chip .meta { padding: 4px 6px; font-size: 11px; line-height: 1.3; color: var(--ink); }
+	.name-chip .meta div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.name-chip .meta .level { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+	.name-chip.off { opacity: .38; }
+	.name-chip.off .meta .name { text-decoration: line-through; }
+	.name-chip.dragging { opacity: .5; cursor: grabbing; }
+	.name-chip.target { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 
 	#fixed-colors { width: 100%; height: 56px; resize: vertical; font: 11px/1.5 ui-monospace, Consolas, monospace; }
 	#fixed-preview { display: flex; height: 18px; margin-top: 6px; border-radius: 4px; overflow: hidden; }
@@ -311,6 +330,18 @@
 		<span style="font-size: 12px; color: var(--ink-dim)" id="hs-l-value"></span>
 	</div>
 	<div class="hint">Hue across, saturation up, at the chart lightness. Both axes are spaced by perceived change (OKLab arc length): the saturation axis exactly, per column; the hue axis as the average over saturations, since one shared axis cannot be exact for every row. Dots are the generated colors, triangles the fixed ones; hatching is outside the selected ranges.</div>
+
+	<hr>
+
+	<div class="bar">
+		<h2 style="margin:0; flex:1">Names</h2>
+		<span style="font-size:12px; color:var(--ink-dim)" id="names-summary"></span>
+		<button id="names-toggle">Hide</button>
+	</div>
+	<div id="names-body">
+		<div id="name-chips"></div>
+		<div class="hint">Every name the generator can reach, each drawn at the lightness where it covers the most ground - nine of them, white and black among them, cover nothing at all at mid lightness. Click a name to stop the generator using it; fixed colors are exempt. Drag one name onto another to merge them: merged names generate as a single name, so two colors sharing one have to sit further apart, while each swatch keeps its own label. Drag a name out of its box to split it off.</div>
+	</div>
 
 	<hr>
 
@@ -539,6 +570,10 @@ function cellOf(rgb) {
 
 const cellName = cell => CELL_NAMES[cell];
 
+// Cell-indexed tables run one slot past the names: a color the grid places outside the survey's
+// gamut carries OUTSIDE_GAMUT, which must read as an ordinary included, ungrouped name.
+const NAME_SLOTS = CELL_NAMES.length + 1;
+
 // ---------- generation ----------
 
 function mulberry32(seed) {
@@ -559,6 +594,13 @@ const RESTARTS = 2;
 // whatever their cells: measured from the survey, colors share words across a cell boundary as
 // freely as inside one. Floors CELL_OVERLAP, which is blind to position within a cell.
 const NAME_DECORRELATION = 15;
+// Sampling stops once this many times the candidate budget has been drawn, so a range holding no
+// included name still terminates and falls back on the colors it did find.
+const SAMPLING_HEADROOM = 4;
+
+// The name tables generation reads when the caller supplies none: every name usable, none merged.
+const ALL_INCLUDED = Array.from({ length: NAME_SLOTS }, () => true);
+const NO_GROUPS = Array.from({ length: NAME_SLOTS }, (_, cell) => cell);
 
 function sampleColor(rnd, cfg) {
 	// A hue range with min > max wraps through 0.
@@ -585,39 +627,54 @@ function parseFixedColors(text) {
 }
 
 // How much people share words for the two colors' cells, faded by distance: same-worded colors
-// far apart are still told apart by memory of the color itself. `scale` is the Distinctness
+// far apart are still told apart by memory of the color itself. `cfg.scale` is the Distinctness
 // slider - same-named colors that far apart in deltaE are 1/e as confusable. Provisional
 // calibration: a single known-bad palette; data/bench.js judges at a fixed 30 regardless.
-function confusability(a, b, apart, scale) {
-	const overlap = Math.max(CELL_OVERLAP[a.cell * CELL_NAMES.length + b.cell] / 255,
-		Math.exp(-((apart / NAME_DECORRELATION) ** 2)));
-	return overlap * Math.exp(-apart / Math.max(scale, 1e-9));
+// Cells the user merged overlap fully, which is what two colors of one cell already score.
+function confusability(a, b, apart, cfg) {
+	const overlap = cfg.groupOf[a.cell] === cfg.groupOf[b.cell] ? 1
+		: Math.max(CELL_OVERLAP[a.cell * CELL_NAMES.length + b.cell] / 255,
+			Math.exp(-((apart / NAME_DECORRELATION) ** 2)));
+	return overlap * Math.exp(-apart / Math.max(cfg.scale, 1e-9));
 }
 
 // The color's identifiability against the palette: 1 minus its worst confusability, ignoring the
 // entry at `skip`. A repeated name is only as bad as its distance.
 // `gap`, the plain deltaE to the nearest entry, breaks ties between equal scores: at scale 0
 // every score is 1 and spreading colors apart is all that generation is left doing.
-function clearance(color, colors, skip, scale) {
+function clearance(color, colors, skip, cfg) {
 	let score = 1, gap = Infinity;
 	for (let i = 0; i < colors.length; ++i)
 		if (i !== skip) {
 			const apart = distance(color.lab, colors[i].lab);
-			score = Math.min(score, 1 - confusability(color, colors[i], apart, scale));
+			score = Math.min(score, 1 - confusability(color, colors[i], apart, cfg));
 			gap = Math.min(gap, apart);
 		}
-	return { score, gap };
+	return { included: cfg.included[color.cell], score, gap };
 }
 
-const clearer = (a, b) => a.score > b.score || (a.score === b.score && a.gap > b.gap);
+// Carrying an included name outranks any score: an excluded color loses to every included one, so
+// candidates in excluded names are passed over and colors already in one are relocated first.
+const clearer = (a, b) => a.included !== b.included ? a.included
+	: a.score !== b.score ? a.score > b.score
+	: a.gap > b.gap;
 
 // The best of a batch of random candidates: the one the palette confuses least.
 // `skip` is the entry being replaced, or -1 when appending.
+// The batch is filled with candidates in included names, so excluding names costs draws, not
+// candidate quality. Excluded candidates go unscored once one included candidate is in hand, and
+// are kept until then: a range reaching no included name still yields a palette.
+// With nothing excluded the draw is exactly `budget`, on the random sequence a seed always had.
 function bestCandidate(rnd, cfg, colors, skip, budget) {
-	let color = null, best = { score: -Infinity, gap: -Infinity };
-	for (let n = 0; n < budget; ++n) {
+	let color = null, best = { included: false, score: -Infinity, gap: -Infinity };
+	for (let n = 0, found = 0; n < budget * SAMPLING_HEADROOM && found < budget; ++n) {
 		const candidate = sampleColor(rnd, cfg);
-		const candidateScore = clearance(candidate, colors, skip, cfg.scale);
+		if (cfg.included[candidate.cell])
+			++found;
+		else if (found)
+			continue;
+
+		const candidateScore = clearance(candidate, colors, skip, cfg);
 		if (clearer(candidateScore, best)) {
 			color = candidate;
 			best = candidateScore;
@@ -642,7 +699,7 @@ function relocate(rnd, cfg, colors, rounds) {
 			if (colors[i].fixed)
 				continue;
 
-			const score = clearance(colors[i], colors, i, cfg.scale);
+			const score = clearance(colors[i], colors, i, cfg);
 			if (!least || clearer(least, score)) {
 				least = score;
 				victim = i;
@@ -670,7 +727,7 @@ function minimumGap(colors) {
 
 // The pair a viewer is likeliest to mix up, and its deltaE. Null pair below two colors, where no
 // pair exists. Distance breaks ties, so a tie at scale 0 still points at the closest pair.
-function worstPair(colors, scale) {
+function worstPair(colors, cfg) {
 	let pair = null, apart = Infinity, worst = -1;
 	for (let i = 0; i < colors.length; ++i)
 		for (let j = i + 1; j < colors.length; ++j) {
@@ -678,7 +735,7 @@ function worstPair(colors, scale) {
 				continue;
 
 			const d = distance(colors[i].lab, colors[j].lab);
-			const c = confusability(colors[i], colors[j], d, scale);
+			const c = confusability(colors[i], colors[j], d, cfg);
 			if (c > worst || (c === worst && d < apart)) {
 				worst = c;
 				pair = [colors[i], colors[j]];
@@ -688,24 +745,37 @@ function worstPair(colors, scale) {
 	return { pair, apart };
 }
 
-// Attempts are ranked by the worst entry's identifiability, deltaE spread breaking ties.
-function generate(cfg) {
-	let best = null;
-	for (let attempt = 0; attempt < RESTARTS; ++attempt) {
-		const rnd = mulberry32(cfg.seed + attempt * 7919);
-		const colors = buildAttempt(rnd, cfg);
-		relocate(rnd, cfg, colors, cfg.count * RELOCATIONS_PER_COLOR);
+// Colors left in an excluded name rank an attempt before anything else, then the worst entry's
+// identifiability, deltaE spread breaking ties.
+const betterAttempt = (a, b) => a.excluded !== b.excluded ? a.excluded < b.excluded
+	: a.floor !== b.floor ? a.floor > b.floor
+	: a.gap > b.gap;
 
-		const gap = minimumGap(colors);
-		const named = new Set(colors.map(color => color.cell)).size;
-		let floor = 1;
+// Callers that set no name tables generate as though every name were included and none merged,
+// which is what the page did before either could be chosen.
+function generate(cfg) {
+	const settings = { ...cfg, included: cfg.included || ALL_INCLUDED, groupOf: cfg.groupOf || NO_GROUPS };
+	let best = null;
+	for (let n = 0; n < RESTARTS; ++n) {
+		const rnd = mulberry32(settings.seed + n * 7919);
+		const colors = buildAttempt(rnd, settings);
+		relocate(rnd, settings, colors, settings.count * RELOCATIONS_PER_COLOR);
+
+		// Fixed colors are exempt: the user named them, and generation cannot move them anyway.
+		let floor = 1, excluded = 0;
 		for (let i = 0; i < colors.length; ++i)
-			if (!colors[i].fixed)
-				floor = Math.min(floor, clearance(colors[i], colors, i, cfg.scale).score);
-		if (!best || floor > best.floor || (floor === best.floor && gap > best.gap))
-			best = { colors, gap, named, floor };
+			if (!colors[i].fixed) {
+				floor = Math.min(floor, clearance(colors[i], colors, i, settings).score);
+				if (!settings.included[colors[i].cell])
+					++excluded;
+			}
+
+		const attempt = { colors, floor, excluded, gap: minimumGap(colors),
+			named: new Set(colors.map(color => settings.groupOf[color.cell])).size };
+		if (!best || betterAttempt(attempt, best))
+			best = attempt;
 	}
-	return { ...best, ...worstPair(best.colors, cfg.scale) };
+	return { ...best, ...worstPair(best.colors, settings) };
 }
 
 // ---------- ui ----------
@@ -731,7 +801,8 @@ function readConfig() {
 		hMin: +$("h-min").value, hMax: +$("h-max").value,
 		sMin, sMax, lMin, lMax,
 		seed: +$("seed").value | 0,
-		fixed: parseFixedColors($("fixed-colors").value)
+		fixed: parseFixedColors($("fixed-colors").value),
+		included: nameIncluded, groupOf: nameGroup
 	};
 }
 
@@ -1063,10 +1134,12 @@ function render(result, cfg) {
 	const repeated = result.colors.length - result.named;
 	status.textContent = (result.pair ? "Hardest pair to tell apart (outlined): ΔE " + result.apart.toFixed(1) + " · " : "")
 		+ result.named + " distinct color name" + (result.named === 1 ? "" : "s")
-		+ (repeated ? ", " + repeated + " repeating one of them" : "");
+		+ (repeated ? ", " + repeated + " repeating one of them" : "")
+		+ (result.excluded ? " · " + result.excluded + " left in an excluded name, the range holding too little else" : "");
 
 	const clashing = new Set(result.pair || []);
-	const marks = c => (c.fixed ? " fixed" : "") + (clashing.has(c) ? " clash" : "");
+	const marks = c => (c.fixed ? " fixed" : "") + (!c.fixed && !cfg.included[c.cell] ? " off-name" : "")
+		+ (clashing.has(c) ? " clash" : "");
 
 	$("swatches").innerHTML = palette.map((c, i) =>
 		'<button class="swatch' + marks(c) + '" data-hex="' + c.hex + '" data-index="' + i + '">'
@@ -1104,6 +1177,261 @@ function refreshExport() {
 	$("export").value = text;
 }
 
+// ---------- name controls ----------
+
+// Which cells generation may place a color in, and which cells it scores as one name. readConfig
+// hands both to the generator, which only reads them.
+const nameIncluded = ALL_INCLUDED.slice();
+const nameGroup = NO_GROUPS.slice();
+
+const ALL_CELLS = CELL_NAMES.map((_, cell) => cell);
+
+// A group is named by its lowest member, so its leader is the cell naming itself.
+const groupLeaders = () => ALL_CELLS.filter(cell => nameGroup[cell] === cell);
+const groupMembers = leader => ALL_CELLS.filter(cell => nameGroup[cell] === leader);
+
+function mergeGroups(a, b) {
+	const [leader, absorbed] = ordered(nameGroup[a], nameGroup[b]);
+	for (const cell of ALL_CELLS)
+		if (nameGroup[cell] === absorbed)
+			nameGroup[cell] = leader;
+}
+
+// Whatever the cell led passes to the next lowest member, which must be read off before it leaves.
+function detachCell(cell) {
+	const led = nameGroup[cell] === cell ? groupMembers(cell).filter(member => member !== cell) : [];
+	nameGroup[cell] = cell;
+	for (const member of led)
+		nameGroup[member] = led[0];
+}
+
+// How much of the hue/saturation plane each name owns, at every lightness a chip may be drawn at.
+const CENSUS_LEVELS = Array.from({ length: 19 }, (_, n) => (n + 1) * 5);
+const CENSUS_HUES = 90, CENSUS_SATS = 26;
+
+const CENSUS = CENSUS_LEVELS.map(level => {
+	const counts = new Int32Array(NAME_SLOTS);
+	for (let hi = 0; hi < CENSUS_HUES; ++hi)
+		for (let si = 0; si < CENSUS_SATS; ++si)
+			++counts[cellOf(hsl2rgb(hi * 360 / CENSUS_HUES, si / (CENSUS_SATS - 1), level / 100)).cell];
+	return counts;
+});
+
+// The plane where the name covers the most ground. Nine names - white and black among them - own
+// nothing at mid lightness, so chips drawn at one fixed lightness would be blank for a third of
+// them. Chips are honest about the plane they show rather than comparable across names.
+const CELL_PEAK = ALL_CELLS.map(cell => {
+	let at = 0;
+	for (let n = 1; n < CENSUS_LEVELS.length; ++n)
+		if (CENSUS[n][cell] > CENSUS[at][cell])
+			at = n;
+	return CENSUS_LEVELS[at];
+});
+
+const CHIP_WIDTH = 104, CHIP_HEIGHT = 64;
+
+// The name's territory in its own plane: its colors as they are, the rest ghosted so the panel
+// shows through in either theme. Axes are spaced by perceived change, as the palette's chart is.
+function paintTerritory(canvas, cell) {
+	const w = canvas.width, h = canvas.height, lightness = CELL_PEAK[cell] / 100;
+	const image = new ImageData(w, h);
+	const data = image.data;
+	const hueAt = invertArc(hueArcMean(4 * w, lightness), w, (w - 1) / w);
+
+	for (let x = 0; x < w; ++x) {
+		const hue = hueAt[x] * 360;
+		const sAt = invertArc(arcAlong(h - 1, t => hsl2rgb(hue, t, lightness)), h, 1);
+		for (let y = 0; y < h; ++y) {
+			const rgb = hsl2rgb(hue, sAt[h - 1 - y], lightness);
+			const at = (y * w + x) * 4;
+			data[at] = rgb[0] * 255;
+			data[at + 1] = rgb[1] * 255;
+			data[at + 2] = rgb[2] * 255;
+			data[at + 3] = cellOf(rgb).cell === cell ? 255 : 26;
+		}
+	}
+	canvas.getContext("2d").putImageData(image, 0, 0);
+}
+
+// Territories never change, so each is painted once and its canvas re-parented as chips rebuild.
+const territoryCanvases = new Map();
+
+function territoryCanvas(cell) {
+	let canvas = territoryCanvases.get(cell);
+	if (!canvas) {
+		canvas = document.createElement("canvas");
+		canvas.width = CHIP_WIDTH;
+		canvas.height = CHIP_HEIGHT;
+		paintTerritory(canvas, cell);
+		territoryCanvases.set(cell, canvas);
+	}
+	return canvas;
+}
+
+function nameChip(cell) {
+	const chip = document.createElement("div");
+	chip.className = "name-chip" + (nameIncluded[cell] ? "" : " off");
+	chip.dataset.cell = cell;
+	chip.title = cellName(cell) + (nameIncluded[cell] ? "" : " - excluded");
+
+	const meta = document.createElement("div");
+	meta.className = "meta";
+	const name = document.createElement("div");
+	name.className = "name";
+	name.textContent = cellName(cell).replace(/^./, first => first.toUpperCase());
+	const level = document.createElement("div");
+	level.className = "level";
+	level.textContent = "L " + CELL_PEAK[cell] + "%";
+	meta.append(name, level);
+
+	chip.append(territoryCanvas(cell), meta);
+	return chip;
+}
+
+function renderNames() {
+	const groups = groupLeaders().map(groupMembers);
+	$("name-chips").replaceChildren(...groups.map(members => {
+		const box = document.createElement("div");
+		box.className = "name-group" + (members.length > 1 ? " merged" : "");
+		box.append(...members.map(nameChip));
+		return box;
+	}));
+
+	const excluded = ALL_CELLS.filter(cell => !nameIncluded[cell]).length;
+	const merged = groups.filter(members => members.length > 1).length;
+	$("names-summary").textContent = (CELL_NAMES.length - excluded) + " of " + CELL_NAMES.length + " in use"
+		+ (merged ? ", " + merged + " merged" : "");
+}
+
+const DRAG_THRESHOLD = 4;
+let nameDrag = null;
+
+// The chip under a point in viewport coordinates, null where the point is over none.
+const chipAt = (x, y) => {
+	const under = document.elementFromPoint(x, y);
+	return under ? under.closest(".name-chip") : null;
+};
+
+const clearDragMarks = () => {
+	for (const chip of $("name-chips").querySelectorAll(".name-chip"))
+		chip.classList.remove("dragging", "target");
+};
+
+$("name-chips").addEventListener("pointerdown", event => {
+	const chip = event.target.closest(".name-chip");
+	if (!chip || event.button)
+		return;
+	nameDrag = { cell: +chip.dataset.cell, chip, x: event.clientX, y: event.clientY, moved: false };
+	chip.setPointerCapture(event.pointerId);
+	event.preventDefault();
+});
+
+$("name-chips").addEventListener("pointermove", event => {
+	if (!nameDrag)
+		return;
+	if (!nameDrag.moved && Math.hypot(event.clientX - nameDrag.x, event.clientY - nameDrag.y) < DRAG_THRESHOLD)
+		return;
+
+	nameDrag.moved = true;
+	nameDrag.chip.classList.add("dragging");
+	const over = chipAt(event.clientX, event.clientY);
+	for (const chip of $("name-chips").querySelectorAll(".name-chip"))
+		chip.classList.toggle("target", chip === over && chip !== nameDrag.chip);
+});
+
+// A press that never moved toggles the name. A drag carries the one name it started on: onto
+// another chip it joins that chip's group, and on the strip's own background it leaves the group
+// it was in. A drop anywhere else is abandoned.
+$("name-chips").addEventListener("pointerup", event => {
+	if (!nameDrag)
+		return;
+
+	const { cell, chip, moved } = nameDrag;
+	nameDrag = null;
+
+	let changed = true;
+	if (!moved) {
+		nameIncluded[cell] = !nameIncluded[cell];
+	} else {
+		const under = document.elementFromPoint(event.clientX, event.clientY);
+		const onto = under ? under.closest(".name-chip") : null;
+		if (onto && onto !== chip) {
+			detachCell(cell);
+			mergeGroups(cell, +onto.dataset.cell);
+		} else if (!onto && under && $("name-chips").contains(under)) {
+			detachCell(cell);
+		} else {
+			changed = false;
+		}
+	}
+
+	renderNames();
+	if (changed)
+		scheduleRun();
+});
+
+$("name-chips").addEventListener("pointercancel", () => {
+	nameDrag = null;
+	clearDragMarks();
+});
+
+$("names-toggle").addEventListener("click", () => {
+	const body = $("names-body");
+	body.hidden = !body.hidden;
+	$("names-toggle").textContent = body.hidden ? "Show" : "Hide";
+});
+
+// A digit per cell. Which digits are in range is left to canonicalGroups, which reads any of them
+// as a partition.
+const NAME_GROUPS_PATTERN = new RegExp("^[0-9a-z]{" + CELL_NAMES.length + "}$");
+
+// The included names as a bit per cell, and the grouping as one base36 digit per cell naming its
+// group's leader.
+function stateNameFields() {
+	let mask = 0;
+	for (const cell of ALL_CELLS)
+		if (nameIncluded[cell])
+			mask |= 1 << cell;
+	return [mask.toString(36), ALL_CELLS.map(cell => nameGroup[cell].toString(36)).join("")];
+}
+
+// Any assignment of cells to keys describes a partition. Taking the first cell holding each key as
+// its leader is what the chip order and the merge rules assume, and makes a hand-edited field
+// well-formed whatever it says.
+function canonicalGroups(keys) {
+	const leaderFor = new Map();
+	const groups = NO_GROUPS.slice();
+	for (const cell of ALL_CELLS) {
+		if (!leaderFor.has(keys[cell]))
+			leaderFor.set(keys[cell], cell);
+		groups[cell] = leaderFor.get(keys[cell]);
+	}
+	return groups;
+}
+
+// The name tables a parsed state describes. Empty fields are a string written before the names
+// could be chosen: all included, none merged.
+function nameTablesFrom(parsed) {
+	const included = ALL_INCLUDED.slice();
+	if (parsed.included) {
+		const mask = parseInt(parsed.included, 36);
+		for (const cell of ALL_CELLS)
+			included[cell] = (mask & (1 << cell)) !== 0;
+	}
+	return {
+		included,
+		groupOf: parsed.groups ? canonicalGroups([...parsed.groups].map(digit => parseInt(digit, 36))) : NO_GROUPS.slice()
+	};
+}
+
+function applyNameTables(tables) {
+	for (const cell of ALL_CELLS) {
+		nameIncluded[cell] = tables.included[cell];
+		nameGroup[cell] = tables.groupOf[cell];
+	}
+	renderNames();
+}
+
 // ---------- state string ----------
 
 // The string is the version tag, these fields in order, then the sort flag, the backdrop, the
@@ -1122,7 +1450,7 @@ function stateString(cfg) {
 	return [STATE_VERSION, cfg.count, cfg.scale, cfg.hMin, cfg.hMax, cfg.sMin, cfg.sMax,
 		cfg.lMin, cfg.lMax, cfg.seed >>> 0, $("sort").checked ? 1 : 0,
 		stripHash($("backdrop").value), stripHash($("backdrop-color").value), $("format").value,
-		cfg.fixed.map(color => stripHash(color.hex)).join(",")
+		cfg.fixed.map(color => stripHash(color.hex)).join(","), ...stateNameFields()
 	].join(STATE_SEPARATOR);
 }
 
@@ -1136,22 +1464,25 @@ function findOption(id, stored) {
 // palette can be generated from a string without disturbing the controls.
 function parseState(text) {
 	const [tag, ...fields] = text.trim().split(STATE_SEPARATOR);
-	// The sort flag, backdrop, custom color, export format and fixed colors follow the nine control
-	// values. One field short is a string written before fixed colors existed, and has none.
-	const withoutFixed = STATE_IDS.length + 4;
-	if (tag !== STATE_VERSION || (fields.length !== withoutFixed && fields.length !== withoutFixed + 1))
+	// The sort flag, backdrop, custom color and export format always follow the nine control values.
+	// Fixed colors, then the included names and the grouping, were each added later: a string
+	// written before one of them ends where it was added, and the rest take their defaults.
+	const required = STATE_IDS.length + 4;
+	if (tag !== STATE_VERSION || fields.length < required || fields.length > required + 3)
 		return null;
 
 	const numbers = fields.slice(0, STATE_IDS.length + 1).map(f => f.trim() === "" ? NaN : Number(f));
-	const [backdrop, custom, format, fixed = ""] = fields.slice(STATE_IDS.length + 1);
+	const [backdrop, custom, format, fixed = "", included = "", groups = ""] = fields.slice(STATE_IDS.length + 1);
 	const backdropOption = findOption("backdrop", backdrop);
 	const formatOption = findOption("format", format);
 
 	if (numbers.some(n => !Number.isFinite(n)) || !backdropOption || !formatOption || !/^[0-9a-f]{6}$/i.test(custom)
-		|| !(fixed === "" || /^[0-9a-f]{6}(,[0-9a-f]{6})*$/i.test(fixed)))
+		|| !(fixed === "" || /^[0-9a-f]{6}(,[0-9a-f]{6})*$/i.test(fixed))
+		|| !(included === "" || /^[0-9a-z]{1,6}$/.test(included))
+		|| !(groups === "" || NAME_GROUPS_PATTERN.test(groups)))
 		return null;
 
-	return { numbers, backdrop: backdropOption.value, custom, format: formatOption.value, fixed };
+	return { numbers, backdrop: backdropOption.value, custom, format: formatOption.value, fixed, included, groups };
 }
 
 const fixedFromField = field => field.split(",").filter(Boolean).map(hex => "#" + hex.toLowerCase());
@@ -1163,7 +1494,7 @@ function configFromState(parsed) {
 	const [sMin, sMax] = ordered(s1, s2);
 	const [lMin, lMax] = ordered(l1, l2);
 	return { count, scale, hMin, hMax, sMin, sMax, lMin, lMax, seed: seed | 0,
-		fixed: fixedFromField(parsed.fixed).map(colorFromHex) };
+		fixed: fixedFromField(parsed.fixed).map(colorFromHex), ...nameTablesFrom(parsed) };
 }
 
 // Out-of-range numbers are left to the inputs, which clamp to their own min and max.
@@ -1182,6 +1513,7 @@ function applyStateString(text) {
 
 	// Assigning a select's value fires no change event, so the backdrop is applied by hand.
 	applyBackdrop(currentBackdrop());
+	applyNameTables(nameTablesFrom(parsed));
 	recentreChartL();
 	run();
 	return true;
@@ -1501,6 +1833,7 @@ $("pin-list").addEventListener("click", e => {
 // use, so the value in the box survives a save and restore unchanged.
 $("seed").value = Date.now() >>> 0;
 
+renderNames();
 run();
 </script>
 

@@ -36,7 +36,8 @@ notice be kept; `index.html` carries it above the tables.
    name is not a defect, and some cells hold little else.
 4. The grid is run-length encoded and base64'd, one symbol per bin carrying the cell and the flag.
 5. A cell-by-cell name overlap matrix (cosine similarity of the cells' mean vote distributions)
-   is emitted alongside: the page's generator uses it to keep same-worded cells apart.
+   is emitted alongside: the page's generator uses it to keep same-worded cells apart. Merging two
+   names in the page overrides their entry to 1, the value a cell already scores against itself.
 
 ## Running it
 
