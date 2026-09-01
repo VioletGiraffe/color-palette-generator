@@ -106,9 +106,7 @@
 
 	#sl-plane { height: 75px; margin: 2px 0 4px; }
 
-	#slices { display: flex; gap: 8px; margin: 16px 0 0; }
-	#slices .plane { flex: 1; aspect-ratio: 1; }
-	.slice-label { position: absolute; left: 6px; top: 3px; font-size: 11px; color: var(--ink-dim); }
+	#hs-plane { height: 120px; margin: 16px 0 0; }
 
 	#gamut-3d { height: 460px; margin: 16px 0 0; }
 
@@ -187,8 +185,8 @@
 		<label class="row"><span>Colors</span><span class="value" id="count-value">8</span></label>
 		<input type="range" id="count" min="1" max="40" value="8">
 
-		<label class="row" style="margin-top:12px"><span>Distinctness</span><span class="value" id="strict-value">30</span></label>
-		<input type="range" id="strict" min="0" max="50" step="0.5" value="30">
+		<label class="row" style="margin-top:12px"><span>Distinctness</span><span class="value" id="strict-value">18</span></label>
+		<input type="range" id="strict" min="0" max="50" step="0.5" value="18">
 		<div class="hint">How far apart similarly-named colors must sit before they read as distinct on their own. 0 asks only that colors differ side by side.</div>
 	</div>
 
@@ -272,20 +270,16 @@
 		<div id="tiles"></div>
 	</div>
 
-	<div id="slices">
-		<div class="plane"><canvas id="slice-0"></canvas><span class="slice-label" id="slice-label-0"></span></div>
-		<div class="plane"><canvas id="slice-1"></canvas><span class="slice-label" id="slice-label-1"></span></div>
-		<div class="plane"><canvas id="slice-2"></canvas><span class="slice-label" id="slice-label-2"></span></div>
-	</div>
+	<div class="plane" id="hs-plane"><canvas id="hs-canvas"></canvas></div>
 	<div class="bar" style="margin-top: 8px">
-		<span style="font-size: 12px; color: var(--ink-dim)">Slice lightness</span>
-		<input type="range" id="slice-l" min="0" max="100" step="0.5" value="50" style="flex: 1">
-		<span style="font-size: 12px; color: var(--ink-dim)" id="slice-l-value"></span>
+		<span style="font-size: 12px; color: var(--ink-dim)">Chart lightness</span>
+		<input type="range" id="hs-l" min="0" max="100" step="0.5" value="50" style="flex: 1">
+		<span style="font-size: 12px; color: var(--ink-dim)" id="hs-l-value"></span>
 	</div>
-	<div class="hint">Slices of the color space (OKLab) at the low, middle and high lightness of the selected range: angle is hue, distance from the grey centre is vividness. Equal distance is equal perceived difference in any direction; rings are 10 &Delta;E apart. Dots are the generated colors on the slice nearest their lightness, triangles the fixed ones; hatching is outside the selected ranges. The slider sweeps the slices through lightness.</div>
+	<div class="hint">Hue across, saturation up, at the chart lightness. Both axes are spaced by perceived change (OKLab arc length): the saturation axis exactly, per column; the hue axis as the average over saturations, since one shared axis cannot be exact for every row. Dots are the generated colors, triangles the fixed ones; hatching is outside the selected ranges.</div>
 
 	<div class="plane" id="gamut-3d"></div>
-	<div class="hint">The sRGB gamut in OKLab: lightness up, the slices' hue-vividness plane around it. The solid body is what the selected H/S/L ranges leave; the translucent shell is the rest of the gamut. Spheres are the generated colors, cones the fixed ones, rings the three slice planes; the amber line joins the hardest pair to tell apart. The faint halo around each marker reaches half the Distinctness distance, so two halos meeting mark a pair at that limit. Drag to rotate, wheel to zoom, double-click to reset the view and resume the spin. Hovering a color - swatch, slice dot or sphere - highlights it in every view.</div>
+	<div class="hint">The sRGB gamut in OKLab: lightness up, hue around the grey axis, vividness outward. The solid body is what the selected H/S/L ranges leave; the translucent shell is the rest of the gamut. Spheres are the generated colors, cones the fixed ones; the amber line joins the hardest pair to tell apart. The faint halo around each marker reaches half the Distinctness distance, so two halos meeting mark a pair at that limit. Drag to rotate, wheel to zoom, double-click to reset the view and resume the spin. Hovering a color - swatch, chart dot or sphere - highlights it in every view.</div>
 
 	<hr>
 
@@ -681,14 +675,11 @@ function generate(cfg) {
 
 const $ = id => document.getElementById(id);
 let palette = [];
-// The slice lightness levels last drawn: the 3D module reads them when it loads, after the
-// first drawSlices has already run.
-let lastSliceLevels = [];
-// The last result's hardest pair: read by the 3D module at load for the same reason.
+// The last result's hardest pair: read by the 3D module when it loads, after the first render.
 let lastWorstPair = null;
-// Per slice: the canvas, the kept field image and the drawn marker positions, so a highlight
+// The chart's canvas, kept field image, hue arc and drawn marker positions, so a highlight
 // change repaints markers and hovering hit-tests them without recomputing the field.
-let sliceDraws = [];
+let hsDraw = null;
 // The color hovered in any view, highlighted in all of them.
 let highlightedColor = null;
 
@@ -775,6 +766,8 @@ const DOT_RADIUS = 4;
 // Larger than the dot: a triangle inscribed in the same circle covers under half the area and reads
 // as the smaller mark.
 const TRIANGLE_RADIUS = 5.5;
+// The furthest a marker of either shape reaches from its centre, which is what decides an edge wrap.
+const MARKER_REACH = Math.max(DOT_RADIUS, TRIANGLE_RADIUS);
 
 // Fixed colors are triangles, generated ones circles.
 function drawMarker(ctx, x, y, color) {
@@ -796,38 +789,97 @@ function drawMarker(ctx, x, y, color) {
 	ctx.stroke();
 }
 
-// One OKLab slice at a fixed lightness: angle is hue, radius is chroma, and equal screen distance
-// is equal perceived difference in every direction - a property no axis remap of a hue/saturation
-// rectangle can reach. Three slices stand in for the lightness axis.
-const SLICE_EXTENT = 0.34;   // ab units from centre to edge; sRGB's largest chroma is 0.325
-const RING_STEP = 0.1;       // 10 deltaE between rings
+// Cumulative OKLab arc length along a color ramp, in `n` steps of `colorAt`. Plot axes follow arc
+// position, so equal distances on screen cover equal perceived change: in plain HSL units green
+// sprawls across the hue axis and red-to-yellow is squeezed.
+function arcAlong(n, colorAt) {
+	const cumulative = new Float64Array(n + 1);
+	let prev = rgbToOklab(colorAt(0));
+	for (let k = 1; k <= n; ++k) {
+		const lab = rgbToOklab(colorAt(k / n));
+		cumulative[k] = cumulative[k - 1] + distance(prev, lab);
+		prev = lab;
+	}
+	return cumulative;
+}
 
-// OKLab lightness of the grey at HSL lightness `l`: pins a slice to the app's lightness scale.
-const greyOklabL = l => Math.cbrt(srgbToLinear(l));
+// Cumulative hue arc length averaged over the drawn saturations: one shared hue axis serves
+// every row, and the row-mean is its least-distorting spacing. The S=1 edge alone would
+// over-weight the top row, inflating hues that are wide only when fully saturated.
+const HUE_DENSITY_ROWS = 12;
+function hueArcMean(n, lightness) {
+	const cumulative = new Float64Array(n + 1);
+	for (let row = 0; row < HUE_DENSITY_ROWS; ++row) {
+		const s = (row + 0.5) / HUE_DENSITY_ROWS;
+		let prev = rgbToOklab(hsl2rgb(0, s, lightness));
+		for (let k = 1; k <= n; ++k) {
+			const lab = rgbToOklab(hsl2rgb(k / n * 360, s, lightness));
+			cumulative[k] += distance(prev, lab);
+			prev = lab;
+		}
+	}
+	// Each entry so far is one step's summed length; the axis needs the running total.
+	for (let k = 1; k <= n; ++k)
+		cumulative[k] += cumulative[k - 1];
+	return cumulative;
+}
 
-// The mask is per-pixel: the in-range region of a slice is curved, no overlay bands can follow it.
-function sliceField(w, h, level, cfg) {
+// Axis position of ramp fraction `t`: how far along the arc it sits, 0 to 1.
+// An identity when the arc has no length: every hue at lightness 0 or 1 is the same black or white.
+function arcFraction(arc, t) {
+	const total = arc[arc.length - 1];
+	if (!total)
+		return t;
+	const scaled = Math.min(t, 1) * (arc.length - 1);
+	const k = Math.min(arc.length - 2, Math.floor(scaled));
+	return (arc[k] + (scaled - k) * (arc[k + 1] - arc[k])) / total;
+}
+
+// The inverse of arcFraction for `steps` evenly spaced axis positions: the ramp fraction drawn at
+// each. Both walk the same direction, so the cursor never rewinds.
+// `last` is the axis position of the final step: 1 where the axis ends at the ramp's extreme,
+// below 1 for the cyclic hue axis, whose final pixel stops short of wrapping back to the start.
+function invertArc(arc, steps, last) {
+	const out = new Float64Array(steps);
+	const total = arc[arc.length - 1];
+	for (let r = 0, k = 0; r < steps; ++r) {
+		const along = r / (steps - 1) * last;
+		const length = along * total;
+		while (k + 2 < arc.length && arc[k + 1] < length)
+			++k;
+		out[r] = total ? (k + (length - arc[k]) / (arc[k + 1] - arc[k])) / (arc.length - 1) : along;
+	}
+	return out;
+}
+
+// The mask is per-pixel because a wrapped hue range is two segments, which overlay bands would
+// have to cross, doubling the hatch where they met.
+function hsFieldAndArc(w, h, lightness, cfg) {
 	const image = new ImageData(w, h);
 	const data = image.data;
-	const L = greyOklabL(level / 100);
-	const cx = w / 2, cy = h / 2, scale = Math.min(w, h) / 2 / SLICE_EXTENT;
+	const inL = lightness * 100 >= cfg.lMin && lightness * 100 <= cfg.lMax;
 
-	let i = 0;
-	for (let y = 0; y < h; ++y)
-		for (let x = 0; x < w; ++x, i += 4) {
-			const rgb = oklabToRgb(L, (x - cx) / scale, (cy - y) / scale);
-			// Out of the sRGB gamut: left transparent, the panel shows through.
-			if (!rgb.every(u => u >= -0.0005 && u <= 1.0005))
-				continue;
-			const clamped = rgb.map(u => Math.min(1, Math.max(0, u)));
-			const [hue, s, l] = rgb2hsl(clamped);
-			const inHue = cfg.hMin <= cfg.hMax
-				? hue >= cfg.hMin && hue <= cfg.hMax
-				: hue >= cfg.hMin || hue <= cfg.hMax;
-			let [r, g, b] = [clamped[0] * 255, clamped[1] * 255, clamped[2] * 255];
+	// The hue arc is sampled finer than the pixel grid, the saturation arcs once per pixel row:
+	// the remap's resolution is set by the canvas, not by a fixed table.
+	const hueArc = hueArcMean(4 * w, lightness);
+	const hueAt = invertArc(hueArc, w, (w - 1) / w);
+
+	for (let x = 0; x < w; ++x) {
+		const hue = hueAt[x] * 360;
+		const inHue = cfg.hMin <= cfg.hMax
+			? hue >= cfg.hMin && hue <= cfg.hMax
+			: hue >= cfg.hMin || hue <= cfg.hMax;
+		// Saturation is remapped per column: how fast it changes depends on the hue.
+		const sAt = invertArc(arcAlong(h - 1, t => hsl2rgb(hue, t, lightness)), h, 1);
+
+		for (let y = 0; y < h; ++y) {
+			const s = sAt[h - 1 - y];
+			const inSaturation = s * 100 >= cfg.sMin && s * 100 <= cfg.sMax;
+			const rgb = hsl2rgb(hue, s, lightness);
+			let r = rgb[0] * 255, g = rgb[1] * 255, b = rgb[2] * 255;
 
 			// Same hatch as the CSS masks: 5px of black at 70%, then 5px of white at 32%.
-			if (!inHue || s * 100 < cfg.sMin || s * 100 > cfg.sMax || l * 100 < cfg.lMin || l * 100 > cfg.lMax) {
+			if (!inL || !inHue || !inSaturation) {
 				if ((x + y) % 10 < 5) {
 					r *= .3; g *= .3; b *= .3;
 				} else {
@@ -835,34 +887,39 @@ function sliceField(w, h, level, cfg) {
 				}
 			}
 
-			data[i] = r;
-			data[i + 1] = g;
-			data[i + 2] = b;
-			data[i + 3] = 255;
+			const at = (y * w + x) * 4;
+			data[at] = r;
+			data[at + 1] = g;
+			data[at + 2] = b;
+			data[at + 3] = 255;
 		}
+	}
 
-	return image;
+	return { image, hueArc };
 }
 
-// Rings and markers over the kept field image: a highlight change repaints without recomputing
-// the per-pixel field. Records each marker's position for the hover hit-test.
-function paintSlice(slice) {
-	const { canvas, image, colors } = slice;
-	const cx = canvas.width / 2, cy = canvas.height / 2;
-	const scale = Math.min(canvas.width, canvas.height) / 2 / SLICE_EXTENT;
+// Markers over the kept field: a highlight change repaints without recomputing the field.
+// The hue axis is cyclic, so a marker within reach of either edge is repeated at the other;
+// the copy is recorded too, so hovering finds it at both.
+function paintHS(draw) {
+	const { canvas, image, hueArc, lightness, colors } = draw;
+	const w = canvas.width, h = canvas.height;
 	const ctx = canvas.getContext("2d");
 	ctx.putImageData(image, 0, 0);
 
-	ctx.strokeStyle = "rgba(200, 200, 200, 0.4)";
-	ctx.lineWidth = 1;
-	for (let radius = RING_STEP; radius < SLICE_EXTENT; radius += RING_STEP) {
-		ctx.beginPath();
-		ctx.arc(cx, cy, radius * scale, 0, Math.PI * 2);
-		ctx.stroke();
+	draw.marks = [];
+	for (const color of colors) {
+		const x = arcFraction(hueArc, color.h / 360) * w;
+		const sArc = arcAlong(h - 1, t => hsl2rgb(color.h, t, lightness));
+		const y = (1 - arcFraction(sArc, color.s)) * (h - 1);
+		draw.marks.push({ x, y, color });
+		if (x < MARKER_REACH)
+			draw.marks.push({ x: x + w, y, color });
+		else if (x > w - MARKER_REACH)
+			draw.marks.push({ x: x - w, y, color });
 	}
 
-	slice.marks = colors.map(color => ({ x: cx + color.lab[1] * scale, y: cy - color.lab[2] * scale, color }));
-	for (const { x, y, color } of slice.marks) {
+	for (const { x, y, color } of draw.marks) {
 		drawMarker(ctx, x, y, color);
 		if (color === highlightedColor) {
 			ctx.beginPath();
@@ -874,38 +931,15 @@ function paintSlice(slice) {
 	}
 }
 
-// The sweep slider's lightness in the middle, the range's half-width to either side: at the
-// default sweep the slices sit at the range's low, middle and high. Each color's marker goes on
-// the slice nearest its own lightness.
-function drawSlices(cfg, colors) {
-	const half = (cfg.lMax - cfg.lMin) / 2;
-	const centre = +$("slice-l").value;
-	const levels = [centre - half, centre, centre + half].map(v => Math.min(100, Math.max(0, v)));
-	$("slice-l-value").textContent = levels.map(Math.round).join(" / ") + "%";
-
-	lastSliceLevels = levels;
-	if (window.update3DSlices)
-		window.update3DSlices(levels);
-
-	const greys = levels.map(v => greyOklabL(v / 100));
-	const perSlice = levels.map(() => []);
-	for (const color of colors) {
-		let at = 0;
-		for (let i = 1; i < greys.length; ++i)
-			if (Math.abs(color.lab[0] - greys[i]) < Math.abs(color.lab[0] - greys[at]))
-				at = i;
-		perSlice[at].push(color);
-	}
-
-	sliceDraws = levels.map((level, i) => {
-		$("slice-label-" + i).textContent = "L " + Math.round(level) + "%";
-		const canvas = $("slice-" + i);
-		canvas.width = canvas.clientWidth;
-		canvas.height = canvas.clientHeight;
-		const slice = { canvas, image: sliceField(canvas.width, canvas.height, level, cfg), colors: perSlice[i] };
-		paintSlice(slice);
-		return slice;
-	});
+function drawHSPlane(cfg, colors) {
+	const canvas = $("hs-canvas");
+	canvas.width = canvas.clientWidth;
+	canvas.height = canvas.clientHeight;
+	const level = +$("hs-l").value;
+	$("hs-l-value").textContent = Math.round(level) + "%";
+	hsDraw = { canvas, lightness: level / 100, colors,
+		...hsFieldAndArc(canvas.width, canvas.height, level / 100, cfg) };
+	paintHS(hsDraw);
 }
 
 function refreshBars(cfg) {
@@ -968,7 +1002,7 @@ function render(result, cfg) {
 		'<div class="' + marks(c).trim() + '" data-index="' + i + '" style="background:' + c.hex + '" title="'
 			+ c.hex.toUpperCase() + " · " + cellLabel(c) + (c.fixed ? " (fixed)" : "") + '"></div>').join("");
 
-	drawSlices(cfg, palette);
+	drawHSPlane(cfg, palette);
 	if (window.update3D)
 		window.update3D(cfg, palette, result.pair);
 	refreshExport();
@@ -1068,7 +1102,7 @@ function applyStateString(text) {
 
 	// Assigning a select's value fires no change event, so the backdrop is applied by hand.
 	applyBackdrop(currentBackdrop());
-	recentreSweep();
+	recentreChartL();
 	run();
 	return true;
 }
@@ -1156,17 +1190,17 @@ function scheduleRun() {
 for (const id of [...STATE_IDS, "fixed-colors"])
 	$(id).addEventListener("input", () => { refreshLabels(); scheduleRun(); });
 
-const recentreSweep = () => $("slice-l").value = (+$("l-min").value + +$("l-max").value) / 2;
+const recentreChartL = () => $("hs-l").value = (+$("l-min").value + +$("l-max").value) / 2;
 for (const id of ["l-min", "l-max"])
-	$(id).addEventListener("input", recentreSweep);
+	$(id).addEventListener("input", recentreChartL);
 
-// The sweep is a view control: it redraws the slices from the palette already generated.
-let sliceRedrawScheduled = false;
-$("slice-l").addEventListener("input", () => {
-	if (sliceRedrawScheduled)
+// The chart lightness is a view control: it redraws the chart from the palette already generated.
+let chartRedrawScheduled = false;
+$("hs-l").addEventListener("input", () => {
+	if (chartRedrawScheduled)
 		return;
-	sliceRedrawScheduled = true;
-	requestAnimationFrame(() => { sliceRedrawScheduled = false; drawSlices(readConfig(), palette); });
+	chartRedrawScheduled = true;
+	requestAnimationFrame(() => { chartRedrawScheduled = false; drawHSPlane(readConfig(), palette); });
 });
 
 $("sort").addEventListener("change", scheduleRun);
@@ -1218,7 +1252,7 @@ $("swatches").addEventListener("click", e => {
 
 // ---------- cross-view highlight ----------
 
-// The hovered color, marked in every view at once: swatch and tile outline, a ring on its slice
+// The hovered color, marked in every view at once: swatch and tile outline, a ring on its chart
 // dot, the enlarged 3D marker. Null clears.
 function setHighlight(color) {
 	if (color === highlightedColor)
@@ -1227,7 +1261,8 @@ function setHighlight(color) {
 	const index = color ? palette.indexOf(color) : -1;
 	for (const box of ["swatches", "tiles"])
 		[...$(box).children].forEach((el, i) => el.classList.toggle("hilite", i === index));
-	sliceDraws.forEach(paintSlice);
+	if (hsDraw)
+		paintHS(hsDraw);
 	if (window.highlight3D)
 		window.highlight3D(color);
 }
@@ -1241,30 +1276,27 @@ for (const id of ["swatches", "tiles"]) {
 	$(id).addEventListener("mouseleave", () => setHighlight(null));
 }
 
-// Slice dots are canvas pixels, so hovering one is a hit-test against the recorded positions.
-const SLICE_HIT_RADIUS = 10;
-for (let i = 0; i < 3; ++i) {
-	const canvas = $("slice-" + i);
-	canvas.addEventListener("mousemove", e => {
-		const slice = sliceDraws.find(s => s.canvas === canvas);
-		if (!slice)
-			return;
-		const rect = canvas.getBoundingClientRect();
-		const x = e.clientX - rect.left, y = e.clientY - rect.top;
-		let hit = null, nearest = SLICE_HIT_RADIUS ** 2;
-		for (const mark of slice.marks) {
-			const apart = (mark.x - x) ** 2 + (mark.y - y) ** 2;
-			if (apart < nearest) {
-				nearest = apart;
-				hit = mark.color;
-			}
+// Chart dots are canvas pixels, so hovering one is a hit-test against the recorded positions.
+const MARK_HIT_RADIUS = 10;
+const hsCanvas = $("hs-canvas");
+hsCanvas.addEventListener("mousemove", e => {
+	if (!hsDraw)
+		return;
+	const rect = hsCanvas.getBoundingClientRect();
+	const x = e.clientX - rect.left, y = e.clientY - rect.top;
+	let hit = null, nearest = MARK_HIT_RADIUS ** 2;
+	for (const mark of hsDraw.marks) {
+		const apart = (mark.x - x) ** 2 + (mark.y - y) ** 2;
+		if (apart < nearest) {
+			nearest = apart;
+			hit = mark.color;
 		}
-		canvas.style.cursor = hit ? "pointer" : "";
-		canvas.title = hit ? hit.hex.toUpperCase() + " · " + cellLabel(hit) : "";
-		setHighlight(hit);
-	});
-	canvas.addEventListener("mouseleave", () => setHighlight(null));
-}
+	}
+	hsCanvas.style.cursor = hit ? "pointer" : "";
+	hsCanvas.title = hit ? hit.hex.toUpperCase() + " · " + cellLabel(hit) : "";
+	setHighlight(hit);
+});
+hsCanvas.addEventListener("mouseleave", () => setHighlight(null));
 
 $("copy").addEventListener("click", e => copy($("export").value, e.currentTarget, "Copied"));
 
@@ -1477,14 +1509,14 @@ for (let axis = 0; axis < 3; ++axis)
 		}), shellMaterial));
 scene.add(shell);
 
-// The grey axis: every slice's centre.
+// The grey axis: zero chroma at every lightness.
 scene.add(new THREE.Line(
 	new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, -0.5, 0), new THREE.Vector3(0, 0.5, 0)]),
 	new THREE.LineBasicMaterial({ color: 0x9298a4 })));
 
 const regionGroup = new THREE.Group(), markerGroup = new THREE.Group(),
-	ringGroup = new THREE.Group(), pairGroup = new THREE.Group(), zoneGroup = new THREE.Group();
-scene.add(regionGroup, markerGroup, ringGroup, pairGroup, zoneGroup);
+	pairGroup = new THREE.Group(), zoneGroup = new THREE.Group();
+scene.add(regionGroup, markerGroup, pairGroup, zoneGroup);
 
 // Every rebuilt mesh owns its geometry and material, so a rebuild can dispose both.
 function clearGroup(group) {
@@ -1514,7 +1546,7 @@ function regionMeshes(cfg) {
 	return sheets.map(geometry => new THREE.Mesh(geometry, material));
 }
 
-// Generated colors are spheres, fixed ones cones - the slices' dots and triangles. The contrast
+// Generated colors are spheres, fixed ones cones - the chart's dots and triangles. The contrast
 // shell is a back-face copy, black over light colors and white over dark, as drawMarker strokes.
 // The ghosted copies invert the depth test, drawing exactly where the solid ones are buried: a
 // marker inside the region body dims instead of vanishing. renderOrder keeps them after the
@@ -1541,19 +1573,6 @@ function markerMeshes(colors) {
 			mesh.add(part);
 		}
 		return mesh;
-	});
-}
-
-// One circle per slice, at the OKLab lightness of the slice's grey.
-function ringMeshes(levels) {
-	return levels.map(level => {
-		const y = greyOklabL(level / 100) - 0.5;
-		const points = [];
-		for (let k = 0; k < 72; ++k)
-			points.push(new THREE.Vector3(
-				Math.cos(k / 36 * Math.PI) * SLICE_EXTENT, y, Math.sin(k / 36 * Math.PI) * SLICE_EXTENT));
-		return new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(points),
-			new THREE.LineBasicMaterial({ color: 0x9298a4, transparent: true, opacity: 0.6 }));
 	});
 }
 
@@ -1635,11 +1654,6 @@ renderer.domElement.addEventListener("pointermove", e => {
 });
 renderer.domElement.addEventListener("pointerleave", () => setHighlight(null));
 
-window.update3DSlices = levels => {
-	clearGroup(ringGroup);
-	ringGroup.add(...ringMeshes(levels));
-};
-
 function resize() {
 	const w = container.clientWidth, h = container.clientHeight;
 	const half = 0.62, aspect = w / h;
@@ -1655,7 +1669,6 @@ resize();
 
 // The classic script has already generated and drawn: pick up its state, then follow its hooks.
 window.update3D(readConfig(), palette, lastWorstPair);
-window.update3DSlices(lastSliceLevels);
 
 // The loop runs only while the panel is on screen. A hidden tab needs no handling of its own:
 // the loop is requestAnimationFrame-driven and the browser stalls it there.
