@@ -1481,7 +1481,11 @@ resize();
 window.update3D(readConfig(), palette);
 window.update3DSlices(lastSliceLevels);
 
-renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+// The loop runs only while the panel is on screen. A hidden tab needs no handling of its own:
+// the loop is requestAnimationFrame-driven and the browser stalls it there.
+const animate = () => { controls.update(); renderer.render(scene, camera); };
+new IntersectionObserver(entries => renderer.setAnimationLoop(entries.at(-1).isIntersecting ? animate : null))
+	.observe(container);
 </script>
 
 </body>
