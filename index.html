@@ -1423,17 +1423,29 @@ function regionMeshes(cfg) {
 
 // Generated colors are spheres, fixed ones cones - the slices' dots and triangles. The contrast
 // shell is a back-face copy, black over light colors and white over dark, as drawMarker strokes.
+// The ghosted copies invert the depth test, drawing exactly where the solid ones are buried: a
+// marker inside the region body dims instead of vanishing. renderOrder keeps them after the
+// gamut shell, so they also show through it.
 function markerMeshes(colors) {
 	return colors.map(color => {
 		const geometry = color.fixed
 			? new THREE.ConeGeometry(0.015, 0.034, 24)
 			: new THREE.SphereGeometry(0.013, 20, 14);
+		const contrast = isLightColor(color.rgb) ? 0x000000 : 0xffffff;
+		const ghosted = { transparent: true, opacity: 0.45, depthFunc: THREE.GreaterDepth, depthWrite: false };
+
 		const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: color.hex }));
 		mesh.position.set(...toScene(color.lab));
-		const outline = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
-			color: isLightColor(color.rgb) ? 0x000000 : 0xffffff, side: THREE.BackSide }));
-		outline.scale.setScalar(1.35);
-		mesh.add(outline);
+		for (const [settings, order, scale] of [
+			[{ color: contrast, side: THREE.BackSide }, 0, 1.35],
+			[{ color: contrast, side: THREE.BackSide, ...ghosted }, 1, 1.35],
+			[{ color: color.hex, ...ghosted }, 2, 1]
+		]) {
+			const part = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial(settings));
+			part.renderOrder = order;
+			part.scale.setScalar(scale);
+			mesh.add(part);
+		}
 		return mesh;
 	});
 }
