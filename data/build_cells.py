@@ -15,7 +15,7 @@ import base64
 import json
 import os
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODEL = os.path.join(HERE, "c3_data.json")
@@ -23,13 +23,23 @@ PAGE = os.path.join(os.path.dirname(HERE), "index.html")
 
 # A word must beat the runner-up by this share of the vote, averaged over the bins it wins, to be a
 # cell of its own. Below it the two words are synonyms competing for one region, and the loser's
-# bins go to the winner. Dropping "darkteal" costs nothing; keeping it would spend a palette entry
-# on a one-bin sliver.
-KEEP_LEAD = 0.035
+# bins go to the winner. The line sits between "limegreen" and "darkteal": dropping darkteal costs
+# nothing, keeping it would spend a palette entry on a name few would pick over plain teal.
+KEEP_LEAD = 0.02
 
-# A single bin whose winner leads by less than this is a coin flip between two names. Those colors
-# are flagged for display and are otherwise treated like any other: unnameable is not unusable.
+# Bins are owned by the kept word with the highest vote share divided by the square root of the
+# word's overall share: common words are said of everything, so an unweighted plurality hands them
+# the specific words' borderlands (green holds 74x mauve's territory unweighted, 11x weighted).
+# The exponent tempers the correction; 1.0 lets ultra-rare words claim bins on a handful of votes.
+SPECIFICITY = 0.5
+
+# A bin is flagged unsure when either holds; flagged colors are marked for display and otherwise
+# treated like any other, unnameable is not unusable:
+#   the top two kept words' raw vote shares differ by under UNSURE_LEAD - people split between names;
+#   the runner-up's weighted score is at least UNSURE_RATIO of the winner's - the bin sits on a
+#   cell boundary, where the winning name barely won.
 UNSURE_LEAD = 0.05
+UNSURE_RATIO = 0.80
 
 # The survey's words are written without spaces; these read badly in a UI.
 DISPLAY = {
@@ -37,9 +47,11 @@ DISPLAY = {
     "navyblue": "navy blue",
     "darkgreen": "dark green",
     "lightgreen": "light green",
+    "darkpurple": "dark purple",
+    "limegreen": "lime green",
 }
 
-OUTSIDE_GAMUT = 26  # must equal the number of cells kept, and the constant of the same name in index.html
+OUTSIDE_GAMUT = 29  # must equal the number of cells kept, and the constant of the same name in index.html
 UNSURE_BIT = 32
 
 
@@ -63,7 +75,8 @@ def ranked(tally, among=None):
 
 
 def keep_terms(tallies):
-    """The words that win their region outright, in descending order of territory."""
+    """The words that win their region outright. Sorted only for determinism; build() orders the
+    final cells by assigned territory."""
     leads = defaultdict(list)
     for tally in tallies:
         order = ranked(tally)
@@ -74,13 +87,26 @@ def keep_terms(tallies):
 
 
 def assign(tallies, kept):
-    """Each bin's cell and how far its winner leads, counting only the words that were kept."""
-    index = {term: i for i, term in enumerate(kept)}
+    """Each bin's owning term and unsure flag, by specificity-weighted vote share among the kept
+    words. See the SPECIFICITY and UNSURE_* comments for both rules."""
+    keptset = set(kept)
+    mass = defaultdict(int)
+    for tally in tallies:
+        for term, count in tally.items():
+            if term in keptset:
+                mass[term] += count
+    total_mass = sum(mass.values())
+    weight = {term: (mass[term] / total_mass) ** SPECIFICITY for term in kept}
+
     out = []
     for tally in tallies:
-        order = ranked(tally, among=index)
-        second = order[1][0] if len(order) > 1 else 0.0
-        out.append((index[-order[0][1]], order[0][0] - second))
+        total = sum(tally.values())
+        scores = sorted(((count / total / weight[term], -term) for term, count in tally.items()
+                         if term in keptset), reverse=True)
+        raw = ranked(tally, among=keptset)
+        split = raw[0][0] - (raw[1][0] if len(raw) > 1 else 0.0) < UNSURE_LEAD
+        boundary = len(scores) > 1 and scores[1][0] >= scores[0][0] * UNSURE_RATIO
+        out.append((-scores[0][1], split or boundary))
     return out
 
 
@@ -96,8 +122,8 @@ def encode(model, cells):
             for b in axes[2]:
                 key = (lightness, a, b)
                 if key in at:
-                    cell, lead = cells[at[key]]
-                    symbol = cell if lead >= UNSURE_LEAD else cell | UNSURE_BIT
+                    cell, unsure = cells[at[key]]
+                    symbol = cell | UNSURE_BIT if unsure else cell
                 else:
                     symbol = OUTSIDE_GAMUT
                 if runs and runs[-1][0] == symbol and runs[-1][1] < 255:
@@ -120,9 +146,13 @@ def build():
     if len(kept) != OUTSIDE_GAMUT:
         sys.exit("kept %d cells but OUTSIDE_GAMUT is %d; they must agree" % (len(kept), OUTSIDE_GAMUT))
 
-    cells = assign(tallies, kept)
+    owners = assign(tallies, kept)
+    territory = Counter(term for term, _ in owners)
+    order = sorted(kept, key=lambda t: (-territory[t], t))
+    index = {term: i for i, term in enumerate(order)}
+    cells = [(index[term], unsure) for term, unsure in owners]
     rle, axes = encode(model, cells)
-    names = [DISPLAY.get(model["terms"][t], model["terms"][t]) for t in kept]
+    names = [DISPLAY.get(model["terms"][t], model["terms"][t]) for t in order]
     return names, rle, axes, cells
 
 
@@ -144,7 +174,7 @@ def main():
               % (axes[0][0], axes[0][-1], axes[1][0], axes[1][-1], axes[2][0], axes[2][-1],
                  axes[0][1] - axes[0][0]))
         print("// %d cells, %d of %d bins flagged unsure"
-              % (len(names), sum(1 for _, lead in cells if lead < UNSURE_LEAD), len(cells)))
+              % (len(names), sum(1 for _, unsure in cells if unsure), len(cells)))
         print(names_line)
         print(rle_line)
         return

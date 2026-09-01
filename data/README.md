@@ -20,17 +20,20 @@ notice be kept; `index.html` carries it above the tables.
 
 `build_cells.py` turns the vote counts into a partition of color space into named cells.
 
-1. Each bin's winner is the word most people gave it. Grouping bins by winner gives each word a
-   territory as large as people's use of it: green wins 1335 bins, orange 308, salmon 52. That
-   asymmetry is the point, and it is why the table cannot be replaced by a list of representative
-   colors — a nearest-centroid partition reproduces only 60% of it.
-2. Words that beat their runner-up by less than `KEEP_LEAD` averaged over the bins they win are
-   dropped as ties with a synonym, and their bins fall to the runner-up. This is what separates
-   `orange` (winning by 39 points) from `darkteal` (2 points over `teal`, in a single bin). 26
-   words survive.
-3. Each bin whose winner leads by less than `UNSURE_LEAD` is flagged. Those colors have no name
-   people agree on; the page marks them with a tilde. They are not excluded from palettes — being
-   hard to name is not a defect, and some cells hold little else.
+1. A word earns a cell if it out-polls every other word, by `KEEP_LEAD` on average, somewhere —
+   words that never lead anywhere are synonyms of one that does, or too rare to matter. This is
+   what separates `orange` (winning its region by 39 points) from `darkteal` (2 points over `teal`,
+   in a single bin). 29 words survive.
+2. Each bin then belongs to the kept word with the highest vote share weighted by the word's
+   rarity (`SPECIFICITY`). Unweighted plurality hands generic words everything — everyone falls
+   back on `green`, so `green` narrowly out-polls `light green` even at its pale edge, and owns
+   74x `mauve`'s territory; weighting returns specific words their regions and flattens the ratio
+   to 11x. The territories are arbitrary shapes, which is why the table cannot be replaced by a
+   list of representative colors — a nearest-centroid partition reproduces only 60% of it.
+3. A bin is flagged when people split their votes between names (`UNSURE_LEAD`) or when the
+   weighted winner barely beat the runner-up (`UNSURE_RATIO`). Those colors have no name people
+   agree on; the page marks them with a tilde. They are not excluded from palettes — being hard to
+   name is not a defect, and some cells hold little else.
 4. The grid is run-length encoded and base64'd, one symbol per bin carrying the cell and the flag.
 
 ## Running it
@@ -40,5 +43,5 @@ python data/build_cells.py            # print the two lines to paste into index.
 python data/build_cells.py --check    # verify index.html matches; non-zero exit if not
 ```
 
-The two thresholds at the top of the script are the only judgement calls. Both trade the number of
+The four constants at the top of the script are the only judgement calls. All trade the number of
 cells against how well each one corresponds to a name a person would actually reach for.
