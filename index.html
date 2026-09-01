@@ -68,6 +68,14 @@
 		}
 	}
 
+	/* Compact mode for short viewports: standalone captions go, spacing tightens. The PALETTE
+	   and EXPORT captions stay - they share a row with controls and hiding them frees nothing. */
+	@media (max-height: 850px) {
+		.group > h2, #gamut > h2 { display: none; }
+		.group { margin-bottom: 8px; }
+		hr { margin: 5px 0; }
+	}
+
 	.panel {
 		background: var(--panel);
 		border: 1px solid var(--line);
