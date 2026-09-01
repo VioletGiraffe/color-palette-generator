@@ -12,7 +12,7 @@ Use live online in your browser: https://violetgiraffe.github.io/color-palette-g
 - **Restrict the color space**: min and max sliders for hue, saturation and lightness. The hue range wraps around, so 300-60 covers magenta through yellow.
 - **Generate around colors you already have**: paste any number of hex values as fixed colors. New colors are kept distinct from them. They are shown alongside the result but not counted in Colors and not exported.
 - **See the selected range**: a hue bar and a saturation/lightness plane, with everything outside the range hatched out.
-- **See where the colors landed**: a hue/saturation plot with a dot for each generated color.
+- **See where the colors landed**: a hue/saturation plot with a dot for each generated color. Its hue axis is perceptual - equal widths cover equal perceived change, not equal HSL degrees.
 - **Judge the colors together**: a tight grid of small squares, over a white, black, grey or custom backdrop.
 - **Copy the result**: hex list, CSS custom properties, JSON, or a Python list. Click any swatch to copy its hex.
 - **Get the same palette again**: each one comes from a seed you can set. A fresh load gets a new unique seed.
