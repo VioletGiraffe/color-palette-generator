@@ -14,6 +14,7 @@
 		--line: #d8d8e0;
 		--accent: #3d6df0;
 		--warn: #b45309;
+		--danger: #d92020;
 		--swatch-hover: var(--accent);
 	}
 	@media (prefers-color-scheme: dark) {
@@ -25,6 +26,7 @@
 			--line: #35353f;
 			--accent: #6f95ff;
 			--warn: #e0a33a;
+			--danger: #ff6b6b;
 		}
 	}
 
@@ -200,12 +202,23 @@
 	.name-chip .meta { padding: 4px 6px; font-size: 11px; line-height: 1.3; color: var(--ink); }
 	.name-chip .meta div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 	.name-chip .meta .level { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
-	/* An excluded name reads as off across the room: its territory goes flat and near-black, which
-	   lands the same way on either theme, and the label stays legible to say which name it is. */
 	.name-chip.off { border-style: dashed; }
-	.name-chip.off canvas { filter: grayscale(1) brightness(.3); }
-	.name-chip.off .meta { color: var(--ink-dim); }
-	.name-chip.off .meta .name { text-decoration: line-through; }
+	/* The territory keeps its true colors: the line is what marks the name as dropped, and a color
+	   is still worth seeing while deciding whether to drop it. */
+	.name-chip.off .meta { position: relative; color: var(--ink-dim); }
+	/* Ruled across the chip rather than set on the text: a line-through reaches only as far as the
+	   name is long, and the short names are the ones hardest to spot. Inset by less than .meta's
+	   6px gutter, so it overshoots the name at either end whatever the name's length.
+	   Vertically it is .meta's top padding plus half a line, which centres it on the name. */
+	.name-chip.off .meta::after {
+		content: "";
+		position: absolute;
+		left: 4px;
+		right: 4px;
+		top: calc(4px + 0.65em - 1.5px);
+		height: 3px;
+		background: var(--danger);
+	}
 	.name-chip.dragging { opacity: .35; }
 	.name-chip.target { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 
