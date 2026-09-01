@@ -127,7 +127,7 @@
 		overflow: hidden;
 	}
 
-	#hue-bar { background: linear-gradient(to right, #f00 0%, #ff0 16.667%, #0f0 33.333%, #0ff 50%, #00f 66.667%, #f0f 83.333%, #f00 100%); }
+	.range-bar canvas { display: block; width: 100%; height: 100%; }
 
 	.plane {
 		position: relative;
@@ -241,7 +241,7 @@
 
 		<div class="range-pair">
 			<div class="caption"><span>Hue</span><span class="value" id="h-value"></span></div>
-			<div class="range-bar" id="hue-bar"><div class="muted" id="hue-muted-a"></div><div class="muted" id="hue-muted-b"></div></div>
+			<div class="range-bar" id="hue-bar"><canvas id="hue-canvas"></canvas><div class="muted" id="hue-muted-a"></div><div class="muted" id="hue-muted-b"></div></div>
 			<div class="edge">min</div><div class="edge">max</div>
 			<input type="range" id="h-min" min="0" max="360" value="0">
 			<input type="range" id="h-max" min="0" max="360" value="360">
@@ -735,19 +735,42 @@ function readConfig() {
 	};
 }
 
+let drawnBarWidth = 0;
+
+function drawHueBar() {
+	const canvas = $("hue-canvas");
+	const w = canvas.clientWidth, h = canvas.clientHeight;
+	if (w === drawnBarWidth || w === 0)
+		return;
+
+	canvas.width = w;
+	canvas.height = h;
+
+	const hueAt = invertArc(HUE_BAR_ARC, w, (w - 1) / w);
+	const ctx = canvas.getContext("2d");
+	for (let x = 0; x < w; ++x) {
+		ctx.fillStyle = toHex(hsl2rgb(hueAt[x] * 360, 1, 0.5));
+		ctx.fillRect(x, 0, 1, h);
+	}
+	drawnBarWidth = w;
+}
+
 // Masks the hues outside the range: two segments when the range sits in the middle, and the
-// single segment between max and min when it wraps.
+// single segment between max and min when it wraps. Edges follow the bar's remapped axis.
 function maskHueBar(min, max) {
 	const segments = min <= max ? [[0, min], [max, 360]] : [[max, min], [360, 360]];
 
 	segments.forEach((seg, i) => {
 		const el = $(i === 0 ? "hue-muted-a" : "hue-muted-b");
-		el.style.left = seg[0] / 3.6 + "%";
-		el.style.width = (seg[1] - seg[0]) / 3.6 + "%";
+		const left = arcFraction(HUE_BAR_ARC, seg[0] / 360) * 100;
+		el.style.left = left + "%";
+		el.style.width = (arcFraction(HUE_BAR_ARC, seg[1] / 360) * 100 - left) + "%";
 	});
 }
 
 let drawnHue = -1, drawnWidth = 0, drawnHeight = 0;
+// The plane's shared axes, kept for the masks: each is the mean arc over the other dimension.
+let slSArc = null, slLArc = null;
 
 // The plane depends only on hue, so moving an S or L slider redraws nothing.
 function drawSLPlane(hue) {
@@ -759,15 +782,20 @@ function drawSLPlane(hue) {
 	canvas.width = w;
 	canvas.height = h;
 
+	slSArc = arcMean(2 * w, (t, l) => hsl2rgb(hue, t, l));
+	slLArc = arcMean(2 * h, (t, s) => hsl2rgb(hue, s, t));
+	const sAt = invertArc(slSArc, w, 1);
+	const lAt = invertArc(slLArc, h, 1);
+
 	const ctx = canvas.getContext("2d");
 	const image = ctx.createImageData(w, h);
 	const data = image.data;
 
 	let i = 0;
 	for (let y = 0; y < h; ++y) {
-		const l = 1 - y / (h - 1);
+		const l = lAt[h - 1 - y];
 		for (let x = 0; x < w; ++x) {
-			const rgb = hsl2rgb(hue, x / (w - 1), l);
+			const rgb = hsl2rgb(hue, sAt[x], l);
 			data[i++] = rgb[0] * 255;
 			data[i++] = rgb[1] * 255;
 			data[i++] = rgb[2] * 255;
@@ -783,6 +811,7 @@ function drawSLPlane(hue) {
 
 // Four masks around the selected rectangle rather than a frame: overlapping hatches would
 // double their darkness at the corners. Lightness runs upward, so y is measured from the top.
+// One shared axis per dimension keeps the in-range region a rectangle the masks can follow.
 function maskPlane(cfg) {
 	const box = (id, left, width, top, height) => {
 		const style = $(id).style;
@@ -791,12 +820,16 @@ function maskPlane(cfg) {
 		style.top = top + "%";
 		style.height = height + "%";
 	};
-	const span = cfg.sMax - cfg.sMin;
+	const sMin = arcFraction(slSArc, cfg.sMin / 100) * 100;
+	const sMax = arcFraction(slSArc, cfg.sMax / 100) * 100;
+	const lMin = arcFraction(slLArc, cfg.lMin / 100) * 100;
+	const lMax = arcFraction(slLArc, cfg.lMax / 100) * 100;
+	const span = sMax - sMin;
 
-	box("sl-mask-left", 0, cfg.sMin, 0, 100);
-	box("sl-mask-right", cfg.sMax, 100 - cfg.sMax, 0, 100);
-	box("sl-mask-top", cfg.sMin, span, 0, 100 - cfg.lMax);
-	box("sl-mask-bottom", cfg.sMin, span, 100 - cfg.lMin, cfg.lMin);
+	box("sl-mask-left", 0, sMin, 0, 100);
+	box("sl-mask-right", sMax, 100 - sMax, 0, 100);
+	box("sl-mask-top", sMin, span, 0, 100 - lMax);
+	box("sl-mask-bottom", sMin, span, 100 - lMin, lMin);
 }
 
 const DOT_RADIUS = 4;
@@ -840,17 +873,16 @@ function arcAlong(n, colorAt) {
 	return cumulative;
 }
 
-// Cumulative hue arc length averaged over the drawn saturations: one shared hue axis serves
-// every row, and the row-mean is its least-distorting spacing. The S=1 edge alone would
-// over-weight the top row, inflating hues that are wide only when fully saturated.
-const HUE_DENSITY_ROWS = 12;
-function hueArcMean(n, lightness) {
+// Cumulative arc length of the ramp `colorAt(t, row)` averaged over evenly spread row samples:
+// one shared axis serves every row of a plane, and the row-mean is its least-distorting spacing.
+const DENSITY_ROWS = 12;
+function arcMean(n, colorAt) {
 	const cumulative = new Float64Array(n + 1);
-	for (let row = 0; row < HUE_DENSITY_ROWS; ++row) {
-		const s = (row + 0.5) / HUE_DENSITY_ROWS;
-		let prev = rgbToOklab(hsl2rgb(0, s, lightness));
+	for (let row = 0; row < DENSITY_ROWS; ++row) {
+		const at = (row + 0.5) / DENSITY_ROWS;
+		let prev = rgbToOklab(colorAt(0, at));
 		for (let k = 1; k <= n; ++k) {
-			const lab = rgbToOklab(hsl2rgb(k / n * 360, s, lightness));
+			const lab = rgbToOklab(colorAt(k / n, at));
 			cumulative[k] += distance(prev, lab);
 			prev = lab;
 		}
@@ -860,6 +892,16 @@ function hueArcMean(n, lightness) {
 		cumulative[k] += cumulative[k - 1];
 	return cumulative;
 }
+
+// Hue axis averaged over saturations: the S=1 edge alone would over-weight the top row,
+// inflating hues that are wide only when fully saturated.
+function hueArcMean(n, lightness) {
+	return arcMean(n, (t, s) => hsl2rgb(t * 360, s, lightness));
+}
+
+// The hue bar's fixed axis, at the chart's default lightness: the bar shows pure hues, but its
+// spacing matches the big chart.
+const HUE_BAR_ARC = hueArcMean(1440, 0.5);
 
 // Axis position of ramp fraction `t`: how far along the arc it sits, 0 to 1.
 // An identity when the arc has no length: every hue at lightness 0 or 1 is the same black or white.
@@ -980,6 +1022,7 @@ function drawHSPlane(cfg, colors) {
 }
 
 function refreshBars(cfg) {
+	drawHueBar();
 	maskHueBar(cfg.hMin, cfg.hMax);
 	drawSLPlane(cfg.hMin);
 	maskPlane(cfg);
