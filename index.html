@@ -188,17 +188,34 @@
 	.name-group { display: flex; gap: 4px; }
 	/* Boxed only once it holds more than one name, which is when the box means something. */
 	.name-group.merged { padding: 4px; border: 1px solid var(--accent); border-radius: 8px; }
-	.name-chip { width: 104px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden;
-		cursor: grab; background: none; touch-action: none; user-select: none; }
+	.name-chip { position: relative; width: 104px; border: 1px solid var(--line); border-radius: 6px;
+		overflow: hidden; cursor: grab; background: none; touch-action: none; user-select: none; }
+	/* Its own dark plate, so the glyph carries over whatever territory is behind it. */
+	.name-chip .split { position: absolute; top: 3px; right: 3px; width: 18px; height: 18px; padding: 0;
+		font-size: 13px; line-height: 1; border-radius: 4px; cursor: pointer;
+		color: #fff; background: rgba(0, 0, 0, .55); border: 1px solid rgba(255, 255, 255, .4); }
+	.name-chip .split:hover { background: var(--accent); border-color: var(--accent); }
 	.name-chip:hover { border-color: var(--swatch-hover); }
 	.name-chip canvas { display: block; width: 100%; height: 64px; }
 	.name-chip .meta { padding: 4px 6px; font-size: 11px; line-height: 1.3; color: var(--ink); }
 	.name-chip .meta div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 	.name-chip .meta .level { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
-	.name-chip.off { opacity: .38; }
+	/* An excluded name reads as off across the room: its territory goes flat and near-black, which
+	   lands the same way on either theme, and the label stays legible to say which name it is. */
+	.name-chip.off { border-style: dashed; }
+	.name-chip.off canvas { filter: grayscale(1) brightness(.3); }
+	.name-chip.off .meta { color: var(--ink-dim); }
 	.name-chip.off .meta .name { text-decoration: line-through; }
-	.name-chip.dragging { opacity: .5; cursor: grabbing; }
+	.name-chip.dragging { opacity: .35; }
 	.name-chip.target { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+
+	/* The copy that follows the cursor: placed in viewport coordinates, and deaf to pointer events,
+	   or it would mask the chip it is dropped on. */
+	.name-chip.ghost { position: fixed; z-index: 50; pointer-events: none; background: var(--panel);
+		transform: rotate(-3deg); box-shadow: 0 10px 24px rgba(0, 0, 0, .5); }
+
+	/* Every element, not just the chip: the pointer spends the drag over other things. */
+	body.dragging-name, body.dragging-name * { cursor: grabbing !important; }
 
 	#fixed-colors { width: 100%; height: 56px; resize: vertical; font: 11px/1.5 ui-monospace, Consolas, monospace; }
 	#fixed-preview { display: flex; height: 18px; margin-top: 6px; border-radius: 4px; overflow: hidden; }
@@ -340,7 +357,7 @@
 	</div>
 	<div id="names-body">
 		<div id="name-chips"></div>
-		<div class="hint">Every name the generator can reach, each drawn at the lightness where it covers the most ground - nine of them, white and black among them, cover nothing at all at mid lightness. Click a name to stop the generator using it; fixed colors are exempt. Drag one name onto another to merge them: merged names generate as a single name, so two colors sharing one have to sit further apart, while each swatch keeps its own label. Drag a name out of its box to split it off.</div>
+		<div class="hint" id="names-hint">Every name the generator can reach, each drawn at the lightness where it covers the most ground - nine of them, white and black among them, cover nothing at all at mid lightness. Click a name to stop the generator using it; fixed colors are exempt. Drag one name onto another to merge them: merged names generate as a single name, so two colors sharing one have to sit further apart, while each swatch keeps its own label. Drag a name out of its box to split it off.</div>
 	</div>
 
 	<hr>
@@ -1110,10 +1127,11 @@ function refreshLabels() {
 	$("fixed-preview").innerHTML = cfg.fixed.map(color => '<span style="background:' + color.hex + '"></span>').join("");
 }
 
+const displayName = cell => cellName(cell).replace(/^./, first => first.toUpperCase());
+
 // A tilde marks a color the survey never settled a name for. It records how the color is named, not
 // a fault in the color: those colors are as usable as any other, and some cells hold little else.
-const cellLabel = color => (color.confident ? "" : "~ ")
-	+ cellName(color.cell).replace(/^./, first => first.toUpperCase());
+const cellLabel = color => (color.confident ? "" : "~ ") + displayName(color.cell);
 
 const UNSURE_TITLE = ' title="people gave this color no one name"';
 
@@ -1189,6 +1207,7 @@ const ALL_CELLS = CELL_NAMES.map((_, cell) => cell);
 // A group is named by its lowest member, so its leader is the cell naming itself.
 const groupLeaders = () => ALL_CELLS.filter(cell => nameGroup[cell] === cell);
 const groupMembers = leader => ALL_CELLS.filter(cell => nameGroup[cell] === leader);
+const inGroup = cell => groupMembers(nameGroup[cell]).length > 1;
 
 function mergeGroups(a, b) {
 	const [leader, absorbed] = ordered(nameGroup[a], nameGroup[b]);
@@ -1278,13 +1297,22 @@ function nameChip(cell) {
 	meta.className = "meta";
 	const name = document.createElement("div");
 	name.className = "name";
-	name.textContent = cellName(cell).replace(/^./, first => first.toUpperCase());
+	name.textContent = displayName(cell);
 	const level = document.createElement("div");
 	level.className = "level";
 	level.textContent = "L " + CELL_PEAK[cell] + "%";
 	meta.append(name, level);
 
 	chip.append(territoryCanvas(cell), meta);
+
+	// Only where there is a group to leave, so the button never asks to undo nothing.
+	if (inGroup(cell)) {
+		const split = document.createElement("button");
+		split.className = "split";
+		split.textContent = "×";
+		split.title = "Split " + displayName(cell) + " off from the group";
+		chip.append(split);
+	}
 	return chip;
 }
 
@@ -1304,6 +1332,8 @@ function renderNames() {
 }
 
 const DRAG_THRESHOLD = 4;
+// Restored whenever a drag ends: during one, the caption says what releasing here would do.
+const NAMES_HINT = $("names-hint").textContent;
 let nameDrag = null;
 
 // The chip under a point in viewport coordinates, null where the point is over none.
@@ -1317,37 +1347,96 @@ const clearDragMarks = () => {
 		chip.classList.remove("dragging", "target");
 };
 
+// The copy that rides the cursor. cloneNode leaves a canvas blank, so the territory is drawn
+// across; the split button goes, having nothing to act on in a copy.
+function liftedGhost(chip) {
+	const ghost = chip.cloneNode(true);
+	ghost.classList.add("ghost");
+	const split = ghost.querySelector(".split");
+	if (split)
+		split.remove();
+	ghost.querySelector("canvas").getContext("2d").drawImage(chip.querySelector("canvas"), 0, 0);
+	document.body.append(ghost);
+	return ghost;
+}
+
+// What releasing at the pointer would do, for the caption.
+function dragHint(over) {
+	if (over && over !== nameDrag.chip)
+		return "Release to merge " + displayName(nameDrag.cell) + " with " + displayName(+over.dataset.cell);
+	if (inGroup(nameDrag.cell))
+		return "Release on empty space to split " + displayName(nameDrag.cell) + " off";
+	return "Drop " + displayName(nameDrag.cell) + " on another name to merge the two";
+}
+
+function endNameDrag() {
+	if (nameDrag && nameDrag.ghost)
+		nameDrag.ghost.remove();
+	nameDrag = null;
+	document.body.classList.remove("dragging-name");
+	$("names-hint").textContent = NAMES_HINT;
+	clearDragMarks();
+}
+
 $("name-chips").addEventListener("pointerdown", event => {
 	const chip = event.target.closest(".name-chip");
-	if (!chip || event.button)
+	if (!chip || event.button || event.target.closest(".split"))
 		return;
-	nameDrag = { cell: +chip.dataset.cell, chip, x: event.clientX, y: event.clientY, moved: false };
-	chip.setPointerCapture(event.pointerId);
+	const box = chip.getBoundingClientRect();
+	nameDrag = { cell: +chip.dataset.cell, chip, moved: false, ghost: null,
+		x: event.clientX, y: event.clientY,
+		grabX: event.clientX - box.left, grabY: event.clientY - box.top };
 	event.preventDefault();
 });
 
-$("name-chips").addEventListener("pointermove", event => {
+// The split button starts no drag, so its click stands on its own.
+$("name-chips").addEventListener("click", event => {
+	const split = event.target.closest(".split");
+	if (!split)
+		return;
+	detachCell(+split.closest(".name-chip").dataset.cell);
+	renderNames();
+	scheduleRun();
+});
+
+// A chip holds a canvas and text, either of which a browser will otherwise pick up as a native
+// drag: that swallows the pointer stream and the gesture never reaches the handlers below.
+$("name-chips").addEventListener("dragstart", event => event.preventDefault());
+
+// Watched on the document rather than the strip, and without pointer capture: the pointer leaves
+// the chip it started on by definition, and a drag released outside the strip still ends here.
+document.addEventListener("pointermove", event => {
 	if (!nameDrag)
 		return;
 	if (!nameDrag.moved && Math.hypot(event.clientX - nameDrag.x, event.clientY - nameDrag.y) < DRAG_THRESHOLD)
 		return;
 
-	nameDrag.moved = true;
-	nameDrag.chip.classList.add("dragging");
+	// The ghost is cloned before the source is marked, so it does not inherit the faded look.
+	if (!nameDrag.moved) {
+		nameDrag.moved = true;
+		nameDrag.ghost = liftedGhost(nameDrag.chip);
+		nameDrag.chip.classList.add("dragging");
+		document.body.classList.add("dragging-name");
+	}
+
+	nameDrag.ghost.style.left = (event.clientX - nameDrag.grabX) + "px";
+	nameDrag.ghost.style.top = (event.clientY - nameDrag.grabY) + "px";
+
 	const over = chipAt(event.clientX, event.clientY);
 	for (const chip of $("name-chips").querySelectorAll(".name-chip"))
 		chip.classList.toggle("target", chip === over && chip !== nameDrag.chip);
+	$("names-hint").textContent = dragHint(over);
 });
 
 // A press that never moved toggles the name. A drag carries the one name it started on: onto
 // another chip it joins that chip's group, and on the strip's own background it leaves the group
 // it was in. A drop anywhere else is abandoned.
-$("name-chips").addEventListener("pointerup", event => {
+document.addEventListener("pointerup", event => {
 	if (!nameDrag)
 		return;
 
 	const { cell, chip, moved } = nameDrag;
-	nameDrag = null;
+	endNameDrag();
 
 	let changed = true;
 	if (!moved) {
@@ -1370,10 +1459,7 @@ $("name-chips").addEventListener("pointerup", event => {
 		scheduleRun();
 });
 
-$("name-chips").addEventListener("pointercancel", () => {
-	nameDrag = null;
-	clearDragMarks();
-});
+document.addEventListener("pointercancel", endNameDrag);
 
 $("names-toggle").addEventListener("click", () => {
 	const body = $("names-body");
