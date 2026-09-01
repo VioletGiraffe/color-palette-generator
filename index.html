@@ -45,26 +45,26 @@
 		display: grid;
 		gap: 20px;
 		align-items: start;
-		grid-template-columns: 300px minmax(380px, 1fr) 280px;
-		grid-template-areas: "controls output side";
+		grid-template-columns: 300px minmax(380px, 1fr) 360px;
+		grid-template-rows: auto 1fr;
+		grid-template-areas: "controls output gamut" "controls output side";
 	}
 
-	/* State slots under Controls, Output spans both rows: a wrapped flex row cannot back-fill
-	   the space a short first column leaves. */
-	@media (max-width: 1100px) {
+	/* Below three columns, the short panels pair under the tall ones - State under Controls,
+	   the gamut under Output - so neither column carries all the height. */
+	@media (max-width: 1140px) {
 		#layout {
 			grid-template-columns: 300px minmax(0, 1fr);
-			/* auto 1fr: the second row absorbs Output's spanned height, so the first hugs
-			   Controls instead of splitting the excess. */
 			grid-template-rows: auto 1fr;
-			grid-template-areas: "controls output" "side output";
+			grid-template-areas: "controls output" "side gamut";
 		}
 	}
 
 	@media (max-width: 780px) {
 		#layout {
 			grid-template-columns: 100%;
-			grid-template-areas: "controls" "output" "side";
+			grid-template-rows: auto;
+			grid-template-areas: "controls" "output" "gamut" "side";
 		}
 	}
 
@@ -78,6 +78,7 @@
 	#controls { grid-area: controls; }
 	#output { grid-area: output; }
 	#side { grid-area: side; }
+	#gamut { grid-area: gamut; }
 
 	.group { margin-bottom: 12px; }
 	.group:last-child { margin-bottom: 0; }
@@ -133,7 +134,7 @@
 
 	#hs-plane { height: 120px; margin: 16px 0 0; }
 
-	#gamut-3d { height: 460px; margin: 16px 0 0; }
+	#gamut-3d { height: 460px; }
 
 	/* Hatched, not a flat scrim: the plane runs to black and to white, and a scrim of either
 	   tone is invisible against its own corner. */
@@ -303,9 +304,6 @@
 	</div>
 	<div class="hint">Hue across, saturation up, at the chart lightness. Both axes are spaced by perceived change (OKLab arc length): the saturation axis exactly, per column; the hue axis as the average over saturations, since one shared axis cannot be exact for every row. Dots are the generated colors, triangles the fixed ones; hatching is outside the selected ranges.</div>
 
-	<div class="plane" id="gamut-3d"></div>
-	<div class="hint">The sRGB gamut in OKLab: lightness up, hue around the grey axis, vividness outward. The solid body is what the selected H/S/L ranges leave; the translucent shell is the rest of the gamut. Spheres are the generated colors, cones the fixed ones; the amber line joins the hardest pair to tell apart. The faint halo around each marker reaches half the Distinctness distance, so two halos meeting mark a pair at that limit. Drag to rotate, wheel to zoom, double-click to reset the view and resume the spin. Hovering a color - swatch, chart dot or sphere - highlights it in every view.</div>
-
 	<hr>
 
 	<div class="bar">
@@ -321,6 +319,12 @@
 	<textarea id="export" readonly spellcheck="false"></textarea>
 	<div class="hint">Click any swatch to copy its hex.</div>
 
+</div>
+
+<div class="panel" id="gamut">
+	<h2>3D gamut</h2>
+	<div class="plane" id="gamut-3d"></div>
+	<div class="hint">The sRGB gamut in OKLab: lightness up, hue around the grey axis, vividness outward. The solid body is what the selected H/S/L ranges leave; the translucent shell is the rest of the gamut. Spheres are the generated colors, cones the fixed ones; the amber line joins the hardest pair to tell apart. The faint halo around each marker reaches half the Distinctness distance, so two halos meeting mark a pair at that limit. Drag to rotate, wheel to zoom, double-click to reset the view and resume the spin. Hovering a color - swatch, chart dot or sphere - highlights it in every view.</div>
 </div>
 
 <div class="panel" id="side">
