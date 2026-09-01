@@ -105,7 +105,10 @@
 	.plane canvas { display: block; width: 100%; height: 100%; }
 
 	#sl-plane { height: 75px; margin: 2px 0 4px; }
-	#hs-plane { height: 120px; margin: 16px 0 0; }
+
+	#slices { display: flex; gap: 8px; margin: 16px 0 0; }
+	#slices .plane { flex: 1; aspect-ratio: 1; }
+	.slice-label { position: absolute; left: 6px; top: 3px; font-size: 11px; color: var(--ink-dim); }
 
 	/* Hatched, not a flat scrim: the plane runs to black and to white, and a scrim of either
 	   tone is invisible against its own corner. */
@@ -265,8 +268,17 @@
 		<div id="tiles"></div>
 	</div>
 
-	<div class="plane" id="hs-plane"><canvas id="hs-canvas"></canvas></div>
-	<div class="hint">Hue across, saturation up, at the in-range lightness nearest 50%. Dots are the generated colors, triangles the fixed ones; hatching is outside the selected ranges.</div>
+	<div id="slices">
+		<div class="plane"><canvas id="slice-0"></canvas><span class="slice-label" id="slice-label-0"></span></div>
+		<div class="plane"><canvas id="slice-1"></canvas><span class="slice-label" id="slice-label-1"></span></div>
+		<div class="plane"><canvas id="slice-2"></canvas><span class="slice-label" id="slice-label-2"></span></div>
+	</div>
+	<div class="bar" style="margin-top: 8px">
+		<span style="font-size: 12px; color: var(--ink-dim)">Slice lightness</span>
+		<input type="range" id="slice-l" min="0" max="100" step="0.5" value="50" style="flex: 1">
+		<span style="font-size: 12px; color: var(--ink-dim)" id="slice-l-value"></span>
+	</div>
+	<div class="hint">Slices of the color space (OKLab) at the low, middle and high lightness of the selected range: angle is hue, distance from the grey centre is vividness. Equal distance is equal perceived difference in any direction; rings are 10 &Delta;E apart. Dots are the generated colors on the slice nearest their lightness, triangles the fixed ones; hatching is outside the selected ranges. The slider sweeps the slices through lightness.</div>
 
 	<hr>
 
@@ -375,6 +387,18 @@ function rgbToOklab(rgb) {
 		1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
 		0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
 	];
+}
+
+// Inverse of rgbToOklab. Components outside [0, 1] mean the color is outside the sRGB gamut.
+function oklabToRgb(L, a, b) {
+	const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+	const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+	const s = (L - 0.0894841775 * a - 1.2914855480 * b) ** 3;
+	const lin = [
+		 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+		-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+		-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s];
+	return lin.map(u => u <= 0.0031308 ? u * 12.92 : 1.055 * u ** (1 / 2.4) - 0.055);
 }
 
 // Scaled x100 so the useful range reads like CIE delta-E rather than 0.01 steps.
@@ -734,8 +758,6 @@ const DOT_RADIUS = 4;
 // Larger than the dot: a triangle inscribed in the same circle covers under half the area and reads
 // as the smaller mark.
 const TRIANGLE_RADIUS = 5.5;
-// The furthest a marker of either shape reaches from its centre, which is what decides an edge wrap.
-const MARKER_REACH = Math.max(DOT_RADIUS, TRIANGLE_RADIUS);
 
 // Fixed colors are triangles, generated ones circles.
 function drawMarker(ctx, x, y, color) {
@@ -757,53 +779,17 @@ function drawMarker(ctx, x, y, color) {
 	ctx.stroke();
 }
 
-// Cumulative OKLab arc length along a color ramp, in `n` steps of `colorAt`. Plot axes follow arc
-// position, so equal distances on screen cover equal perceived change: in plain HSL units green
-// sprawls across the hue axis and red-to-yellow is squeezed.
-function arcAlong(n, colorAt) {
-	const cumulative = new Float64Array(n + 1);
-	let prev = rgbToOklab(colorAt(0));
-	for (let k = 1; k <= n; ++k) {
-		const lab = rgbToOklab(colorAt(k / n));
-		cumulative[k] = cumulative[k - 1] + distance(prev, lab);
-		prev = lab;
-	}
-	return cumulative;
-}
+// One OKLab slice at a fixed lightness: angle is hue, radius is chroma, and equal screen distance
+// is equal perceived difference in every direction - a property no axis remap of a hue/saturation
+// rectangle can reach. Three slices stand in for the lightness axis.
+const SLICE_EXTENT = 0.34;   // ab units from centre to edge; sRGB's largest chroma is 0.325
+const RING_STEP = 0.1;       // 10 deltaE between rings
 
-// Axis position of ramp fraction `t`: how far along the arc it sits, 0 to 1.
-// An identity when the arc has no length: every hue at lightness 0 or 1 is the same black or white.
-function arcFraction(arc, t) {
-	const total = arc[arc.length - 1];
-	if (!total)
-		return t;
-	const scaled = Math.min(t, 1) * (arc.length - 1);
-	const k = Math.min(arc.length - 2, Math.floor(scaled));
-	return (arc[k] + (scaled - k) * (arc[k + 1] - arc[k])) / total;
-}
+// OKLab lightness of the grey at HSL lightness `l`: pins a slice to the app's lightness scale.
+const greyOklabL = l => Math.cbrt(srgbToLinear(l));
 
-// The inverse of arcFraction for `steps` evenly spaced axis positions: the ramp fraction drawn at
-// each. Both walk the same direction, so the cursor never rewinds.
-// `last` is the axis position of the final step: 1 where the axis ends at the ramp's extreme,
-// below 1 for the cyclic hue axis, whose final pixel stops short of wrapping back to the start.
-function invertArc(arc, steps, last) {
-	const out = new Float64Array(steps);
-	const total = arc[arc.length - 1];
-	for (let r = 0, k = 0; r < steps; ++r) {
-		const along = r / (steps - 1) * last;
-		const length = along * total;
-		while (k + 2 < arc.length && arc[k + 1] < length)
-			++k;
-		out[r] = total ? (k + (length - arc[k]) / (arc[k + 1] - arc[k])) / (arc.length - 1) : along;
-	}
-	return out;
-}
-
-// Drawn at the in-range lightness nearest 50, where chroma peaks and the field reads clearest.
-// The mask is per-pixel because a wrapped hue range is two segments, which overlay bands would
-// have to cross, doubling the hatch where they met.
-function drawHSPlane(cfg, colors) {
-	const canvas = $("hs-canvas");
+// The mask is per-pixel: the in-range region of a slice is curved, no overlay bands can follow it.
+function drawSlice(canvas, level, cfg, colors) {
 	const w = canvas.clientWidth, h = canvas.clientHeight;
 	canvas.width = w;
 	canvas.height = h;
@@ -811,29 +797,25 @@ function drawHSPlane(cfg, colors) {
 	const ctx = canvas.getContext("2d");
 	const image = ctx.createImageData(w, h);
 	const data = image.data;
-	const lightness = Math.min(Math.max(50, cfg.lMin), cfg.lMax) / 100;
+	const L = greyOklabL(level / 100);
+	const cx = w / 2, cy = h / 2, scale = Math.min(w, h) / 2 / SLICE_EXTENT;
 
-	// The hue arc is sampled finer than the pixel grid, the saturation arcs once per pixel row:
-	// the remap's resolution is set by the canvas, not by a fixed table.
-	const hueArc = arcAlong(4 * w, t => hsl2rgb(t * 360, 1, lightness));
-	const hueAt = invertArc(hueArc, w, (w - 1) / w);
-
-	for (let x = 0; x < w; ++x) {
-		const hue = hueAt[x] * 360;
-		const inHue = cfg.hMin <= cfg.hMax
-			? hue >= cfg.hMin && hue <= cfg.hMax
-			: hue >= cfg.hMin || hue <= cfg.hMax;
-		// Saturation is remapped per column: how fast it changes depends on the hue.
-		const sAt = invertArc(arcAlong(h - 1, t => hsl2rgb(hue, t, lightness)), h, 1);
-
-		for (let y = 0; y < h; ++y) {
-			const s = sAt[h - 1 - y];
-			const inSaturation = s * 100 >= cfg.sMin && s * 100 <= cfg.sMax;
-			const rgb = hsl2rgb(hue, s, lightness);
-			let r = rgb[0] * 255, g = rgb[1] * 255, b = rgb[2] * 255;
+	let i = 0;
+	for (let y = 0; y < h; ++y)
+		for (let x = 0; x < w; ++x, i += 4) {
+			const rgb = oklabToRgb(L, (x - cx) / scale, (cy - y) / scale);
+			// Out of the sRGB gamut: left transparent, the panel shows through.
+			if (!rgb.every(u => u >= -0.0005 && u <= 1.0005))
+				continue;
+			const clamped = rgb.map(u => Math.min(1, Math.max(0, u)));
+			const [hue, s, l] = rgb2hsl(clamped);
+			const inHue = cfg.hMin <= cfg.hMax
+				? hue >= cfg.hMin && hue <= cfg.hMax
+				: hue >= cfg.hMin || hue <= cfg.hMax;
+			let [r, g, b] = [clamped[0] * 255, clamped[1] * 255, clamped[2] * 255];
 
 			// Same hatch as the CSS masks: 5px of black at 70%, then 5px of white at 32%.
-			if (!inHue || !inSaturation) {
+			if (!inHue || s * 100 < cfg.sMin || s * 100 > cfg.sMax || l * 100 < cfg.lMin || l * 100 > cfg.lMax) {
 				if ((x + y) % 10 < 5) {
 					r *= .3; g *= .3; b *= .3;
 				} else {
@@ -841,26 +823,48 @@ function drawHSPlane(cfg, colors) {
 				}
 			}
 
-			const at = (y * w + x) * 4;
-			data[at] = r;
-			data[at + 1] = g;
-			data[at + 2] = b;
-			data[at + 3] = 255;
+			data[i] = r;
+			data[i + 1] = g;
+			data[i + 2] = b;
+			data[i + 3] = 255;
 		}
-	}
 
 	ctx.putImageData(image, 0, 0);
 
-	// The hue axis is cyclic, so a marker within a radius of either edge is drawn again at the other.
+	ctx.strokeStyle = "rgba(200, 200, 200, 0.4)";
+	ctx.lineWidth = 1;
+	for (let radius = RING_STEP; radius < SLICE_EXTENT; radius += RING_STEP) {
+		ctx.beginPath();
+		ctx.arc(cx, cy, radius * scale, 0, Math.PI * 2);
+		ctx.stroke();
+	}
+
+	for (const color of colors)
+		drawMarker(ctx, cx + color.lab[1] * scale, cy - color.lab[2] * scale, color);
+}
+
+// The sweep slider's lightness in the middle, the range's half-width to either side: at the
+// default sweep the slices sit at the range's low, middle and high. Each color's marker goes on
+// the slice nearest its own lightness.
+function drawSlices(cfg, colors) {
+	const half = (cfg.lMax - cfg.lMin) / 2;
+	const centre = +$("slice-l").value;
+	const levels = [centre - half, centre, centre + half].map(v => Math.min(100, Math.max(0, v)));
+	$("slice-l-value").textContent = levels.map(Math.round).join(" / ") + "%";
+
+	const greys = levels.map(v => greyOklabL(v / 100));
+	const perSlice = levels.map(() => []);
 	for (const color of colors) {
-		const x = arcFraction(hueArc, color.h / 360) * w;
-		const sArc = arcAlong(h - 1, t => hsl2rgb(color.h, t, lightness));
-		const y = (1 - arcFraction(sArc, color.s)) * (h - 1);
-		drawMarker(ctx, x, y, color);
-		if (x < MARKER_REACH)
-			drawMarker(ctx, x + w, y, color);
-		else if (x > w - MARKER_REACH)
-			drawMarker(ctx, x - w, y, color);
+		let at = 0;
+		for (let i = 1; i < greys.length; ++i)
+			if (Math.abs(color.lab[0] - greys[i]) < Math.abs(color.lab[0] - greys[at]))
+				at = i;
+		perSlice[at].push(color);
+	}
+
+	for (let i = 0; i < levels.length; ++i) {
+		$("slice-label-" + i).textContent = "L " + Math.round(levels[i]) + "%";
+		drawSlice($("slice-" + i), levels[i], cfg, perSlice[i]);
 	}
 }
 
@@ -921,7 +925,7 @@ function render(result, cfg) {
 		'<div class="' + marks(c).trim() + '" style="background:' + c.hex + '" title="'
 			+ c.hex.toUpperCase() + " · " + cellLabel(c) + (c.fixed ? " (fixed)" : "") + '"></div>').join("");
 
-	drawHSPlane(cfg, palette);
+	drawSlices(cfg, palette);
 	refreshExport();
 }
 
@@ -1019,6 +1023,7 @@ function applyStateString(text) {
 
 	// Assigning a select's value fires no change event, so the backdrop is applied by hand.
 	applyBackdrop(currentBackdrop());
+	recentreSweep();
 	run();
 	return true;
 }
@@ -1105,6 +1110,19 @@ function scheduleRun() {
 
 for (const id of [...STATE_IDS, "fixed-colors"])
 	$(id).addEventListener("input", () => { refreshLabels(); scheduleRun(); });
+
+const recentreSweep = () => $("slice-l").value = (+$("l-min").value + +$("l-max").value) / 2;
+for (const id of ["l-min", "l-max"])
+	$(id).addEventListener("input", recentreSweep);
+
+// The sweep is a view control: it redraws the slices from the palette already generated.
+let sliceRedrawScheduled = false;
+$("slice-l").addEventListener("input", () => {
+	if (sliceRedrawScheduled)
+		return;
+	sliceRedrawScheduled = true;
+	requestAnimationFrame(() => { sliceRedrawScheduled = false; drawSlices(readConfig(), palette); });
+});
 
 $("sort").addEventListener("change", scheduleRun);
 
