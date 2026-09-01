@@ -41,7 +41,15 @@ notice be kept; `index.html` carries it above the tables.
 ```
 python data/build_cells.py            # print the two lines to paste into index.html
 python data/build_cells.py --check    # verify index.html matches; non-zero exit if not
+node data/bench.js [page.html]        # end-to-end: generate palettes, score identification
 ```
+
+`bench.js` accepts any version of the page, so a change can be compared against
+`git show <rev>:index.html` saved to a file. It models the real task, labeling a palette color
+seen on its own: two entries are confusable when people describe both colors with the same
+words and the colors also sit close in OKLab - either alone is survivable, together they are
+not. An entry scores 1 minus its worst confusability; a palette reports the mean entry score
+and the worst - it is only as usable as its most confusable color.
 
 The four constants at the top of the script are the only judgement calls. All trade the number of
 cells against how well each one corresponds to a name a person would actually reach for.
