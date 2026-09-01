@@ -285,7 +285,7 @@
 	<div class="hint">Slices of the color space (OKLab) at the low, middle and high lightness of the selected range: angle is hue, distance from the grey centre is vividness. Equal distance is equal perceived difference in any direction; rings are 10 &Delta;E apart. Dots are the generated colors on the slice nearest their lightness, triangles the fixed ones; hatching is outside the selected ranges. The slider sweeps the slices through lightness.</div>
 
 	<div class="plane" id="gamut-3d"></div>
-	<div class="hint">The sRGB gamut in OKLab: lightness up, the slices' hue-vividness plane around it. The solid body is what the selected H/S/L ranges leave; the translucent shell is the rest of the gamut. Spheres are the generated colors, cones the fixed ones, rings the three slice planes; the amber line joins the hardest pair to tell apart. Drag to rotate, wheel to zoom. Hovering a color - swatch, slice dot or sphere - highlights it in every view.</div>
+	<div class="hint">The sRGB gamut in OKLab: lightness up, the slices' hue-vividness plane around it. The solid body is what the selected H/S/L ranges leave; the translucent shell is the rest of the gamut. Spheres are the generated colors, cones the fixed ones, rings the three slice planes; the amber line joins the hardest pair to tell apart. The faint halo around each marker reaches half the Distinctness distance, so two halos meeting mark a pair at that limit. Drag to rotate, wheel to zoom, double-click to reset the view and resume the spin. Hovering a color - swatch, slice dot or sphere - highlights it in every view.</div>
 
 	<hr>
 
@@ -1424,8 +1424,19 @@ controls.enablePan = false;
 controls.minZoom = 0.6;
 controls.maxZoom = 6;
 controls.autoRotate = true;
-controls.autoRotateSpeed = 0.8;
-renderer.domElement.addEventListener("pointerdown", () => { controls.autoRotate = false; }, { once: true });
+controls.autoRotateSpeed = 1.6;
+renderer.domElement.addEventListener("pointerdown", () => { controls.autoRotate = false; });
+
+// Double-click: back to the home view, spinning again. Fires after its own pointerdown, so the
+// resume wins over the stop above.
+const HOME = camera.position.clone();
+renderer.domElement.addEventListener("dblclick", () => {
+	camera.position.copy(HOME);
+	camera.zoom = 1;
+	camera.updateProjectionMatrix();
+	controls.target.set(0, 0, 0);
+	controls.autoRotate = true;
+});
 
 // An indexed (nu x nv) sheet over the unit square: `at` gives the sRGB color, kept as both the
 // OKLab position and the vertex color. Colors are stored linear, the working space of the shaders.
@@ -1472,8 +1483,8 @@ scene.add(new THREE.Line(
 	new THREE.LineBasicMaterial({ color: 0x9298a4 })));
 
 const regionGroup = new THREE.Group(), markerGroup = new THREE.Group(),
-	ringGroup = new THREE.Group(), pairGroup = new THREE.Group();
-scene.add(regionGroup, markerGroup, ringGroup, pairGroup);
+	ringGroup = new THREE.Group(), pairGroup = new THREE.Group(), zoneGroup = new THREE.Group();
+scene.add(regionGroup, markerGroup, ringGroup, pairGroup, zoneGroup);
 
 // Every rebuilt mesh owns its geometry and material, so a rebuild can dispose both.
 function clearGroup(group) {
@@ -1521,8 +1532,8 @@ function markerMeshes(colors) {
 		mesh.position.set(...toScene(color.lab));
 		for (const [settings, order, scale] of [
 			[{ color: contrast, side: THREE.BackSide }, 0, 1.35],
-			[{ color: contrast, side: THREE.BackSide, ...ghosted }, 1, 1.35],
-			[{ color: color.hex, ...ghosted }, 2, 1]
+			[{ color: contrast, side: THREE.BackSide, ...ghosted }, 2, 1.35],
+			[{ color: color.hex, ...ghosted }, 3, 1]
 		]) {
 			const part = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial(settings));
 			part.renderOrder = order;
@@ -1562,8 +1573,22 @@ function pairMesh(pair) {
 		new THREE.MeshBasicMaterial({ color: warn, transparent: true, opacity: 0.9, depthTest: false }));
 	mesh.position.copy(ends[0]).add(ends[1]).multiplyScalar(0.5);
 	mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
-	mesh.renderOrder = 3;
+	mesh.renderOrder = 4;
 	return mesh;
+}
+
+// Half the Distinctness distance around every color, so two zones meet exactly where the pair
+// sits `scale` deltaE apart. Annotations like the pair line: depth testing off, drawn between
+// the shell and the marker ghosts.
+function zoneMeshes(colors, radius) {
+	return colors.map(color => {
+		const zone = new THREE.Mesh(new THREE.SphereGeometry(radius, 24, 16),
+			new THREE.MeshBasicMaterial({
+				color: color.hex, transparent: true, opacity: 0.16, depthTest: false, depthWrite: false }));
+		zone.position.set(...toScene(color.lab));
+		zone.renderOrder = 1;
+		return zone;
+	});
 }
 
 window.update3D = (cfg, colors, pair) => {
@@ -1576,6 +1601,11 @@ window.update3D = (cfg, colors, pair) => {
 	const line = pair ? pairMesh(pair) : null;
 	if (line)
 		pairGroup.add(line);
+	clearGroup(zoneGroup);
+	// The scene is in OKLab units, the slider in deltaE, a hundred times larger.
+	const radius = cfg.scale / 200;
+	if (radius > 0 && colors.length)
+		zoneGroup.add(...zoneMeshes(colors, radius));
 };
 
 window.highlight3D = color => {
