@@ -45,7 +45,7 @@
 		display: grid;
 		gap: 20px;
 		align-items: start;
-		grid-template-columns: 340px minmax(380px, 1fr) 280px;
+		grid-template-columns: 300px minmax(380px, 1fr) 280px;
 		grid-template-areas: "controls output side";
 	}
 
@@ -53,7 +53,7 @@
 	   the space a short first column leaves. */
 	@media (max-width: 1100px) {
 		#layout {
-			grid-template-columns: 340px minmax(0, 1fr);
+			grid-template-columns: 300px minmax(0, 1fr);
 			/* auto 1fr: the second row absorbs Output's spanned height, so the first hugs
 			   Controls instead of splitting the excess. */
 			grid-template-rows: auto 1fr;
