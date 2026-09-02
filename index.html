@@ -383,7 +383,7 @@
 	</div>
 	<div id="names-body">
 		<div id="name-chips"></div>
-		<div class="hint" id="names-hint">Every name the generator can reach, each drawn at the lightness where it covers the most ground - eleven of them, white and black among them, cover nothing at all at mid lightness. Click a name to exclude it: a generated color that lands in it is outlined.</div>
+		<div class="hint" id="names-hint">Every name the generator can reach, each drawn at the lightness where it covers the most ground - eleven of them, white and black among them, cover nothing at all at mid lightness. Click a name to exclude it: generated colors keep out of it, fixed colors are exempt. A color that lands in it regardless is outlined.</div>
 	</div>
 
 	<hr>
@@ -644,10 +644,13 @@ function mulberry32(seed) {
 // The name table when none is chosen: every name usable.
 const ALL_INCLUDED = Array.from({ length: NAME_SLOTS }, () => true);
 
+// Whether a generated color may sit at the point: sRGB shows it and its name is in use.
+const usableLch = (L, C, h, cfg) => showsLch(L, C, h) && cfg.included[cellOf(oklabToRgb(...labOfLch(L, C, h))).cell];
+
 // A draw is uniform over the box's OKLab volume: lightness and hue evenly, chroma by its square so
-// the sector's outer arc is not thinned, and draws sRGB cannot show rejected. A box sRGB shows
-// almost nowhere in - high chroma at an extreme lightness - accepts rarely, so the tries are capped
-// and the last draw stands, its chroma pulled into the gamut.
+// the sector's outer arc is not thinned, and unusable draws rejected. A box usable almost nowhere -
+// high chroma at an extreme lightness - accepts rarely, so the tries are capped and the last draw
+// stands, its chroma pulled into the gamut.
 const UNIFORM_TRIES = 256;
 
 function sampleLch(rnd, cfg) {
@@ -658,14 +661,14 @@ function sampleLch(rnd, cfg) {
 		L = cfg.lMin + rnd() * (cfg.lMax - cfg.lMin);
 		C = Math.sqrt(c2Min + rnd() * (c2Max - c2Min));
 		h = (cfg.hMin + rnd() * hueSpan) % 360;
-		if (showsLch(L, C, h))
+		if (usableLch(L, C, h, cfg))
 			return [L, C, h];
 	}
 	return [L, Math.min(C, gamutChroma(L, h)), h];
 }
 
-// The box on a grid: the centres of its cells sRGB can show, and the fraction of all cells they
-// are. A box below SPARSE_FRACTION is sampled from its cells (see sampleLch); at zero it is empty.
+// The box on a grid: the centres of its usable cells, and the fraction of all cells they are. A box
+// below SPARSE_FRACTION is sampled from its cells (see sampleLch); at zero it is empty.
 const CELL_STEPS = { L: 25, C: 25, h: 90 };
 const SPARSE_FRACTION = 1 / 32;
 function boxCells(cfg) {
@@ -676,26 +679,27 @@ function boxCells(cfg) {
 		for (let ci = 0; ci < CELL_STEPS.C; ++ci)
 			for (let hi = 0; hi < CELL_STEPS.h; ++hi) {
 				const lch = [cfg.lMin + (li + 0.5) * step[0], cfg.cMin + (ci + 0.5) * step[1], (cfg.hMin + (hi + 0.5) * step[2]) % 360];
-				if (showsLch(...lch))
+				if (usableLch(...lch, cfg))
 					centres.push(lch);
 			}
 	return { centres, step, fraction: centres.length / (CELL_STEPS.L * CELL_STEPS.C * CELL_STEPS.h) };
 }
 
-// A point of a sparse box: a random cell, jittered within it while sRGB shows the result.
+// A point of a sparse box: a random cell, jittered within it while the result stays usable.
 const CELL_TRIES = 8;
-function sampleCell(rnd, cells) {
+function sampleCell(rnd, cfg) {
+	const cells = cfg.cells;
 	const centre = cells.centres[Math.floor(rnd() * cells.centres.length)];
 	for (let n = 0; n < CELL_TRIES; ++n) {
 		const lch = centre.map((v, k) => v + (rnd() - 0.5) * cells.step[k]);
 		lch[2] = (lch[2] + 360) % 360;
-		if (showsLch(...lch))
+		if (usableLch(...lch, cfg))
 			return lch;
 	}
 	return centre;
 }
 
-const samplePoint = (rnd, cfg) => cfg.cells ? sampleCell(rnd, cfg.cells) : sampleLch(rnd, cfg);
+const samplePoint = (rnd, cfg) => cfg.cells ? sampleCell(rnd, cfg) : sampleLch(rnd, cfg);
 
 // OKLab in deltaE units (x100) of an OKLCh point.
 const positionOf = lch => labOfLch(...lch).map(v => v * 100);
@@ -848,9 +852,10 @@ function withinCone(rnd, axis, cfg) {
 // heading drawn within the band off straight away from its neighbors, each neighbor weighing by
 // how steeply its swap chance falls with distance; the heading lasts while the color keeps being
 // pushed and its steps keep being accepted, and is redrawn otherwise. A push is dropped when it
-// raises the color's chance of being misidentified, or when the box or the gamut had to pull its
-// target back: the pushes otherwise walk colors onto the walls and leave them there. `cfg.hull`
-// keeps the pulled-back pushes instead, for the floor the box allows when its walls may be used.
+// raises the color's chance of being misidentified, when its target carries an excluded name, or
+// when the box or the gamut had to pull its target back: the pushes otherwise walk colors onto the
+// walls and leave them there. `cfg.hull` keeps the pulled-back pushes instead, for the floor the
+// box allows when its walls may be used.
 // Returns the state with the highest floor seen, the start included.
 function pushApart(rnd, colors, cfg) {
 	colors = colors.slice();
@@ -900,12 +905,13 @@ function pushApart(rnd, colors, cfg) {
 			const target = pos[i].map((v, k) => v + heading[i][k] * PUSH_STEP);
 			const { lch, clamped } = pointInBox(target[0], target[1], target[2], cfg);
 			const at = positionOf(lch);
-			if ((clamped && !cfg.hull) || errorAt(i, at) > errorAt(i, pos[i])) {
+			const color = colorAt(...lch);
+			if ((clamped && !cfg.hull) || !cfg.included[color.cell] || errorAt(i, at) > errorAt(i, pos[i])) {
 				++rejected[i];
 				heading[i] = null;
 				continue;
 			}
-			colors[i] = colorAt(...lch);
+			colors[i] = color;
 			pos[i] = at;
 			rejected[i] = 0;
 		}
@@ -969,15 +975,15 @@ function attempt(rnd, cfg) {
 // The best of the restarts by floor, then gap. `reachable` is a floor the box allows for this many
 // colors: one attempt free to use the walls, from its own seed so a poor start is not shared. The
 // restarts continue past the first RESTARTS while the best falls short of it or of RESTART_TARGET.
-// Null when sRGB shows no color in the box.
+// Null when the box holds no usable color.
 function generate(cfg) {
 	const sigma = Math.max(cfg.scale, 1);
-	const cells = boxCells(cfg);
+	const settings = { ...cfg, sigma, limit: limitDistance(sigma), included: cfg.included ?? ALL_INCLUDED,
+		pushMin: cfg.pushMin ?? PUSH_ANGLE_MIN, pushMax: cfg.pushMax ?? PUSH_ANGLE_MAX };
+	const cells = boxCells(settings);
 	if (!cells.centres.length)
 		return null;
-	const settings = { ...cfg, sigma, limit: limitDistance(sigma),
-		pushMin: cfg.pushMin ?? PUSH_ANGLE_MIN, pushMax: cfg.pushMax ?? PUSH_ANGLE_MAX,
-		cells: cells.fraction < SPARSE_FRACTION ? cells : null };
+	settings.cells = cells.fraction < SPARSE_FRACTION ? cells : null;
 	const reachable = attempt(mulberry32(settings.seed + 104729), { ...settings, hull: true }).floor;
 	let best = null;
 	for (let n = 0; n < MAX_RESTARTS && (n < RESTARTS || best.floor < Math.max(RESTART_TARGET, reachable - RESTART_SHORTFALL)); ++n) {
@@ -1330,7 +1336,7 @@ function render(result, cfg) {
 	const status = $("status");
 	// A null pair means no measurable one at all: one color and nothing fixed to place it against.
 	const repeated = result ? result.colors.length - result.named : 0;
-	status.textContent = !result ? "sRGB has no color within these ranges."
+	status.textContent = !result ? "sRGB has no color within these ranges" + (cfg.included.every(Boolean) ? "." : " with a name in use.")
 		: (result.pair ? "Hardest pair to tell apart (outlined): weighted ΔE " + result.apart.toFixed(1)
 			+ ", swapped " + (result.confused * 100).toFixed(1) + "% · worst color identified " + (result.floor * 100).toFixed(0) + "%"
 			+ (result.reachable > result.floor + 0.005 ? ", up to " + (result.reachable * 100).toFixed(0) + "% possible here" : ", at this box's limit") + " · " : "")
