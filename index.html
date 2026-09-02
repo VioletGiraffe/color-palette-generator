@@ -121,6 +121,9 @@
 	.range-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin-bottom: 12px; }
 	.range-pair .caption { grid-column: 1 / -1; display: flex; justify-content: space-between; }
 	.range-pair .edge { font-size: 12px; color: var(--ink-dim); }
+	.range-pair .end { display: flex; align-items: center; gap: 6px; }
+	.range-pair .end input[type=number] { width: 64px; }
+	.range-pair .end input[type=range] { flex: 1; min-width: 0; }
 
 	.range-bar {
 		grid-column: 1 / -1;
@@ -261,18 +264,18 @@
 <div class="panel" id="controls">
 
 	<div class="group">
-		<label class="row"><span>Colors</span><span class="value" id="count-value">8</span></label>
-		<input type="range" id="count" min="1" max="40" value="8">
-
-		<label class="row" style="margin-top:12px"><span>Distinctness</span><span class="value" id="strict-value">3.5</span></label>
-		<input type="range" id="strict" min="1" max="50" step="0.5" value="3.5">
+		<div class="range-pair" style="grid-template-columns: auto 1fr; align-items: center; margin-bottom: 0">
+			<label for="count">Colors</label>
+			<label for="strict" class="row" style="margin: 0"><span>Distinctness</span><span class="value" id="strict-value">3.5</span></label>
+			<input type="number" id="count" min="1" max="40" step="1" value="8">
+			<input type="range" id="strict" min="1" max="50" step="0.5" value="3.5">
+		</div>
 		<div class="hint">Width of the memory noise the colors are spread against, in ΔE. Low pushes only the closest pairs apart; high trades that for an even spread.</div>
 
 		<div class="range-pair" style="margin-top:12px; margin-bottom:0">
-			<div class="caption"><span>Push angle</span><span class="value" id="push-value"></span></div>
-			<div class="edge">min</div><div class="edge">max</div>
-			<input type="range" id="push-min" min="0" max="180" step="5" value="15">
-			<input type="range" id="push-max" min="0" max="180" step="5" value="120">
+			<div class="caption"><span>Randomization angle</span><span class="value" id="push-value"></span></div>
+			<label class="end"><span class="edge">min</span><input type="range" id="push-min" min="0" max="180" step="5" value="15"></label>
+			<label class="end"><input type="range" id="push-max" min="0" max="180" step="5" value="120"><span class="edge">max</span></label>
 		</div>
 		<div class="hint">A color confused too often steps off in a random direction this far from straight away from its neighbors.</div>
 	</div>
@@ -295,9 +298,8 @@
 		<div class="range-pair">
 			<div class="caption"><span>Hue</span><span class="value" id="h-value"></span></div>
 			<div class="range-bar" id="hue-bar"><canvas id="hue-canvas"></canvas><div class="muted" id="hue-muted-a"></div><div class="muted" id="hue-muted-b"></div></div>
-			<div class="edge">min</div><div class="edge">max</div>
-			<input type="range" id="h-min" min="0" max="360" value="0">
-			<input type="range" id="h-max" min="0" max="360" value="360">
+			<label class="end"><span class="edge">min</span><input type="range" id="h-min" min="0" max="360" value="0"></label>
+			<label class="end"><input type="range" id="h-max" min="0" max="360" value="360"><span class="edge">max</span></label>
 			<div class="hint" style="grid-column: 1 / -1; margin: 0">Hue wraps when min &gt; max (e.g. 300 &rarr; 60 covers magenta through yellow).</div>
 		</div>
 
@@ -315,18 +317,13 @@
 		</div>
 		<div class="hint" style="margin: 0 0 12px">Chroma across, lightness up, at the plane hue. The selected rectangle is the same at every hue; only the blank, where sRGB has no such color, moves.</div>
 
-		<div class="range-pair">
-			<div class="caption"><span>Chroma</span><span class="value" id="c-value"></span></div>
-			<div class="edge">min</div><div class="edge">max</div>
-			<input type="range" id="c-min" min="0" max="32.5" step="0.5" value="5">
-			<input type="range" id="c-max" min="0" max="32.5" step="0.5" value="32.5">
-		</div>
-
-		<div class="range-pair" style="margin-bottom:0">
-			<div class="caption"><span>Lightness</span><span class="value" id="l-value"></span></div>
-			<div class="edge">min</div><div class="edge">max</div>
-			<input type="range" id="l-min" min="0" max="100" value="20">
-			<input type="range" id="l-max" min="0" max="100" value="80">
+		<div class="range-pair" style="grid-template-columns: auto 1fr 1fr; gap: 8px 10px; align-items: center; margin-bottom: 0">
+			<span>Chroma</span>
+			<label class="end"><span class="edge">min</span><input type="number" id="c-min" min="0" max="32.5" step="0.1" value="5"></label>
+			<label class="end"><span class="edge">max</span><input type="number" id="c-max" min="0" max="32.5" step="0.1" value="32.5"></label>
+			<span>Lightness</span>
+			<label class="end"><span class="edge">min</span><input type="number" id="l-min" min="0" max="100" step="0.5" value="20"></label>
+			<label class="end"><span class="edge">max</span><input type="number" id="l-max" min="0" max="100" step="0.5" value="80"></label>
 		</div>
 	</div>
 
@@ -1005,13 +1002,15 @@ let hsDraw = null, skinDraw = null;
 let highlightedColor = null;
 
 const ordered = (a, b) => a <= b ? [a, b] : [b, a];
+// A number box enforces its min and max only for arrow steps, so typed values are clamped here.
+const bounded = id => Math.min(+$(id).max, Math.max(+$(id).min, +$(id).value));
 
 function readConfig() {
-	const [cMin, cMax] = ordered(+$("c-min").value, +$("c-max").value);
-	const [lMin, lMax] = ordered(+$("l-min").value, +$("l-max").value);
+	const [cMin, cMax] = ordered(bounded("c-min"), bounded("c-max"));
+	const [lMin, lMax] = ordered(bounded("l-min"), bounded("l-max"));
 	const [pushMin, pushMax] = ordered(+$("push-min").value, +$("push-max").value);
 	return {
-		count: +$("count").value,
+		count: bounded("count"),
 		scale: +$("strict").value,
 		pushMin, pushMax,
 		hMin: +$("h-min").value, hMax: +$("h-max").value,
@@ -1323,12 +1322,9 @@ function refreshBars(cfg) {
 function refreshLabels() {
 	const cfg = readConfig();
 	refreshBars(cfg);
-	$("count-value").textContent = cfg.count;
 	$("strict-value").textContent = cfg.scale.toFixed(1);
 	$("push-value").textContent = cfg.pushMin + "–" + cfg.pushMax + "°";
 	$("h-value").textContent = cfg.hMin + "–" + cfg.hMax + "°" + (cfg.hMin > cfg.hMax ? " (wraps)" : "");
-	$("c-value").textContent = cfg.cMin + "–" + cfg.cMax;
-	$("l-value").textContent = cfg.lMin + "–" + cfg.lMax;
 	$("fixed-preview").innerHTML = cfg.fixed.map(color => '<span style="background:' + color.hex + '"></span>').join("");
 }
 
@@ -1723,7 +1719,7 @@ function scheduleRun() {
 for (const id of [...STATE_IDS, "fixed-colors", "push-min", "push-max"])
 	$(id).addEventListener("input", () => { refreshLabels(); scheduleRun(); });
 
-const recentreChartL = () => $("hs-l").value = (+$("l-min").value + +$("l-max").value) / 2;
+const recentreChartL = () => { const cfg = readConfig(); $("hs-l").value = (cfg.lMin + cfg.lMax) / 2; };
 for (const id of ["l-min", "l-max"])
 	$(id).addEventListener("input", recentreChartL);
 
