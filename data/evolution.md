@@ -363,8 +363,8 @@ pairs, so if that effect exists it is specific to lightness steps among dark col
 
 ## Files
 
-- `index.html`: step 15, adopted.
-- `experimental.html`: working copy, step 18 (OKLCh box).
+- `index.html`: step 18 with the calibrated constants, the skin chart, the plane hue scrub and the empty-box
+  handling. The shipped page.
 - `experimental-gradient.html`: step 2, the soft-max descent. The score ceiling.
 - `experimental-gradient-restricted-push.html`: step 4, dart start with a straight push.
 - `experimental-wholeset-start.html`: step 9, whole-set start.

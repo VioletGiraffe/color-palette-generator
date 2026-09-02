@@ -137,8 +137,8 @@ function loadGenerator(pagePath) {
 function benchmarkPage(pagePath) {
 	const generate = loadGenerator(pagePath);
 	const boxes = [
-		{ name: "default", hMin: 0, hMax: 360, cMin: 5, cMax: 33, lMin: 20, lMax: 80 },
-		{ name: "narrow", hMin: 0, hMax: 360, cMin: 8, cMax: 33, lMin: 35, lMax: 65 },
+		{ name: "default", hMin: 0, hMax: 360, cMin: 5, cMax: 32.5, lMin: 20, lMax: 80 },
+		{ name: "narrow", hMin: 0, hMax: 360, cMin: 8, cMax: 32.5, lMin: 35, lMax: 65 },
 	];
 	const counts = [6, 8, 10];
 	const seeds = Array.from({ length: 20 }, (_, i) => i + 1);

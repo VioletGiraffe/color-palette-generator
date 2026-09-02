@@ -1,19 +1,18 @@
 # Color palette generator
 
-Generates a set of colors made to be recognized one at a time, not just told apart side by side - each as nameable and as far from the others as the requested count allows. Fully customizable, with rich visualization. Almost no dependencies, just open `index.html` in a browser (only downloads three.js on first open for the 3D gamut, degrades gracefully if not available).
+Generates a set of colors made to be recognized one at a time, not just told apart side by side: each as far from the others, in the way memory measures distance, as the requested count allows. Fully customizable, with rich visualization. Almost no dependencies, just open `index.html` in a browser (only downloads three.js on first open for the 3D gamut, degrades gracefully if not available).
 
 Use live online in your browser: https://violetgiraffe.github.io/color-palette-generator/
 
 ## What you can do
 
 - **Choose how many colors** you need, from 1 to 40.
-- **Set how distinct they have to be**: one slider controls how far apart similarly-named colors must sit to count as distinct. At 0 any visible difference is enough; higher demands colors you could label from memory.
-- **See what each color is called**: every swatch carries the name people most often give that color, from the [xkcd color survey](https://blog.xkcd.com/2010/05/03/color-survey-results/). A tilde marks a color people never settled a name for - as usable as any other, just harder to call something.
-- **Choose which names get used**: every name the generator can reach is listed with the territory it owns, each drawn at the lightness where it covers the most ground. Switch one off and no color is placed there. Drag one name onto another to merge them: the pair then generates as a single name, so two colors sharing it have to sit further apart, while each swatch keeps its own label.
-- **Restrict the color space**: min and max sliders for hue, saturation and lightness. The hue range wraps around, so 300-60 covers magenta through yellow.
+- **Set how distinct they have to be**: the Distinctness slider is the width of the memory noise the colors are spread against, in OKLab ΔE. The default comes from a calibration run (see `data/README.md`); raise it for palettes that survive a longer gap between seeing a color and naming it, lower it to fit more colors into a narrow range.
+- **See what each color is called**: every swatch carries the name people most often give that color, from the [xkcd color survey](https://blog.xkcd.com/2010/05/03/color-survey-results/). A tilde marks a color people never settled a name for - as usable as any other, just harder to call something. The names panel shows every name's territory; switching a name off marks colors that land in it, merging two names counts them as one in the distinct-name tally.
+- **Restrict the color space**: min and max sliders for hue, chroma and lightness in OKLCh, so a lightness of 50 is the same perceived lightness at every hue and chroma is absolute. The hue range wraps around, so 300-60 covers magenta through orange. Any value some sRGB color reaches is selectable; where a range runs past what sRGB can show, the gamut is the limit, and a range that holds no sRGB color at all says so instead of generating.
 - **Generate around colors you already have**: paste any number of hex values as fixed colors. New colors are kept distinct from them. They are shown alongside the result but not counted in Colors and not exported.
-- **See the selected range**: a hue bar and a saturation/lightness plane, with everything outside the range hatched out.
-- **See where the colors landed**: three slices of the perceptual color space (OKLab) at the low, middle and high lightness of the selected range, with a dot for each color on the slice nearest its lightness. Equal distance is equal perceived difference in any direction; a slider sweeps the slices through lightness.
+- **See the selected range**: a hue bar, and a chroma/lightness plane at a hue you can sweep, with everything outside the range hatched out and everything sRGB cannot show left blank. The selected rectangle is the same at every hue; only the blank moves.
+- **See where the colors landed**: two charts of the perceptual space with a dot per color. One is the outside of the selected region, hue across and lightness up, every point as vivid as the ranges allow; the other a slice at a lightness you can sweep, hue across and chroma up. Equal distance is equal perceived difference in any direction. The 3D gamut shows the same region as a solid, with a halo around each color reaching half the Distinctness width.
 - **Judge the colors together**: a tight grid of small squares, over a white, black, grey or custom backdrop.
 - **Switch light or dark**: the page follows the system theme; the selector overrides it for the session.
 - **Copy the result**: hex list, CSS custom properties, JSON, or a Python list. Click any swatch to copy its hex.
@@ -27,22 +26,22 @@ Two colors can be trivial to tell apart side by side yet impossible to identify 
 pale green in isolation, you cannot say which of two pale greens it was. The generator optimizes
 for that isolated recognition, not just pairwise difference.
 
-- Colors are picked in HSL and compared in OKLab, a perceptually uniform space where equal
-  distances look equally different. Candidates are drawn evenly through OKLab rather than through
-  HSL, which packs far more colors into some regions than others.
-- Every color carries a name, looked up in a partition of color space derived from the xkcd
-  survey's millions of votes (see `data/README.md` for the derivation).
-- Two palette entries are confusable to the degree people use the same words for both colors AND
-  the colors sit close in OKLab. Either alone is survivable: same-named colors far apart are told
-  apart by memory of the color itself.
-- The generator maximizes the identifiability of the worst-off entry. Repeating a name is allowed
-  when the repeat sits far enough away - sometimes that beats a mediocre new name.
-- Merging two names scores them as fully shared wording, which is what two colors of one name
-  already score. Excluding a name keeps candidates out of it, and gives way only where the
-  selected range holds too little else - the palette says so when that happens.
-- The Distinctness slider sets how far apart same-named colors must sit before memory is trusted
-  to separate them. It is the strictness of "recognizable alone": 0 falls back to pure OKLab
-  spread, side-by-side distinctness only.
+- A viewer who learned the palette is modeled as recalling a color with Gaussian memory noise in
+  OKLab and answering with the nearest palette entry. The noise is anisotropic: a lightness
+  difference counts about a third of an equal hue difference, a chroma difference about half. The
+  width and the weights were fitted to the author's judgments of hundreds of color pairs
+  (`data/README.md`, `data/evolution.md`); the Distinctness slider is the width.
+- A pair's chance of being swapped follows from its weighted distance, and a color's chance of
+  being misidentified is the sum over its pairs. The generator keeps every color's chance under a
+  limit: colors start at random positions in the selected range at least the limit distance
+  apart, and any color still confused too often steps away from its neighbors until none is.
+  Several starts are made and the one whose worst color does best is kept.
+- The selected range is a box in OKLCh, cut by the sRGB gamut: draws outside the gamut are
+  discarded, and a step that would leave the box or the gamut is refused.
+- Names are looked up in a partition of color space derived from the xkcd survey's millions of
+  votes (see `data/README.md` for the derivation). They label the result; they do not steer it.
 
-You always get the best palette found; nothing fails outright. The pair likeliest to be mixed up
-is reported above the swatches with its OKLab distance, and outlined.
+You always get the best palette found; nothing fails outright short of an empty range. The pair
+likeliest to be mixed up is reported above the swatches with its weighted distance and swap
+chance, and outlined; the worst color's identification rate is given with the best this range can
+reach for the count, so a forced palette is visible as such.

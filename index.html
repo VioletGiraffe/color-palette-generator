@@ -143,9 +143,9 @@
 
 	.plane canvas { display: block; width: 100%; height: 100%; }
 
-	#sl-plane { height: 75px; margin: 2px 0 4px; }
+	#cl-plane { height: 110px; margin: 2px 0 4px; }
 
-	#hs-plane { height: 120px; margin: 16px 0 0; }
+	#skin-plane, #hs-plane { height: 120px; margin: 16px 0 0; }
 
 	#gamut-3d { height: 460px; }
 
@@ -304,7 +304,7 @@
 	<hr>
 
 	<div class="group">
-		<h2>HSL range</h2>
+		<h2>OKLCh range</h2>
 
 		<div class="range-pair">
 			<div class="caption"><span>Hue</span><span class="value" id="h-value"></span></div>
@@ -315,27 +315,32 @@
 			<div class="hint" style="grid-column: 1 / -1; margin: 0">Hue wraps when min &gt; max (e.g. 300 &rarr; 60 covers magenta through yellow).</div>
 		</div>
 
-		<div class="plane" id="sl-plane">
-			<canvas id="sl-canvas"></canvas>
-			<div class="muted" id="sl-mask-left"></div>
-			<div class="muted" id="sl-mask-right"></div>
-			<div class="muted" id="sl-mask-top"></div>
-			<div class="muted" id="sl-mask-bottom"></div>
+		<div class="plane" id="cl-plane">
+			<canvas id="cl-canvas"></canvas>
+			<div class="muted" id="cl-mask-left"></div>
+			<div class="muted" id="cl-mask-right"></div>
+			<div class="muted" id="cl-mask-top"></div>
+			<div class="muted" id="cl-mask-bottom"></div>
 		</div>
-		<div class="hint" style="margin: 0 0 12px">Saturation across, lightness up, at the range-start hue.</div>
+		<div class="bar" style="margin: 0">
+			<span style="font-size: 12px; color: var(--ink-dim)">Plane hue</span>
+			<input type="range" id="cl-h" min="0" max="360" step="1" value="0" style="flex: 1">
+			<span style="font-size: 12px; color: var(--ink-dim)" id="cl-h-value"></span>
+		</div>
+		<div class="hint" style="margin: 0 0 12px">Chroma across, lightness up, at the plane hue. The selected rectangle is the same at every hue; only the blank, where sRGB has no such color, moves.</div>
 
 		<div class="range-pair">
-			<div class="caption"><span>Saturation</span><span class="value" id="s-value"></span></div>
+			<div class="caption"><span>Chroma</span><span class="value" id="c-value"></span></div>
 			<div class="edge">min</div><div class="edge">max</div>
-			<input type="range" id="s-min" min="0" max="100" value="21">
-			<input type="range" id="s-max" min="0" max="100" value="100">
+			<input type="range" id="c-min" min="0" max="32.5" step="0.5" value="5">
+			<input type="range" id="c-max" min="0" max="32.5" step="0.5" value="32.5">
 		</div>
 
 		<div class="range-pair" style="margin-bottom:0">
 			<div class="caption"><span>Lightness</span><span class="value" id="l-value"></span></div>
 			<div class="edge">min</div><div class="edge">max</div>
-			<input type="range" id="l-min" min="0" max="100" value="15">
-			<input type="range" id="l-max" min="0" max="100" value="68">
+			<input type="range" id="l-min" min="0" max="100" value="20">
+			<input type="range" id="l-max" min="0" max="100" value="80">
 		</div>
 	</div>
 
@@ -377,13 +382,16 @@
 		<div id="tiles"></div>
 	</div>
 
+	<div class="plane" id="skin-plane"><canvas id="skin-canvas"></canvas></div>
+	<div class="hint">Hue across, lightness up, each point at the most vivid chroma the ranges allow: the outside of the selected region. Hatching is outside the hue or lightness range, or where the chroma minimum leaves nothing. Dots are the generated colors, triangles the fixed ones.</div>
+
 	<div class="plane" id="hs-plane"><canvas id="hs-canvas"></canvas></div>
 	<div class="bar" style="margin-top: 8px">
 		<span style="font-size: 12px; color: var(--ink-dim)">Chart lightness</span>
 		<input type="range" id="hs-l" min="0" max="100" step="0.5" value="50" style="flex: 1">
 		<span style="font-size: 12px; color: var(--ink-dim)" id="hs-l-value"></span>
 	</div>
-	<div class="hint">Hue across, saturation up, at the chart lightness. Both axes are spaced by perceived change (OKLab arc length): the saturation axis exactly, per column; the hue axis as the average over saturations, since one shared axis cannot be exact for every row. Dots are the generated colors, triangles the fixed ones; hatching is outside the selected ranges.</div>
+	<div class="hint">Hue across, chroma up, at the chart lightness. Blank where sRGB has no such color; hatching is outside the selected ranges. Dots are the generated colors, triangles the fixed ones.</div>
 
 	<hr>
 
@@ -455,32 +463,6 @@
 
 // ---------- color math ----------
 
-function hsl2rgb(h, s, l) {
-	const c = (1 - Math.abs(2 * l - 1)) * s;
-	const m = l - c / 2;
-	const hp = ((h % 360) + 360) % 360 / 60;
-	const x = c * (1 - Math.abs(hp % 2 - 1));
-	const seg = [[c, x, 0], [x, c, 0], [0, c, x], [0, x, c], [x, 0, c], [c, 0, x]][Math.floor(hp) % 6];
-	return [seg[0] + m, seg[1] + m, seg[2] + m];
-}
-
-// Inverse of hsl2rgb: hue in degrees, saturation and lightness as fractions.
-function rgb2hsl(rgb) {
-	const [r, g, b] = rgb;
-	const max = Math.max(r, g, b), min = Math.min(r, g, b);
-	const l = (max + min) / 2;
-	const c = max - min;
-
-	// Grey has no hue, and the saturation below divides by zero at both ends of lightness.
-	if (c === 0)
-		return [0, 0, l];
-
-	const sixth = max === r ? ((g - b) / c % 6 + 6) % 6
-		: max === g ? (b - r) / c + 2
-		: (r - g) / c + 4;
-	return [sixth * 60, c / (1 - Math.abs(2 * l - 1)), l];
-}
-
 function srgbToLinear(u) {
 	return u <= 0.04045 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4);
 }
@@ -512,16 +494,53 @@ function rgbToOklab(rgb) {
 	];
 }
 
-// Inverse of rgbToOklab. Components outside [0, 1] mean the color is outside the sRGB gamut.
-function oklabToRgb(L, a, b) {
+// Linear sRGB from OKLab. Components outside [0, 1] mean the color is outside the sRGB gamut.
+function oklabToLinear(L, a, b) {
 	const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
 	const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
 	const s = (L - 0.0894841775 * a - 1.2914855480 * b) ** 3;
-	const lin = [
+	return [
 		 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
 		-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
 		-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s];
-	return lin.map(u => u <= 0.0031308 ? u * 12.92 : 1.055 * u ** (1 / 2.4) - 0.055);
+}
+
+// Inverse of rgbToOklab.
+function oklabToRgb(L, a, b) {
+	return oklabToLinear(L, a, b).map(u => u <= 0.0031308 ? u * 12.92 : 1.055 * u ** (1 / 2.4) - 0.055);
+}
+
+// OKLCh from OKLab: lightness and chroma x100, hue in degrees.
+function lchOf(lab) {
+	const h = Math.atan2(lab[2], lab[1]) * 180 / Math.PI;
+	return [lab[0] * 100, Math.hypot(lab[1], lab[2]) * 100, (h + 360) % 360];
+}
+
+// OKLab from lightness and chroma x100 and hue in degrees.
+function labOfLch(L, C, h) {
+	const t = h * Math.PI / 180;
+	return [L / 100, C / 100 * Math.cos(t), C / 100 * Math.sin(t)];
+}
+
+// Holds for linear and for gamma-encoded sRGB alike: the transfer curve keeps 0 and 1 in place.
+const inGamut = rgb => rgb.every(v => v >= -1e-6 && v <= 1 + 1e-6);
+// The linear form: the transfer curve is the costly part of oklabToRgb and the test does not need it.
+const showsLch = (L, C, h) => inGamut(oklabToLinear(...labOfLch(L, C, h)));
+
+// Above the most chroma sRGB shows anywhere (32.25, at magenta).
+const CHROMA_MAX = 32.5;
+
+// The most chroma sRGB shows at this lightness and hue, by bisection; 0 at black and white.
+function gamutChroma(L, h) {
+	let inside = 0, outside = CHROMA_MAX;
+	for (let n = 0; n < 20; ++n) {
+		const mid = (inside + outside) / 2;
+		if (showsLch(L, mid, h))
+			inside = mid;
+		else
+			outside = mid;
+	}
+	return inside;
 }
 
 // Scaled x100 so the useful range reads like CIE delta-E rather than 0.01 steps.
@@ -645,106 +664,75 @@ function mulberry32(seed) {
 const ALL_INCLUDED = Array.from({ length: NAME_SLOTS }, () => true);
 const NO_GROUPS = Array.from({ length: NAME_SLOTS }, (_, cell) => cell);
 
-// Drawing evenly across the HSL box does not draw evenly across OKLab, the space every distance
-// here is measured in: over a default box the candidates per unit of perceived difference vary
-// about 17x, thickest around green and thinnest around blue, which alone differ by 5.6x. The table
-// below records how much OKLab volume each part of the box stands for, and a draw is kept in
-// proportion to it.
-// The grid is coarse deliberately. What survives is a spread of 1.1x against that 17x, and the
-// cells it gets worst - those collapsing towards black or white - are the ones it rejects almost
-// entirely anyway.
-const DENSITY_GRID = [24, 12, 12];
-const DENSITY_STEP = 1e-4;
-
-// OKLab volume per unit of HSL at one point: the determinant of the map's Jacobian, by central
-// differences. Steps past the 0 and 1 ends of saturation and lightness stay continuous through
-// hsl2rgb and rgbToOklab, so edge nodes need no case of their own.
-function oklabVolume(h, s, l) {
-	const slope = (dh, ds, dl) => {
-		const ahead = rgbToOklab(hsl2rgb(h + dh, s + ds, l + dl));
-		const behind = rgbToOklab(hsl2rgb(h - dh, s - ds, l - dl));
-		return ahead.map((value, i) => (value - behind[i]) / (2 * DENSITY_STEP));
-	};
-	const x = slope(DENSITY_STEP, 0, 0), y = slope(0, DENSITY_STEP, 0), z = slope(0, 0, DENSITY_STEP);
-	return Math.abs(x[0] * (y[1] * z[2] - y[2] * z[1])
-		- y[0] * (x[1] * z[2] - x[2] * z[1])
-		+ z[0] * (x[1] * y[2] - x[2] * y[1]));
-}
-
-// Built once per generate, read for every candidate: a few milliseconds against the hundreds of
-// thousands of draws a run makes.
-function buildDensity(cfg) {
-	const [nh, ns, nl] = DENSITY_GRID;
-	const density = {
-		table: new Float64Array((nh + 1) * (ns + 1) * (nl + 1)),
-		peak: 0,
-		// A hue range with min > max wraps through 0.
-		h0: cfg.hMin, hSpan: cfg.hMin <= cfg.hMax ? cfg.hMax - cfg.hMin : 360 - cfg.hMin + cfg.hMax,
-		s0: cfg.sMin / 100, sSpan: (cfg.sMax - cfg.sMin) / 100,
-		l0: cfg.lMin / 100, lSpan: (cfg.lMax - cfg.lMin) / 100
-	};
-
-	for (let i = 0; i <= nh; ++i)
-		for (let j = 0; j <= ns; ++j)
-			for (let k = 0; k <= nl; ++k) {
-				const volume = oklabVolume((density.h0 + density.hSpan * i / nh) % 360,
-					density.s0 + density.sSpan * j / ns, density.l0 + density.lSpan * k / nl);
-				density.table[(i * (ns + 1) + j) * (nl + 1) + k] = volume;
-				density.peak = Math.max(density.peak, volume);
-			}
-	return density;
-}
-
-// The point's position in grid cells along one axis, held inside the last cell so both nodes it
-// interpolates between exist. A collapsed range spans no cells and sits at its single node.
-const densityAxis = (offset, span, divisions) =>
-	span > 0 ? Math.min(divisions - 1e-9, Math.max(0, offset / span * divisions)) : 0;
-
-// Trilinear between the eight nodes around the point.
-function densityAt(density, h, s, l) {
-	const [nh, ns, nl] = DENSITY_GRID;
-	const u = densityAxis((h - density.h0 + 360) % 360, density.hSpan, nh);
-	const v = densityAxis(s - density.s0, density.sSpan, ns);
-	const w = densityAxis(l - density.l0, density.lSpan, nl);
-	const i = Math.floor(u), j = Math.floor(v), k = Math.floor(w);
-	const fu = u - i, fv = v - j, fw = w - k;
-	const at = (di, dj, dk) => density.table[((i + di) * (ns + 1) + j + dj) * (nl + 1) + k + dk];
-
-	return at(0, 0, 0) * (1 - fu) * (1 - fv) * (1 - fw) + at(1, 0, 0) * fu * (1 - fv) * (1 - fw)
-		+ at(0, 1, 0) * (1 - fu) * fv * (1 - fw) + at(1, 1, 0) * fu * fv * (1 - fw)
-		+ at(0, 0, 1) * (1 - fu) * (1 - fv) * fw + at(1, 0, 1) * fu * (1 - fv) * fw
-		+ at(0, 1, 1) * (1 - fu) * fv * fw + at(1, 1, 1) * fu * fv * fw;
-}
-
-// A box that is nearly all degenerate - a lightness range pressed against black - accepts rarely,
-// so the tries are capped and the last draw stands. Such a box takes 6 tries on average and was
-// measured to reach 60, so the cap is set well clear of it rather than just above.
+// A draw is uniform over the box's OKLab volume: lightness and hue evenly, chroma by its square so
+// the sector's outer arc is not thinned, and draws sRGB cannot show rejected. A box sRGB shows
+// almost nowhere in - high chroma at an extreme lightness - accepts rarely, so the tries are capped
+// and the last draw stands, its chroma pulled into the gamut.
 const UNIFORM_TRIES = 256;
 
-function sampleColor(rnd, cfg) {
-	const density = cfg.density;
-	let h = 0, s = 0, l = 0;
+function sampleLch(rnd, cfg) {
+	const hueSpan = cfg.hMin <= cfg.hMax ? cfg.hMax - cfg.hMin : 360 - cfg.hMin + cfg.hMax;
+	const c2Min = cfg.cMin * cfg.cMin, c2Max = cfg.cMax * cfg.cMax;
+	let L = 0, C = 0, h = 0;
 	for (let n = 0; n < UNIFORM_TRIES; ++n) {
-		h = (density.h0 + rnd() * density.hSpan) % 360;
-		s = density.s0 + rnd() * density.sSpan;
-		l = density.l0 + rnd() * density.lSpan;
-		if (rnd() * density.peak <= densityAt(density, h, s, l))
-			break;
+		L = cfg.lMin + rnd() * (cfg.lMax - cfg.lMin);
+		C = Math.sqrt(c2Min + rnd() * (c2Max - c2Min));
+		h = (cfg.hMin + rnd() * hueSpan) % 360;
+		if (showsLch(L, C, h))
+			return [L, C, h];
 	}
-	return colorAt(h, s, l);
+	return [L, Math.min(C, gamutChroma(L, h)), h];
 }
 
-// The record every stage shares, from HSL fractions.
-function colorAt(h, s, l) {
-	const rgb = hsl2rgb(h, s, l);
-	return { h, s, l, rgb, lab: rgbToOklab(rgb), hex: toHex(rgb), ...cellOf(rgb) };
+// The box on a grid: the centres of its cells sRGB can show, and the fraction of all cells they
+// are. A box below SPARSE_FRACTION is sampled from its cells (see sampleLch); at zero it is empty.
+const CELL_STEPS = { L: 25, C: 25, h: 90 };
+const SPARSE_FRACTION = 1 / 32;
+function boxCells(cfg) {
+	const hueSpan = cfg.hMin <= cfg.hMax ? cfg.hMax - cfg.hMin : 360 - cfg.hMin + cfg.hMax;
+	const step = [(cfg.lMax - cfg.lMin) / CELL_STEPS.L, (cfg.cMax - cfg.cMin) / CELL_STEPS.C, hueSpan / CELL_STEPS.h];
+	const centres = [];
+	for (let li = 0; li < CELL_STEPS.L; ++li)
+		for (let ci = 0; ci < CELL_STEPS.C; ++ci)
+			for (let hi = 0; hi < CELL_STEPS.h; ++hi) {
+				const lch = [cfg.lMin + (li + 0.5) * step[0], cfg.cMin + (ci + 0.5) * step[1], (cfg.hMin + (hi + 0.5) * step[2]) % 360];
+				if (showsLch(...lch))
+					centres.push(lch);
+			}
+	return { centres, step, fraction: centres.length / (CELL_STEPS.L * CELL_STEPS.C * CELL_STEPS.h) };
+}
+
+// A point of a sparse box: a random cell, jittered within it while sRGB shows the result.
+const CELL_TRIES = 8;
+function sampleCell(rnd, cells) {
+	const centre = cells.centres[Math.floor(rnd() * cells.centres.length)];
+	for (let n = 0; n < CELL_TRIES; ++n) {
+		const lch = centre.map((v, k) => v + (rnd() - 0.5) * cells.step[k]);
+		lch[2] = (lch[2] + 360) % 360;
+		if (showsLch(...lch))
+			return lch;
+	}
+	return centre;
+}
+
+const samplePoint = (rnd, cfg) => cfg.cells ? sampleCell(rnd, cfg.cells) : sampleLch(rnd, cfg);
+
+// OKLab in deltaE units (x100) of an OKLCh point.
+const positionOf = lch => labOfLch(...lch).map(v => v * 100);
+
+// The record every stage shares, from OKLCh (lightness and chroma x100, hue in degrees). Requires a
+// color sRGB shows, up to rounding.
+function colorAt(L, C, h) {
+	const lab = labOfLch(L, C, h);
+	const rgb = oklabToRgb(...lab).map(v => Math.min(1, Math.max(0, v)));
+	return { lch: [L, C, h], rgb, lab, hex: toHex(rgb), ...cellOf(rgb) };
 }
 
 // Same record shape as a sampled color, so everything downstream reads a fixed color the same way.
 function colorFromHex(hex) {
 	const rgb = parseHex(hex);
-	const [h, s, l] = rgb2hsl(rgb);
-	return { h, s, l, rgb, lab: rgbToOklab(rgb), hex, fixed: true, ...cellOf(rgb) };
+	const lab = rgbToOklab(rgb);
+	return { lch: lchOf(lab), rgb, lab, hex, fixed: true, ...cellOf(rgb) };
 }
 
 // Every six-digit hex token in the text, whatever separates them, without repeats. Tokens are split
@@ -790,21 +778,23 @@ function clampHue(h, hMin, hMax) {
 	return hueTurn(h, hMin) <= hueTurn(h, hMax) ? hMin : hMax;
 }
 
-// The color at an OKLab point (deltaE units), moved into the sRGB gamut and the range box, and
-// whether it had to be moved.
-function colorInBox(L, a, b, cfg) {
-	const raw = oklabToRgb(L / 100, a / 100, b / 100);
-	const rgb = raw.map(v => Math.min(1, Math.max(0, v)));
-	const [h, s, l] = rgb2hsl(rgb);
-	const hue = clampHue(h, cfg.hMin, cfg.hMax);
-	const sat = Math.min(cfg.sMax, Math.max(cfg.sMin, s * 100)), light = Math.min(cfg.lMax, Math.max(cfg.lMin, l * 100));
-	const clamped = rgb.some((v, k) => v !== raw[k]) || hue !== h || sat !== s * 100 || light !== l * 100;
-	return { color: colorAt(hue, sat / 100, light / 100), clamped };
+// An OKLab point (deltaE units) moved into the range box and then the sRGB gamut, by less chroma at
+// its lightness and hue, as OKLCh, and whether it had to be moved.
+function pointInBox(L, a, b, cfg) {
+	const [light, chroma, hue] = lchOf([L / 100, a / 100, b / 100]);
+	const boxL = Math.min(cfg.lMax, Math.max(cfg.lMin, light));
+	const boxH = clampHue(hue, cfg.hMin, cfg.hMax);
+	const rangeC = Math.min(cfg.cMax, Math.max(cfg.cMin, chroma));
+	// The bisection only when the box point is outside sRGB: most pushes are not.
+	const boxC = showsLch(boxL, rangeC, boxH) ? rangeC : gamutChroma(boxL, boxH);
+	return { lch: [boxL, boxC, boxH], clamped: boxL !== light || boxH !== hue || boxC !== chroma };
 }
 
 // Uniform draws the start spends on one color at most.
 const START_DRAWS = 1500;
-const RESTARTS = 4;
+// Restarts always made, and the most made while the result's floor stays under RESTART_TARGET or more
+// than RESTART_SHORTFALL below the floor the box allows.
+const RESTARTS = 4, MAX_RESTARTS = 16, RESTART_TARGET = 0.9, RESTART_SHORTFALL = 0.02;
 const positionsOf = colors => colors.map(color => color.lab.map(v => v * 100));
 
 // The fixed colors, then for each color the first uniform draw at least the limit distance from
@@ -817,8 +807,8 @@ function dartStart(rnd, cfg) {
 	for (let i = 0; i < cfg.count; ++i) {
 		let pick = null, clearest = -1;
 		for (let n = 0; n < START_DRAWS && clearest < limit2; ++n) {
-			const draw = sampleColor(rnd, cfg);
-			const at = draw.lab.map(v => v * 100);
+			const draw = samplePoint(rnd, cfg);
+			const at = positionOf(draw);
 			let nearest = Infinity;
 			for (const p of pos)
 				nearest = Math.min(nearest, apart2(at, p));
@@ -827,8 +817,8 @@ function dartStart(rnd, cfg) {
 				clearest = nearest;
 			}
 		}
-		colors.push(pick);
-		pos.push(pick.lab.map(v => v * 100));
+		colors.push(colorAt(...pick));
+		pos.push(positionOf(pick));
 	}
 	return colors;
 }
@@ -879,7 +869,8 @@ function withinCone(rnd, axis, cfg) {
 // how steeply its swap chance falls with distance; the heading lasts while the color keeps being
 // pushed and its steps keep being accepted, and is redrawn otherwise. A push is dropped when it
 // raises the color's chance of being misidentified, or when the box or the gamut had to pull its
-// target back: the pushes otherwise walk colors onto the walls and leave them there.
+// target back: the pushes otherwise walk colors onto the walls and leave them there. `cfg.hull`
+// keeps the pulled-back pushes instead, for the floor the box allows when its walls may be used.
 // Returns the state with the highest floor seen, the start included.
 function pushApart(rnd, colors, cfg) {
 	colors = colors.slice();
@@ -927,14 +918,14 @@ function pushApart(rnd, colors, cfg) {
 			proposed = true;
 			heading[i] ??= withinCone(rnd, shift[i].map(v => v / length), cfg);
 			const target = pos[i].map((v, k) => v + heading[i][k] * PUSH_STEP);
-			const { color: pushed, clamped } = colorInBox(target[0], target[1], target[2], cfg);
-			const at = pushed.lab.map(v => v * 100);
-			if (clamped || errorAt(i, at) > errorAt(i, pos[i])) {
+			const { lch, clamped } = pointInBox(target[0], target[1], target[2], cfg);
+			const at = positionOf(lch);
+			if ((clamped && !cfg.hull) || errorAt(i, at) > errorAt(i, pos[i])) {
 				++rejected[i];
 				heading[i] = null;
 				continue;
 			}
-			colors[i] = pushed;
+			colors[i] = colorAt(...lch);
 			pos[i] = at;
 			rejected[i] = 0;
 		}
@@ -988,21 +979,34 @@ function identification(colors, cfg) {
 	return { floor, pair, apart, confused };
 }
 
+// One start pushed apart, with its scores.
+function attempt(rnd, cfg) {
+	const colors = pushApart(rnd, dartStart(rnd, cfg), cfg);
+	return { colors, ...identification(colors, cfg), gap: minimumGap(colors),
+		named: new Set(colors.map(color => cfg.groupOf[color.cell])).size };
+}
+
+// The best of the restarts by floor, then gap. `reachable` is a floor the box allows for this many
+// colors: one attempt free to use the walls, from its own seed so a poor start is not shared. The
+// restarts continue past the first RESTARTS while the best falls short of it or of RESTART_TARGET.
 // Callers that set no name tables report names as though none were merged.
+// Null when sRGB shows no color in the box.
 function generate(cfg) {
 	const sigma = Math.max(cfg.scale, 1);
-	const settings = { ...cfg, groupOf: cfg.groupOf || NO_GROUPS, sigma, limit: limitDistance(sigma), density: buildDensity(cfg),
-		pushMin: cfg.pushMin ?? PUSH_ANGLE_MIN, pushMax: cfg.pushMax ?? PUSH_ANGLE_MAX };
+	const cells = boxCells(cfg);
+	if (!cells.centres.length)
+		return null;
+	const settings = { ...cfg, groupOf: cfg.groupOf || NO_GROUPS, sigma, limit: limitDistance(sigma),
+		pushMin: cfg.pushMin ?? PUSH_ANGLE_MIN, pushMax: cfg.pushMax ?? PUSH_ANGLE_MAX,
+		cells: cells.fraction < SPARSE_FRACTION ? cells : null };
+	const reachable = attempt(mulberry32(settings.seed + 104729), { ...settings, hull: true }).floor;
 	let best = null;
-	for (let n = 0; n < RESTARTS; ++n) {
-		const rnd = mulberry32(settings.seed + n * 7919);
-		const colors = pushApart(rnd, dartStart(rnd, settings), settings);
-		const attempt = { colors, ...identification(colors, settings), gap: minimumGap(colors),
-			named: new Set(colors.map(color => settings.groupOf[color.cell])).size };
-		if (!best || attempt.floor > best.floor || (attempt.floor === best.floor && attempt.gap > best.gap))
-			best = attempt;
+	for (let n = 0; n < MAX_RESTARTS && (n < RESTARTS || best.floor < Math.max(RESTART_TARGET, reachable - RESTART_SHORTFALL)); ++n) {
+		const made = attempt(mulberry32(settings.seed + n * 7919), settings);
+		if (!best || made.floor > best.floor || (made.floor === best.floor && made.gap > best.gap))
+			best = made;
 	}
-	return best;
+	return { ...best, reachable };
 }
 
 // ---------- ui ----------
@@ -1011,16 +1015,16 @@ const $ = id => document.getElementById(id);
 let palette = [];
 // The last result's hardest pair: read by the 3D module when it loads, after the first render.
 let lastWorstPair = null;
-// The chart's canvas, kept field image, hue arc and drawn marker positions, so a highlight
-// change repaints markers and hovering hit-tests them without recomputing the field.
-let hsDraw = null;
+// Each chart's canvas, kept field image and drawn marker positions, so a highlight change
+// repaints markers and hovering hit-tests them without recomputing the field.
+let hsDraw = null, skinDraw = null;
 // The color hovered in any view, highlighted in all of them.
 let highlightedColor = null;
 
 const ordered = (a, b) => a <= b ? [a, b] : [b, a];
 
 function readConfig() {
-	const [sMin, sMax] = ordered(+$("s-min").value, +$("s-max").value);
+	const [cMin, cMax] = ordered(+$("c-min").value, +$("c-max").value);
 	const [lMin, lMax] = ordered(+$("l-min").value, +$("l-max").value);
 	const [pushMin, pushMax] = ordered(+$("push-min").value, +$("push-max").value);
 	return {
@@ -1028,7 +1032,7 @@ function readConfig() {
 		scale: +$("strict").value,
 		pushMin, pushMax,
 		hMin: +$("h-min").value, hMax: +$("h-max").value,
-		sMin, sMax, lMin, lMax,
+		cMin, cMax, lMin, lMax,
 		seed: +$("seed").value | 0,
 		fixed: parseFixedColors($("fixed-colors").value),
 		included: nameIncluded, groupOf: nameGroup
@@ -1036,6 +1040,18 @@ function readConfig() {
 }
 
 let drawnBarWidth = 0;
+
+// The hue's most vivid sRGB color: the largest chroma over lightness.
+const PURE_HUE_LEVELS = 24;
+function pureHue(h) {
+	let best = [50, 0];
+	for (let n = 1; n < PURE_HUE_LEVELS; ++n) {
+		const L = 100 * n / PURE_HUE_LEVELS, C = gamutChroma(L, h);
+		if (C > best[1])
+			best = [L, C];
+	}
+	return colorAt(best[0], best[1], h);
+}
 
 function drawHueBar() {
 	const canvas = $("hue-canvas");
@@ -1046,46 +1062,39 @@ function drawHueBar() {
 	canvas.width = w;
 	canvas.height = h;
 
-	const hueAt = invertArc(HUE_BAR_ARC, w, (w - 1) / w);
 	const ctx = canvas.getContext("2d");
 	for (let x = 0; x < w; ++x) {
-		ctx.fillStyle = toHex(hsl2rgb(hueAt[x] * 360, 1, 0.5));
+		ctx.fillStyle = pureHue(x / w * 360).hex;
 		ctx.fillRect(x, 0, 1, h);
 	}
 	drawnBarWidth = w;
 }
 
 // Masks the hues outside the range: two segments when the range sits in the middle, and the
-// single segment between max and min when it wraps. Edges follow the bar's remapped axis.
+// single segment between max and min when it wraps.
 function maskHueBar(min, max) {
 	const segments = min <= max ? [[0, min], [max, 360]] : [[max, min], [360, 360]];
 
 	segments.forEach((seg, i) => {
 		const el = $(i === 0 ? "hue-muted-a" : "hue-muted-b");
-		const left = arcFraction(HUE_BAR_ARC, seg[0] / 360) * 100;
-		el.style.left = left + "%";
-		el.style.width = (arcFraction(HUE_BAR_ARC, seg[1] / 360) * 100 - left) + "%";
+		el.style.left = seg[0] / 3.6 + "%";
+		el.style.width = (seg[1] - seg[0]) / 3.6 + "%";
 	});
 }
 
 let drawnHue = -1, drawnWidth = 0, drawnHeight = 0;
-// The plane's shared axes, kept for the masks: each is the mean arc over the other dimension.
-let slSArc = null, slLArc = null;
 
-// The plane depends only on hue, so moving an S or L slider redraws nothing.
-function drawSLPlane(hue) {
-	const canvas = $("sl-canvas");
-	const w = canvas.clientWidth, h = canvas.clientHeight;
+// Chroma across to CHROMA_MAX, lightness up, at device resolution; pixels sRGB cannot show are left
+// transparent. The plane depends only on hue, so moving a chroma or lightness slider redraws nothing.
+function drawCLPlane(hue) {
+	const canvas = $("cl-canvas");
+	const scale = window.devicePixelRatio || 1;
+	const w = Math.round(canvas.clientWidth * scale), h = Math.round(canvas.clientHeight * scale);
 	if (hue === drawnHue && w === drawnWidth && h === drawnHeight)
 		return;
 
 	canvas.width = w;
 	canvas.height = h;
-
-	slSArc = arcMean(2 * w, (t, l) => hsl2rgb(hue, t, l));
-	slLArc = arcMean(2 * h, (t, s) => hsl2rgb(hue, s, t));
-	const sAt = invertArc(slSArc, w, 1);
-	const lAt = invertArc(slLArc, h, 1);
 
 	const ctx = canvas.getContext("2d");
 	const image = ctx.createImageData(w, h);
@@ -1093,13 +1102,16 @@ function drawSLPlane(hue) {
 
 	let i = 0;
 	for (let y = 0; y < h; ++y) {
-		const l = lAt[h - 1 - y];
+		const L = 100 * (1 - y / (h - 1));
 		for (let x = 0; x < w; ++x) {
-			const rgb = hsl2rgb(hue, sAt[x], l);
-			data[i++] = rgb[0] * 255;
-			data[i++] = rgb[1] * 255;
-			data[i++] = rgb[2] * 255;
-			data[i++] = 255;
+			const rgb = oklabToRgb(...labOfLch(L, CHROMA_MAX * x / (w - 1), hue));
+			if (inGamut(rgb)) {
+				data[i] = rgb[0] * 255;
+				data[i + 1] = rgb[1] * 255;
+				data[i + 2] = rgb[2] * 255;
+				data[i + 3] = 255;
+			}
+			i += 4;
 		}
 	}
 
@@ -1111,7 +1123,6 @@ function drawSLPlane(hue) {
 
 // Four masks around the selected rectangle rather than a frame: overlapping hatches would
 // double their darkness at the corners. Lightness runs upward, so y is measured from the top.
-// One shared axis per dimension keeps the in-range region a rectangle the masks can follow.
 function maskPlane(cfg) {
 	const box = (id, left, width, top, height) => {
 		const style = $(id).style;
@@ -1120,16 +1131,13 @@ function maskPlane(cfg) {
 		style.top = top + "%";
 		style.height = height + "%";
 	};
-	const sMin = arcFraction(slSArc, cfg.sMin / 100) * 100;
-	const sMax = arcFraction(slSArc, cfg.sMax / 100) * 100;
-	const lMin = arcFraction(slLArc, cfg.lMin / 100) * 100;
-	const lMax = arcFraction(slLArc, cfg.lMax / 100) * 100;
-	const span = sMax - sMin;
+	const cMin = cfg.cMin / CHROMA_MAX * 100, cMax = cfg.cMax / CHROMA_MAX * 100;
+	const span = cMax - cMin;
 
-	box("sl-mask-left", 0, sMin, 0, 100);
-	box("sl-mask-right", sMax, 100 - sMax, 0, 100);
-	box("sl-mask-top", sMin, span, 0, 100 - lMax);
-	box("sl-mask-bottom", sMin, span, 100 - lMin, lMin);
+	box("cl-mask-left", 0, cMin, 0, 100);
+	box("cl-mask-right", cMax, 100 - cMax, 0, 100);
+	box("cl-mask-top", cMin, span, 0, 100 - cfg.lMax);
+	box("cl-mask-bottom", cMin, span, 100 - cfg.lMin, cfg.lMin);
 }
 
 const DOT_RADIUS = 4;
@@ -1159,106 +1167,29 @@ function drawMarker(ctx, x, y, color) {
 	ctx.stroke();
 }
 
-// Cumulative OKLab arc length along a color ramp, in `n` steps of `colorAt`. Plot axes follow arc
-// position, so equal distances on screen cover equal perceived change: in plain HSL units green
-// sprawls across the hue axis and red-to-yellow is squeezed.
-function arcAlong(n, colorAt) {
-	const cumulative = new Float64Array(n + 1);
-	let prev = rgbToOklab(colorAt(0));
-	for (let k = 1; k <= n; ++k) {
-		const lab = rgbToOklab(colorAt(k / n));
-		cumulative[k] = cumulative[k - 1] + distance(prev, lab);
-		prev = lab;
-	}
-	return cumulative;
-}
-
-// Cumulative arc length of the ramp `colorAt(t, row)` averaged over evenly spread row samples:
-// one shared axis serves every row of a plane, and the row-mean is its least-distorting spacing.
-const DENSITY_ROWS = 12;
-function arcMean(n, colorAt) {
-	const cumulative = new Float64Array(n + 1);
-	for (let row = 0; row < DENSITY_ROWS; ++row) {
-		const at = (row + 0.5) / DENSITY_ROWS;
-		let prev = rgbToOklab(colorAt(0, at));
-		for (let k = 1; k <= n; ++k) {
-			const lab = rgbToOklab(colorAt(k / n, at));
-			cumulative[k] += distance(prev, lab);
-			prev = lab;
-		}
-	}
-	// Each entry so far is one step's summed length; the axis needs the running total.
-	for (let k = 1; k <= n; ++k)
-		cumulative[k] += cumulative[k - 1];
-	return cumulative;
-}
-
-// Hue axis averaged over saturations: the S=1 edge alone would over-weight the top row,
-// inflating hues that are wide only when fully saturated.
-function hueArcMean(n, lightness) {
-	return arcMean(n, (t, s) => hsl2rgb(t * 360, s, lightness));
-}
-
-// The hue bar's fixed axis, at the chart's default lightness: the bar shows pure hues, but its
-// spacing matches the big chart.
-const HUE_BAR_ARC = hueArcMean(1440, 0.5);
-
-// Axis position of ramp fraction `t`: how far along the arc it sits, 0 to 1.
-// An identity when the arc has no length: every hue at lightness 0 or 1 is the same black or white.
-function arcFraction(arc, t) {
-	const total = arc[arc.length - 1];
-	if (!total)
-		return t;
-	const scaled = Math.min(t, 1) * (arc.length - 1);
-	const k = Math.min(arc.length - 2, Math.floor(scaled));
-	return (arc[k] + (scaled - k) * (arc[k + 1] - arc[k])) / total;
-}
-
-// The inverse of arcFraction for `steps` evenly spaced axis positions: the ramp fraction drawn at
-// each. Both walk the same direction, so the cursor never rewinds.
-// `last` is the axis position of the final step: 1 where the axis ends at the ramp's extreme,
-// below 1 for the cyclic hue axis, whose final pixel stops short of wrapping back to the start.
-function invertArc(arc, steps, last) {
-	const out = new Float64Array(steps);
-	const total = arc[arc.length - 1];
-	for (let r = 0, k = 0; r < steps; ++r) {
-		const along = r / (steps - 1) * last;
-		const length = along * total;
-		while (k + 2 < arc.length && arc[k + 1] < length)
-			++k;
-		out[r] = total ? (k + (length - arc[k]) / (arc[k + 1] - arc[k])) / (arc.length - 1) : along;
-	}
-	return out;
-}
-
+// Hue across, chroma up to CHROMA_MAX, at one lightness; pixels sRGB cannot show are left transparent.
 // The mask is per-pixel because a wrapped hue range is two segments, which overlay bands would
 // have to cross, doubling the hatch where they met.
-function hsFieldAndArc(w, h, lightness, cfg) {
+function hcField(w, h, lightness, cfg) {
 	const image = new ImageData(w, h);
 	const data = image.data;
-	const inL = lightness * 100 >= cfg.lMin && lightness * 100 <= cfg.lMax;
-
-	// The hue arc is sampled finer than the pixel grid, the saturation arcs once per pixel row:
-	// the remap's resolution is set by the canvas, not by a fixed table.
-	const hueArc = hueArcMean(4 * w, lightness);
-	const hueAt = invertArc(hueArc, w, (w - 1) / w);
+	const inL = lightness >= cfg.lMin && lightness <= cfg.lMax;
 
 	for (let x = 0; x < w; ++x) {
-		const hue = hueAt[x] * 360;
+		const hue = x / w * 360;
 		const inHue = cfg.hMin <= cfg.hMax
 			? hue >= cfg.hMin && hue <= cfg.hMax
 			: hue >= cfg.hMin || hue <= cfg.hMax;
-		// Saturation is remapped per column: how fast it changes depends on the hue.
-		const sAt = invertArc(arcAlong(h - 1, t => hsl2rgb(hue, t, lightness)), h, 1);
 
 		for (let y = 0; y < h; ++y) {
-			const s = sAt[h - 1 - y];
-			const inSaturation = s * 100 >= cfg.sMin && s * 100 <= cfg.sMax;
-			const rgb = hsl2rgb(hue, s, lightness);
+			const C = CHROMA_MAX * (1 - y / (h - 1));
+			const rgb = oklabToRgb(...labOfLch(lightness, C, hue));
+			if (!inGamut(rgb))
+				continue;
 			let r = rgb[0] * 255, g = rgb[1] * 255, b = rgb[2] * 255;
 
 			// Same hatch as the CSS masks: 5px of black at 70%, then 5px of white at 32%.
-			if (!inL || !inHue || !inSaturation) {
+			if (!inL || !inHue || C < cfg.cMin || C > cfg.cMax) {
 				if ((x + y) % 10 < 5) {
 					r *= .3; g *= .3; b *= .3;
 				} else {
@@ -1274,23 +1205,64 @@ function hsFieldAndArc(w, h, lightness, cfg) {
 		}
 	}
 
-	return { image, hueArc };
+	return image;
+}
+
+// Hue across, lightness up, each pixel at the box's chroma cap for that hue and lightness: the
+// most vivid color the ranges allow there, the outside of the selected region. Hatched outside
+// the hue and lightness ranges and where the gamut stays below the chroma minimum.
+// The gamut's chroma per pixel is kept per canvas size: it costs a bisection each and never changes.
+let skinChroma = null, skinWidth = 0, skinHeight = 0;
+function skinField(w, h, cfg) {
+	if (w !== skinWidth || h !== skinHeight) {
+		skinChroma = new Float32Array(w * h);
+		for (let y = 0; y < h; ++y)
+			for (let x = 0; x < w; ++x)
+				skinChroma[y * w + x] = gamutChroma(100 * (1 - y / (h - 1)), x / w * 360);
+		skinWidth = w;
+		skinHeight = h;
+	}
+
+	const image = new ImageData(w, h);
+	const data = image.data;
+	for (let x = 0; x < w; ++x) {
+		const hue = x / w * 360;
+		const inHue = cfg.hMin <= cfg.hMax ? hue >= cfg.hMin && hue <= cfg.hMax : hue >= cfg.hMin || hue <= cfg.hMax;
+		for (let y = 0; y < h; ++y) {
+			const L = 100 * (1 - y / (h - 1)), reach = skinChroma[y * w + x];
+			if (reach === 0)
+				continue;
+			const rgb = oklabToRgb(...labOfLch(L, Math.min(reach, cfg.cMax), hue)).map(v => Math.min(1, Math.max(0, v)));
+			let r = rgb[0] * 255, g = rgb[1] * 255, b = rgb[2] * 255;
+			if (!inHue || L < cfg.lMin || L > cfg.lMax || reach < cfg.cMin) {
+				if ((x + y) % 10 < 5) {
+					r *= .3; g *= .3; b *= .3;
+				} else {
+					r = r * .68 + 81.6; g = g * .68 + 81.6; b = b * .68 + 81.6;
+				}
+			}
+			const at = (y * w + x) * 4;
+			data[at] = r;
+			data[at + 1] = g;
+			data[at + 2] = b;
+			data[at + 3] = 255;
+		}
+	}
+	return image;
 }
 
 // Markers over the kept field: a highlight change repaints without recomputing the field.
-// The hue axis is cyclic, so a marker within reach of either edge is repeated at the other;
-// the copy is recorded too, so hovering finds it at both.
-function paintHS(draw) {
-	const { canvas, image, hueArc, lightness, colors } = draw;
-	const w = canvas.width, h = canvas.height;
+// `draw.place` maps a color to canvas coordinates. The hue axis is cyclic, so a marker within
+// reach of either edge is repeated at the other; the copy is recorded too, so hovering finds it at both.
+function paintChart(draw) {
+	const { canvas, image, colors } = draw;
+	const w = canvas.width;
 	const ctx = canvas.getContext("2d");
 	ctx.putImageData(image, 0, 0);
 
 	draw.marks = [];
 	for (const color of colors) {
-		const x = arcFraction(hueArc, color.h / 360) * w;
-		const sArc = arcAlong(h - 1, t => hsl2rgb(color.h, t, lightness));
-		const y = (1 - arcFraction(sArc, color.s)) * (h - 1);
+		const { x, y } = draw.place(color, canvas);
 		draw.marks.push({ x, y, color });
 		if (x < MARKER_REACH)
 			draw.marks.push({ x: x + w, y, color });
@@ -1310,21 +1282,35 @@ function paintHS(draw) {
 	}
 }
 
-function drawHSPlane(cfg, colors) {
-	const canvas = $("hs-canvas");
+function sizedCanvas(id) {
+	const canvas = $(id);
 	canvas.width = canvas.clientWidth;
 	canvas.height = canvas.clientHeight;
+	return canvas;
+}
+
+function drawHSPlane(cfg, colors) {
+	const canvas = sizedCanvas("hs-canvas");
 	const level = +$("hs-l").value;
-	$("hs-l-value").textContent = Math.round(level) + "%";
-	hsDraw = { canvas, lightness: level / 100, colors,
-		...hsFieldAndArc(canvas.width, canvas.height, level / 100, cfg) };
-	paintHS(hsDraw);
+	$("hs-l-value").textContent = Math.round(level);
+	hsDraw = { canvas, colors, image: hcField(canvas.width, canvas.height, level, cfg),
+		place: (color, c) => ({ x: color.lch[2] / 360 * c.width, y: (1 - color.lch[1] / CHROMA_MAX) * (c.height - 1) }) };
+	paintChart(hsDraw);
+}
+
+function drawSkinPlane(cfg, colors) {
+	const canvas = sizedCanvas("skin-canvas");
+	skinDraw = { canvas, colors, image: skinField(canvas.width, canvas.height, cfg),
+		place: (color, c) => ({ x: color.lch[2] / 360 * c.width, y: (1 - color.lch[0] / 100) * (c.height - 1) }) };
+	paintChart(skinDraw);
 }
 
 function refreshBars(cfg) {
 	drawHueBar();
 	maskHueBar(cfg.hMin, cfg.hMax);
-	drawSLPlane(cfg.hMin);
+	const planeHue = +$("cl-h").value;
+	$("cl-h-value").textContent = planeHue + "°";
+	drawCLPlane(planeHue);
 	maskPlane(cfg);
 }
 
@@ -1335,8 +1321,8 @@ function refreshLabels() {
 	$("strict-value").textContent = cfg.scale.toFixed(1);
 	$("push-value").textContent = cfg.pushMin + "–" + cfg.pushMax + "°";
 	$("h-value").textContent = cfg.hMin + "–" + cfg.hMax + "°" + (cfg.hMin > cfg.hMax ? " (wraps)" : "");
-	$("s-value").textContent = cfg.sMin + "–" + cfg.sMax + "%";
-	$("l-value").textContent = cfg.lMin + "–" + cfg.lMax + "%";
+	$("c-value").textContent = cfg.cMin + "–" + cfg.cMax;
+	$("l-value").textContent = cfg.lMin + "–" + cfg.lMax;
 	$("fixed-preview").innerHTML = cfg.fixed.map(color => '<span style="background:' + color.hex + '"></span>').join("");
 }
 
@@ -1350,25 +1336,29 @@ const UNSURE_TITLE = ' title="people gave this color no one name"';
 
 // Ordered from the range start, so a wrapped hue range stays contiguous.
 function sortedByHue(colors, hMin) {
-	const offset = c => (c.h - hMin + 360) % 360;
+	const offset = c => (c.lch[2] - hMin + 360) % 360;
 	return colors.slice().sort((a, b) => offset(a) - offset(b));
 }
 
+// A null result is an empty box: the views show the ranges and nothing in them.
 function render(result, cfg) {
-	palette = $("sort").checked ? sortedByHue(result.colors, cfg.hMin) : result.colors;
-	lastWorstPair = result.pair;
+	const colors = result ? result.colors : [];
+	palette = $("sort").checked ? sortedByHue(colors, cfg.hMin) : colors;
+	lastWorstPair = result ? result.pair : null;
 	// Every view is rebuilt below without a highlight; the hovered object may not even survive.
 	highlightedColor = null;
 
 	const status = $("status");
 	// A null pair means no measurable one at all: one color and nothing fixed to place it against.
-	const repeated = result.colors.length - result.named;
-	status.textContent = (result.pair ? "Hardest pair to tell apart (outlined): weighted ΔE " + result.apart.toFixed(1)
-			+ ", swapped " + (result.confused * 100).toFixed(1) + "% · worst color identified " + (result.floor * 100).toFixed(0) + "% · " : "")
+	const repeated = result ? result.colors.length - result.named : 0;
+	status.textContent = !result ? "sRGB has no color within these ranges."
+		: (result.pair ? "Hardest pair to tell apart (outlined): weighted ΔE " + result.apart.toFixed(1)
+			+ ", swapped " + (result.confused * 100).toFixed(1) + "% · worst color identified " + (result.floor * 100).toFixed(0) + "%"
+			+ (result.reachable > result.floor + 0.005 ? ", up to " + (result.reachable * 100).toFixed(0) + "% possible here" : ", at this box's limit") + " · " : "")
 		+ result.named + " distinct color name" + (result.named === 1 ? "" : "s")
 		+ (repeated ? ", " + repeated + " repeating one of them" : "");
 
-	const clashing = new Set(result.pair || []);
+	const clashing = new Set(lastWorstPair || []);
 	const marks = c => (c.fixed ? " fixed" : "") + (!c.fixed && !cfg.included[c.cell] ? " off-name" : "")
 		+ (clashing.has(c) ? " clash" : "");
 
@@ -1377,18 +1367,19 @@ function render(result, cfg) {
 			+ '<div class="chip" style="background:' + c.hex + '"></div>'
 			+ '<div class="meta"><div class="hex">' + c.hex.toUpperCase() + '</div>'
 			+ '<div class="name"' + (c.confident ? "" : UNSURE_TITLE) + '>' + cellLabel(c) + '</div>'
-			+ '<div class="coords">' + (c.fixed ? "fixed · " : "") + "hsl " + Math.round(c.h) + ", " + Math.round(c.s * 100) + "%, " + Math.round(c.l * 100) + "%</div></div>"
+			+ '<div class="coords">' + (c.fixed ? "fixed · " : "") + "lch " + Math.round(c.lch[0]) + ", " + c.lch[1].toFixed(1) + ", " + Math.round(c.lch[2]) + "°</div></div>"
 		+ "</button>").join("");
 
 	// Columns from the square root, so the block's bounding box is the nearest thing to a square.
-	$("tiles").style.setProperty("--cols", Math.ceil(Math.sqrt(palette.length)));
+	$("tiles").style.setProperty("--cols", Math.max(1, Math.ceil(Math.sqrt(palette.length))));
 	$("tiles").innerHTML = palette.map((c, i) =>
 		'<div class="' + marks(c).trim() + '" data-index="' + i + '" style="background:' + c.hex + '" title="'
 			+ c.hex.toUpperCase() + " · " + cellLabel(c) + (c.fixed ? " (fixed)" : "") + '"></div>').join("");
 
+	drawSkinPlane(cfg, palette);
 	drawHSPlane(cfg, palette);
 	if (window.update3D)
-		window.update3D(cfg, palette, result.pair);
+		window.update3D(cfg, palette, lastWorstPair);
 	refreshExport();
 }
 
@@ -1437,15 +1428,19 @@ function detachCell(cell) {
 		nameGroup[member] = led[0];
 }
 
-// How much of the hue/saturation plane each name owns, at every lightness a chip may be drawn at.
+// How much of the hue/chroma plane each name owns, at every lightness a chip may be drawn at.
 const CENSUS_LEVELS = Array.from({ length: 19 }, (_, n) => (n + 1) * 5);
-const CENSUS_HUES = 90, CENSUS_SATS = 26;
+const CENSUS_HUES = 90, CENSUS_CHROMAS = 26;
 
 const CENSUS = CENSUS_LEVELS.map(level => {
 	const counts = new Int32Array(NAME_SLOTS);
 	for (let hi = 0; hi < CENSUS_HUES; ++hi)
-		for (let si = 0; si < CENSUS_SATS; ++si)
-			++counts[cellOf(hsl2rgb(hi * 360 / CENSUS_HUES, si / (CENSUS_SATS - 1), level / 100)).cell];
+		for (let ci = 0; ci < CENSUS_CHROMAS; ++ci) {
+			const lab = labOfLch(level, CHROMA_MAX * ci / (CENSUS_CHROMAS - 1), hi * 360 / CENSUS_HUES);
+			const rgb = oklabToRgb(...lab);
+			if (inGamut(rgb))
+				++counts[cellOf(rgb.map(v => Math.min(1, Math.max(0, v)))).cell];
+		}
 	return counts;
 });
 
@@ -1463,23 +1458,25 @@ const CELL_PEAK = ALL_CELLS.map(cell => {
 const CHIP_WIDTH = 104, CHIP_HEIGHT = 64;
 
 // The name's territory in its own plane: its colors as they are, the rest ghosted so the panel
-// shows through in either theme. Axes are spaced by perceived change, as the palette's chart is.
+// shows through in either theme, and nothing where sRGB has no color. Hue across, chroma up, as
+// the palette's chart.
 function paintTerritory(canvas, cell) {
-	const w = canvas.width, h = canvas.height, lightness = CELL_PEAK[cell] / 100;
+	const w = canvas.width, h = canvas.height, lightness = CELL_PEAK[cell];
 	const image = new ImageData(w, h);
 	const data = image.data;
-	const hueAt = invertArc(hueArcMean(4 * w, lightness), w, (w - 1) / w);
 
 	for (let x = 0; x < w; ++x) {
-		const hue = hueAt[x] * 360;
-		const sAt = invertArc(arcAlong(h - 1, t => hsl2rgb(hue, t, lightness)), h, 1);
+		const hue = x / w * 360;
 		for (let y = 0; y < h; ++y) {
-			const rgb = hsl2rgb(hue, sAt[h - 1 - y], lightness);
+			const rgb = oklabToRgb(...labOfLch(lightness, CHROMA_MAX * (1 - y / (h - 1)), hue));
+			if (!inGamut(rgb))
+				continue;
+			const shown = rgb.map(v => Math.min(1, Math.max(0, v)));
 			const at = (y * w + x) * 4;
-			data[at] = rgb[0] * 255;
-			data[at + 1] = rgb[1] * 255;
-			data[at + 2] = rgb[2] * 255;
-			data[at + 3] = cellOf(rgb).cell === cell ? 255 : 26;
+			data[at] = shown[0] * 255;
+			data[at + 1] = shown[1] * 255;
+			data[at + 2] = shown[2] * 255;
+			data[at + 3] = cellOf(shown).cell === cell ? 255 : 26;
 		}
 	}
 	canvas.getContext("2d").putImageData(image, 0, 0);
@@ -1735,18 +1732,18 @@ function applyNameTables(tables) {
 
 // The string is the version tag, these fields in order, then the sort flag, the backdrop, the
 // custom backdrop color, the export format and the comma-joined fixed colors.
-const STATE_VERSION = "v1";
+const STATE_VERSION = "v2";
 const STATE_SEPARATOR = "|";
-const STATE_IDS = ["count", "strict", "h-min", "h-max", "s-min", "s-max", "l-min", "l-max", "seed"];
+const STATE_IDS = ["count", "strict", "h-min", "h-max", "c-min", "c-max", "l-min", "l-max", "seed"];
 
 // The '#' is stripped from both colors: it would truncate the string inside a URL.
 const stripHash = value => value.replace("#", "");
 
-// Carries the config rather than the raw slider values, so saturation and lightness come back
+// Carries the config rather than the raw slider values, so chroma and lightness come back
 // ordered. The seed is written unsigned, which mulberry32 treats as identical and which keeps a
 // minus sign out of the fields.
 function stateString(cfg) {
-	return [STATE_VERSION, cfg.count, cfg.scale, cfg.hMin, cfg.hMax, cfg.sMin, cfg.sMax,
+	return [STATE_VERSION, cfg.count, cfg.scale, cfg.hMin, cfg.hMax, cfg.cMin, cfg.cMax,
 		cfg.lMin, cfg.lMax, cfg.seed >>> 0, $("sort").checked ? 1 : 0,
 		stripHash($("backdrop").value), stripHash($("backdrop-color").value), $("format").value,
 		cfg.fixed.map(color => stripHash(color.hex)).join(","), ...stateNameFields()
@@ -1789,10 +1786,10 @@ const fixedFromField = field => field.split(",").filter(Boolean).map(hex => "#" 
 // The generator's view of a parsed state. Ranges are ordered the same way readConfig orders them,
 // so a palette built from here matches the one the controls produce once the string is applied.
 function configFromState(parsed) {
-	const [count, scale, hMin, hMax, s1, s2, l1, l2, seed] = parsed.numbers;
-	const [sMin, sMax] = ordered(s1, s2);
+	const [count, scale, hMin, hMax, c1, c2, l1, l2, seed] = parsed.numbers;
+	const [cMin, cMax] = ordered(c1, c2);
 	const [lMin, lMax] = ordered(l1, l2);
-	return { count, scale, hMin, hMax, sMin, sMax, lMin, lMax, seed: seed | 0,
+	return { count, scale, hMin, hMax, cMin, cMax, lMin, lMax, seed: seed | 0,
 		fixed: fixedFromField(parsed.fixed).map(colorFromHex), ...nameTablesFrom(parsed) };
 }
 
@@ -1905,14 +1902,28 @@ const recentreChartL = () => $("hs-l").value = (+$("l-min").value + +$("l-max").
 for (const id of ["l-min", "l-max"])
 	$(id).addEventListener("input", recentreChartL);
 
-// The chart lightness is a view control: it redraws the chart from the palette already generated.
-let chartRedrawScheduled = false;
-$("hs-l").addEventListener("input", () => {
-	if (chartRedrawScheduled)
-		return;
-	chartRedrawScheduled = true;
-	requestAnimationFrame(() => { chartRedrawScheduled = false; drawHSPlane(readConfig(), palette); });
-});
+// The middle of the hue range, wrapped ranges included.
+function recentrePlaneHue() {
+	const min = +$("h-min").value, max = +$("h-max").value;
+	$("cl-h").value = Math.round(min <= max ? (min + max) / 2 : (min + (360 - min + max) / 2) % 360);
+}
+for (const id of ["h-min", "h-max"])
+	$(id).addEventListener("input", recentrePlaneHue);
+recentrePlaneHue();
+
+// The chart lightness and plane hue are view controls: they redraw their chart from what is
+// already generated, at most once a frame.
+function redrawOnInput(id, redraw) {
+	let scheduled = false;
+	$(id).addEventListener("input", () => {
+		if (scheduled)
+			return;
+		scheduled = true;
+		requestAnimationFrame(() => { scheduled = false; redraw(); });
+	});
+}
+redrawOnInput("hs-l", () => drawHSPlane(readConfig(), palette));
+redrawOnInput("cl-h", () => refreshBars(readConfig()));
 
 $("sort").addEventListener("change", scheduleRun);
 
@@ -1987,8 +1998,9 @@ function setHighlight(color) {
 	const index = color ? palette.indexOf(color) : -1;
 	for (const box of ["swatches", "tiles"])
 		[...$(box).children].forEach((el, i) => el.classList.toggle("hilite", i === index));
-	if (hsDraw)
-		paintHS(hsDraw);
+	for (const draw of [hsDraw, skinDraw])
+		if (draw)
+			paintChart(draw);
 	if (window.highlight3D)
 		window.highlight3D(color);
 }
@@ -2004,25 +2016,30 @@ for (const id of ["swatches", "tiles"]) {
 
 // Chart dots are canvas pixels, so hovering one is a hit-test against the recorded positions.
 const MARK_HIT_RADIUS = 10;
-const hsCanvas = $("hs-canvas");
-hsCanvas.addEventListener("mousemove", e => {
-	if (!hsDraw)
-		return;
-	const rect = hsCanvas.getBoundingClientRect();
-	const x = e.clientX - rect.left, y = e.clientY - rect.top;
-	let hit = null, nearest = MARK_HIT_RADIUS ** 2;
-	for (const mark of hsDraw.marks) {
-		const apart = (mark.x - x) ** 2 + (mark.y - y) ** 2;
-		if (apart < nearest) {
-			nearest = apart;
-			hit = mark.color;
+function hoverMarks(id, drawOf) {
+	const canvas = $(id);
+	canvas.addEventListener("mousemove", e => {
+		const draw = drawOf();
+		if (!draw)
+			return;
+		const rect = canvas.getBoundingClientRect();
+		const x = e.clientX - rect.left, y = e.clientY - rect.top;
+		let hit = null, nearest = MARK_HIT_RADIUS ** 2;
+		for (const mark of draw.marks) {
+			const apart = (mark.x - x) ** 2 + (mark.y - y) ** 2;
+			if (apart < nearest) {
+				nearest = apart;
+				hit = mark.color;
+			}
 		}
-	}
-	hsCanvas.style.cursor = hit ? "pointer" : "";
-	hsCanvas.title = hit ? hit.hex.toUpperCase() + " · " + cellLabel(hit) : "";
-	setHighlight(hit);
-});
-hsCanvas.addEventListener("mouseleave", () => setHighlight(null));
+		canvas.style.cursor = hit ? "pointer" : "";
+		canvas.title = hit ? hit.hex.toUpperCase() + " · " + cellLabel(hit) : "";
+		setHighlight(hit);
+	});
+	canvas.addEventListener("mouseleave", () => setHighlight(null));
+}
+hoverMarks("hs-canvas", () => hsDraw);
+hoverMarks("skin-canvas", () => skinDraw);
 
 $("copy").addEventListener("click", e => copy($("export").value, e.currentTarget, "Copied"));
 
@@ -2254,21 +2271,23 @@ function clearGroup(group) {
 	group.clear();
 }
 
-// The six faces of the H/S/L box, mapped through hsl2rgb into OKLab: the selected volume as it
-// actually sits in the space. A full hue span is a closed band and needs no hue end caps.
+// The faces of the L/C/h box as sRGB shows them: chroma past the gamut is pulled back to its
+// surface, so the selected volume is drawn as the part of it sRGB can show. A full hue span is a
+// closed band and needs no hue end caps.
 function regionMeshes(cfg) {
 	const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
 	const span = cfg.hMin <= cfg.hMax ? cfg.hMax - cfg.hMin : 360 - cfg.hMin + cfg.hMax;
 	const hue = t => (cfg.hMin + t * span) % 360;
-	const sat = t => (cfg.sMin + t * (cfg.sMax - cfg.sMin)) / 100;
-	const light = t => (cfg.lMin + t * (cfg.lMax - cfg.lMin)) / 100;
+	const chroma = t => cfg.cMin + t * (cfg.cMax - cfg.cMin);
+	const light = t => cfg.lMin + t * (cfg.lMax - cfg.lMin);
+	const shown = (L, C, h) => colorAt(L, Math.min(C, gamutChroma(L, h)), h).rgb;
 
 	const sheets = [];
 	for (const t of [0, 1]) {
 		if (span < 360)
-			sheets.push(sheet(16, 16, (u, v) => hsl2rgb(hue(t), sat(u), light(v))));
-		sheets.push(sheet(64, 16, (u, v) => hsl2rgb(hue(u), sat(t), light(v))));
-		sheets.push(sheet(64, 16, (u, v) => hsl2rgb(hue(u), sat(v), light(t))));
+			sheets.push(sheet(16, 16, (u, v) => shown(light(v), chroma(u), hue(t))));
+		sheets.push(sheet(64, 16, (u, v) => shown(light(v), chroma(t), hue(u))));
+		sheets.push(sheet(64, 16, (u, v) => shown(light(t), chroma(v), hue(u))));
 	}
 	return sheets.map(geometry => new THREE.Mesh(geometry, material));
 }
