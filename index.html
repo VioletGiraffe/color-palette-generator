@@ -559,6 +559,8 @@ function toHex(rgb) {
 // The tables below are generated: data/build_cells.py prints them, and --check reports whether the
 // ones here still match the model. Edits made by hand are lost at the next run.
 const CELL_NAMES = ["purple", "blue", "pink", "brown", "lavender", "green", "light green", "olive", "light blue", "grey", "magenta", "dark green", "navy blue", "maroon", "teal", "orange", "dark purple", "tan", "red", "turquoise", "grey blue", "black", "peach", "mustard", "lime green", "salmon", "yellow", "mauve", "yellow green", "light pink", "brick red", "pale yellow", "white", "burnt orange", "off white", "beige"];
+// Each name's showcase for the names panel: the bin it owns where the most people gave the name.
+const CELL_SWATCH = ["#8d12dc", "#270fe2", "#f0348f", "#76480d", "#be9ee2", "#0ec61c", "#2ae282", "#7d8b14", "#25b8ea", "#9e9e9e", "#eb1fcb", "#0b5313", "#0b0862", "#8f0f1b", "#1fa198", "#ea6b12", "#52115d", "#c9a66b", "#d7050d", "#2eece6", "#6a879d", "#000000", "#f4bb8f", "#dbb512", "#00e614", "#ea675f", "#faf81d", "#ad7484", "#bde31d", "#f6c8de", "#992a13", "#f7f683", "#f1f1f1", "#c35712", "#f3f3d4", "#e0d59b"];
 
 // Bins form a regular grid, so a color's bin is arithmetic rather than a search.
 const GRID_STEP = 5, GRID_L0 = 0, GRID_A0 = -85, GRID_B0 = -110;
@@ -1399,26 +1401,16 @@ const ALL_CELLS = CELL_NAMES.map((_, cell) => cell);
 // How much of the hue/chroma plane each name owns, at every lightness a chip may be drawn at.
 const CENSUS_LEVELS = Array.from({ length: 19 }, (_, n) => (n + 1) * 5);
 const CENSUS_HUES = 90, CENSUS_CHROMAS = 26;
-const CENSUS = CENSUS_LEVELS.map(() => new Int32Array(NAME_SLOTS));
-
-// Each name's showcase color: the census sample scoring highest on chroma plus a quarter of its
-// lightness, so the vivid member wins and the bright one among equals.
-const CELL_SWATCH = Array.from({ length: NAME_SLOTS }, () => ({ score: -1, hex: "#000000" }));
-
-CENSUS_LEVELS.forEach((level, n) => {
+const CENSUS = CENSUS_LEVELS.map(level => {
+	const counts = new Int32Array(NAME_SLOTS);
 	for (let hi = 0; hi < CENSUS_HUES; ++hi)
 		for (let ci = 0; ci < CENSUS_CHROMAS; ++ci) {
-			const chroma = CHROMA_MAX * ci / (CENSUS_CHROMAS - 1);
-			const rgb = oklabToRgb(...labOfLch(level, chroma, hi * 360 / CENSUS_HUES));
-			if (!inGamut(rgb))
-				continue;
-			const shown = rgb.map(v => Math.min(1, Math.max(0, v)));
-			const { cell } = cellOf(shown);
-			++CENSUS[n][cell];
-			const score = chroma + level / 4;
-			if (score > CELL_SWATCH[cell].score)
-				CELL_SWATCH[cell] = { score, hex: toHex(shown) };
+			const lab = labOfLch(level, CHROMA_MAX * ci / (CENSUS_CHROMAS - 1), hi * 360 / CENSUS_HUES);
+			const rgb = oklabToRgb(...lab);
+			if (inGamut(rgb))
+				++counts[cellOf(rgb.map(v => Math.min(1, Math.max(0, v)))).cell];
 		}
+	return counts;
 });
 
 // The plane where the name covers the most ground. Eleven names - white and black among them - own
@@ -1490,8 +1482,8 @@ function nameChip(cell) {
 	level.textContent = "L " + CELL_PEAK[cell] + "%";
 	const sample = document.createElement("span");
 	sample.className = "sample";
-	sample.style.background = CELL_SWATCH[cell].hex;
-	sample.title = CELL_SWATCH[cell].hex.toUpperCase();
+	sample.style.background = CELL_SWATCH[cell];
+	sample.title = CELL_SWATCH[cell].toUpperCase();
 	meta.append(name, level, sample);
 
 	chip.append(territoryCanvas(cell), meta);

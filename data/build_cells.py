@@ -193,7 +193,31 @@ def build():
     rle, axes = encode(model, cells, len(kept))
     names = [DISPLAY.get(model["terms"][t], model["terms"][t]) for t in order]
     folds = {model["terms"][source]: model["terms"][kept_term] for source, kept_term in folds.items()}
-    return names, rle, axes, cells, cell_overlap(tallies, cells), folds
+    return names, rle, axes, cells, showcases(model, folded, cells, order), cell_overlap(tallies, cells), folds
+
+
+def lab_to_hex(lab):
+    """sRGB hex of a CIE Lab (D65) color, clipped to the gamut."""
+    fy = (lab[0] + 16) / 116
+    f = (fy + lab[1] / 500, fy, fy - lab[2] / 200)
+    xyz = [white * (t ** 3 if t > 6 / 29 else 3 * (6 / 29) ** 2 * (t - 4 / 29)) for white, t in zip((0.95047, 1.0, 1.08883), f)]
+    linear = np.array([[3.2406, -1.5372, -0.4986], [-0.9689, 1.8758, 0.0415], [0.0557, -0.2040, 1.0570]]) @ xyz
+
+    def gamma(u):
+        u = min(1.0, max(0.0, u))
+        return 12.92 * u if u <= 0.0031308 else 1.055 * u ** (1 / 2.4) - 0.055
+    return "#%02x%02x%02x" % tuple(round(gamma(u) * 255) for u in linear)
+
+
+def showcases(model, folded, cells, order):
+    """Per cell, the hex of the bin it owns where the most people gave its name. Not the cell's most
+    chromatic member: for grey or white that is a tinted edge."""
+    best = [(-1, None)] * len(order)
+    for i, (tally, (cell, _)) in enumerate(zip(folded, cells)):
+        count = tally.get(order[cell], 0)
+        if count > best[cell][0]:
+            best[cell] = (count, i)
+    return [lab_to_hex(model["color"][3 * i:3 * i + 3]) for _, i in best]
 
 
 def cell_overlap(tallies, cells):
@@ -220,9 +244,10 @@ def cell_overlap(tallies, cells):
     return base64.b64encode(bytes(out)).decode()
 
 
-def source_lines(names, rle, overlap):
+def source_lines(names, rle, swatches, overlap):
     """The const lines the page must hold verbatim, keyed by constant name."""
     return {"CELL_NAMES": "const CELL_NAMES = [%s];" % ", ".join('"%s"' % n for n in names),
+            "CELL_SWATCH": "const CELL_SWATCH = [%s];" % ", ".join('"%s"' % s for s in swatches),
             "OUTSIDE_GAMUT": "const OUTSIDE_GAMUT = %d;" % len(names),
             "UNSURE": "const UNSURE = %d;" % UNSURE_BIT,
             "CELL_GRID_RLE": 'const CELL_GRID_RLE = "%s";' % rle,
@@ -235,8 +260,8 @@ def main():
     parser.add_argument("--check", action="store_true", help="compare against the page instead of printing")
     args = parser.parse_args()
 
-    names, rle, axes, cells, overlap, folds = build()
-    lines = source_lines(names, rle, overlap)
+    names, rle, axes, cells, swatches, overlap, folds = build()
+    lines = source_lines(names, rle, swatches, overlap)
 
     if not args.check:
         print("// grid: L %d..%d, a %d..%d, b %d..%d, step %d"

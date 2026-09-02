@@ -37,7 +37,9 @@ notice be kept; `index.html` carries it above the tables.
    agree on; the page marks them with a tilde. They are not excluded from palettes — being hard to
    name is not a defect, and some cells hold little else.
 4. The grid is run-length encoded and base64'd, one symbol per bin carrying the cell and the flag.
-5. A cell-by-cell name overlap matrix (cosine similarity of the cells' mean vote distributions)
+5. Each cell gets a showcase color for the names panel: the bin, among those the cell owns, where
+   the most people gave its name. Vivid names get a vivid color, neutral names a neutral one.
+6. A cell-by-cell name overlap matrix (cosine similarity of the cells' mean vote distributions)
    is emitted alongside and embedded in the page. The current generator does not read it.
 
 ## Running it
