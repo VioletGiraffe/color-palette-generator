@@ -1025,7 +1025,8 @@ function readConfig() {
 let drawnBarWidth = 0;
 
 // The hue's most vivid sRGB color: the largest chroma over lightness.
-const PURE_HUE_LEVELS = 24;
+// Lightness steps of 0.5 keep the hue bar smooth: coarser levels show as vertical bands where the best lightness switches.
+const PURE_HUE_LEVELS = 200;
 function pureHue(h) {
 	let best = [50, 0];
 	for (let n = 1; n < PURE_HUE_LEVELS; ++n) {
