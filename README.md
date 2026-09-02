@@ -1,6 +1,7 @@
 # Color palette generator
 
-Generates a set of colors made to be recognized one at a time, not just told apart side by side: each as far from the others, in the way memory measures distance, as the requested count allows. Fully customizable, with rich visualization. Almost no dependencies, just open `index.html` in a browser (only downloads three.js on first open for the 3D gamut, degrades gracefully if not available).
+Generates a set of memorable colors - made to be recognized one at a time, in isolation.    
+Fully customizable, with rich visualization. Almost no dependencies, just open `index.html` in a browser (only downloads three.js on first open for the 3D gamut, degrades gracefully if not available).
 
 Use live online in your browser: https://violetgiraffe.github.io/color-palette-generator/
 

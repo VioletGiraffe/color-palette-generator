@@ -36,7 +36,8 @@ notice be kept; `index.html` carries it above the tables.
    weighted winner barely beat the runner-up (`UNSURE_RATIO`). Those colors have no name people
    agree on; the page marks them with a tilde. They are not excluded from palettes — being hard to
    name is not a defect, and some cells hold little else.
-4. The grid is run-length encoded and base64'd, one symbol per bin carrying the cell and the flag.
+4. The grid is emitted as one printable char per bin carrying the cell and the flag; HTTP gzip
+   compresses that as well as any hand-rolled scheme.
 5. Each cell gets a showcase color for the names panel: the bin, among those the cell owns, where
    the most people gave its name. Vivid names get a vivid color, neutral names a neutral one.
 6. A cell-by-cell name overlap matrix (cosine similarity of the cells' mean vote distributions)

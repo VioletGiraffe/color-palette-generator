@@ -66,6 +66,11 @@ DISPLAY = {
 # tables; the cell count must stay below the bit.
 UNSURE_BIT = 64
 
+# The grid is emitted as one printable char per bin, so gzip on the way to the browser sees the
+# repetition directly: GRID_CHAR0 + symbol for sure bins, unsure cells continuing past the outside
+# symbol. "#" is the first printable past space and the quote; backslash is escaped in the literal.
+GRID_CHAR0 = 35
+
 
 def bin_tallies(model):
     """Per bin, the vote count each term received. T is flat (index, count) pairs, where the index
@@ -150,30 +155,23 @@ def assign(tallies):
 
 
 def encode(model, cells, outside):
-    """The grid as run-length pairs of (symbol, length), in L then a then b order."""
+    """The grid as one char per bin, in L then a then b order. See GRID_CHAR0."""
     colors = [tuple(model["color"][i:i + 3]) for i in range(0, len(model["color"]), 3)]
     axes = [sorted({c[axis] for c in colors}) for axis in range(3)]
     at = {c: i for i, c in enumerate(colors)}
 
-    runs = []
+    chars = []
     for lightness in axes[0]:
         for a in axes[1]:
             for b in axes[2]:
                 key = (lightness, a, b)
                 if key in at:
                     cell, unsure = cells[at[key]]
-                    symbol = cell | UNSURE_BIT if unsure else cell
+                    symbol = outside + 1 + cell if unsure else cell
                 else:
                     symbol = outside
-                if runs and runs[-1][0] == symbol and runs[-1][1] < 255:
-                    runs[-1][1] += 1
-                else:
-                    runs.append([symbol, 1])
-
-    packed = bytearray()
-    for symbol, length in runs:
-        packed += bytes([symbol, length])
-    return base64.b64encode(bytes(packed)).decode(), axes
+                chars.append(chr(GRID_CHAR0 + symbol))
+    return "".join(chars).replace("\\", "\\\\"), axes
 
 
 def build():
@@ -182,18 +180,18 @@ def build():
 
     tallies = bin_tallies(model)
     kept, folded, folds = fold_synonyms(tallies, len(model["terms"]))
-    if len(kept) >= UNSURE_BIT:
-        sys.exit("%d cells do not fit below UNSURE_BIT" % len(kept))
+    if len(kept) >= UNSURE_BIT or GRID_CHAR0 + 2 * len(kept) > 126:
+        sys.exit("%d cells do not fit the grid symbols" % len(kept))
 
     owners = assign(folded)
     territory = Counter(term for term, _ in owners)
     order = sorted(kept, key=lambda t: (-territory[t], t))
     index = {term: i for i, term in enumerate(order)}
     cells = [(index[term], unsure) for term, unsure in owners]
-    rle, axes = encode(model, cells, len(kept))
+    grid_chars, axes = encode(model, cells, len(kept))
     names = [DISPLAY.get(model["terms"][t], model["terms"][t]) for t in order]
     folds = {model["terms"][source]: model["terms"][kept_term] for source, kept_term in folds.items()}
-    return names, rle, axes, cells, showcases(model, folded, cells, order), cell_overlap(tallies, cells), folds
+    return names, grid_chars, axes, cells, showcases(model, folded, cells, order), cell_overlap(tallies, cells), folds
 
 
 def lab_to_hex(lab):
@@ -244,13 +242,13 @@ def cell_overlap(tallies, cells):
     return base64.b64encode(bytes(out)).decode()
 
 
-def source_lines(names, rle, swatches, overlap):
+def source_lines(names, grid_chars, swatches, overlap):
     """The const lines the page must hold verbatim, keyed by constant name."""
     return {"CELL_NAMES": "const CELL_NAMES = [%s];" % ", ".join('"%s"' % n for n in names),
             "CELL_SWATCH": "const CELL_SWATCH = [%s];" % ", ".join('"%s"' % s for s in swatches),
             "OUTSIDE_GAMUT": "const OUTSIDE_GAMUT = %d;" % len(names),
             "UNSURE": "const UNSURE = %d;" % UNSURE_BIT,
-            "CELL_GRID_RLE": 'const CELL_GRID_RLE = "%s";' % rle,
+            "CELL_GRID_CHARS": 'const CELL_GRID_CHARS = "%s";' % grid_chars,
             "CELL_OVERLAP_B64": 'const CELL_OVERLAP_B64 = "%s";' % overlap}
 
 
@@ -260,8 +258,8 @@ def main():
     parser.add_argument("--check", action="store_true", help="compare against the page instead of printing")
     args = parser.parse_args()
 
-    names, rle, axes, cells, swatches, overlap, folds = build()
-    lines = source_lines(names, rle, swatches, overlap)
+    names, grid_chars, axes, cells, swatches, overlap, folds = build()
+    lines = source_lines(names, grid_chars, swatches, overlap)
 
     if not args.check:
         print("// grid: L %d..%d, a %d..%d, b %d..%d, step %d"
