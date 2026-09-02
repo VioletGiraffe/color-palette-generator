@@ -19,7 +19,7 @@ Use live online in your browser: https://violetgiraffe.github.io/color-palette-g
 - **Copy the result**: hex list, CSS custom properties, JSON, or a Python list. Click any swatch to copy its hex.
 - **Get the same palette again**: each one comes from a seed you can set. A fresh load gets a new unique seed.
 - **Save the whole setup**: the state string holds every setting. Copy it, paste it back later or on another machine, and you get the identical palette.
-- **Pin the ones you like**: park any generation in a named list and click it to get it back. This session only, nothing is stored: copy the list out to keep it, and paste it back with Load next time.
+- **Pin the ones you like**: park any generation in a named list and click it to get it back. The list stays in this browser between visits; copy it out to move it to another one, and paste it in with Load.
 
 ## How the generation works
 

@@ -146,7 +146,7 @@
 
 	.plane canvas { display: block; width: 100%; height: 100%; }
 
-	#cl-plane { height: 110px; margin: 2px 0 4px; }
+	#range-plane { height: 110px; margin: 2px 0 4px; }
 
 	#skin-plane, #hs-plane { height: 120px; margin: 16px 0 0; }
 
@@ -303,19 +303,8 @@
 			<div class="hint" style="grid-column: 1 / -1; margin: 0">Hue wraps when min &gt; max (e.g. 300 &rarr; 60 covers magenta through yellow).</div>
 		</div>
 
-		<div class="plane" id="cl-plane">
-			<canvas id="cl-canvas"></canvas>
-			<div class="muted" id="cl-mask-left"></div>
-			<div class="muted" id="cl-mask-right"></div>
-			<div class="muted" id="cl-mask-top"></div>
-			<div class="muted" id="cl-mask-bottom"></div>
-		</div>
-		<div class="bar" style="margin: 0">
-			<span style="font-size: 12px; color: var(--ink-dim)">Plane hue</span>
-			<input type="range" id="cl-h" min="0" max="360" step="1" value="0" style="flex: 1">
-			<span style="font-size: 12px; color: var(--ink-dim)" id="cl-h-value"></span>
-		</div>
-		<div class="hint" style="margin: 0 0 12px">Chroma across, lightness up, at the plane hue. The selected rectangle is the same at every hue; only the blank, where sRGB has no such color, moves.</div>
+		<div class="plane" id="range-plane"><canvas id="range-canvas"></canvas></div>
+		<div class="hint" style="margin: 0 0 12px">Hue across, lightness up, each point at the most vivid chroma the ranges allow: the same chart as under the palette.</div>
 
 		<div class="range-pair" style="grid-template-columns: auto 1fr 1fr; gap: 8px 10px; align-items: center; margin-bottom: 0">
 			<span>Chroma</span>
@@ -1087,64 +1076,6 @@ function maskHueBar(min, max) {
 	});
 }
 
-let drawnHue = -1, drawnWidth = 0, drawnHeight = 0;
-
-// Chroma across to CHROMA_MAX, lightness up, at device resolution; pixels sRGB cannot show are left
-// transparent. The plane depends only on hue, so moving a chroma or lightness slider redraws nothing.
-function drawCLPlane(hue) {
-	const canvas = $("cl-canvas");
-	const scale = window.devicePixelRatio || 1;
-	const w = Math.round(canvas.clientWidth * scale), h = Math.round(canvas.clientHeight * scale);
-	if (hue === drawnHue && w === drawnWidth && h === drawnHeight)
-		return;
-
-	canvas.width = w;
-	canvas.height = h;
-
-	const ctx = canvas.getContext("2d");
-	const image = ctx.createImageData(w, h);
-	const data = image.data;
-
-	let i = 0;
-	for (let y = 0; y < h; ++y) {
-		const L = 100 * (1 - y / (h - 1));
-		for (let x = 0; x < w; ++x) {
-			const rgb = oklabToRgb(...labOfLch(L, CHROMA_MAX * x / (w - 1), hue));
-			if (inGamut(rgb)) {
-				data[i] = rgb[0] * 255;
-				data[i + 1] = rgb[1] * 255;
-				data[i + 2] = rgb[2] * 255;
-				data[i + 3] = 255;
-			}
-			i += 4;
-		}
-	}
-
-	ctx.putImageData(image, 0, 0);
-	drawnHue = hue;
-	drawnWidth = w;
-	drawnHeight = h;
-}
-
-// Four masks around the selected rectangle rather than a frame: overlapping hatches would
-// double their darkness at the corners. Lightness runs upward, so y is measured from the top.
-function maskPlane(cfg) {
-	const box = (id, left, width, top, height) => {
-		const style = $(id).style;
-		style.left = left + "%";
-		style.width = width + "%";
-		style.top = top + "%";
-		style.height = height + "%";
-	};
-	const cMin = cfg.cMin / CHROMA_MAX * 100, cMax = cfg.cMax / CHROMA_MAX * 100;
-	const span = cMax - cMin;
-
-	box("cl-mask-left", 0, cMin, 0, 100);
-	box("cl-mask-right", cMax, 100 - cMax, 0, 100);
-	box("cl-mask-top", cMin, span, 0, 100 - cfg.lMax);
-	box("cl-mask-bottom", cMin, span, 100 - cfg.lMin, cfg.lMin);
-}
-
 const DOT_RADIUS = 4;
 // Larger than the dot: a triangle inscribed in the same circle covers under half the area and reads
 // as the smaller mark.
@@ -1213,28 +1144,34 @@ function hcField(w, h, lightness, cfg) {
 	return image;
 }
 
+// The gamut's chroma per pixel of a canvas: a bisection each, so kept per canvas and recomputed only when its size changes.
+const gamutTables = new WeakMap();
+function gamutTable(canvas) {
+	const w = canvas.width, h = canvas.height;
+	let table = gamutTables.get(canvas);
+	if (!table || table.w !== w || table.h !== h) {
+		const reach = new Float32Array(w * h);
+		for (let y = 0; y < h; ++y)
+			for (let x = 0; x < w; ++x)
+				reach[y * w + x] = gamutChroma(100 * (1 - y / (h - 1)), x / w * 360);
+		table = { w, h, reach };
+		gamutTables.set(canvas, table);
+	}
+	return table.reach;
+}
+
 // Hue across, lightness up, each pixel at the box's chroma cap for that hue and lightness: the
 // most vivid color the ranges allow there, the outside of the selected region. Hatched outside
 // the hue and lightness ranges and where the gamut stays below the chroma minimum.
-// The gamut's chroma per pixel is kept per canvas size: it costs a bisection each and never changes.
-let skinChroma = null, skinWidth = 0, skinHeight = 0;
-function skinField(w, h, cfg) {
-	if (w !== skinWidth || h !== skinHeight) {
-		skinChroma = new Float32Array(w * h);
-		for (let y = 0; y < h; ++y)
-			for (let x = 0; x < w; ++x)
-				skinChroma[y * w + x] = gamutChroma(100 * (1 - y / (h - 1)), x / w * 360);
-		skinWidth = w;
-		skinHeight = h;
-	}
-
+function skinField(canvas, cfg) {
+	const w = canvas.width, h = canvas.height, gamutReach = gamutTable(canvas);
 	const image = new ImageData(w, h);
 	const data = image.data;
 	for (let x = 0; x < w; ++x) {
 		const hue = x / w * 360;
 		const inHue = cfg.hMin <= cfg.hMax ? hue >= cfg.hMin && hue <= cfg.hMax : hue >= cfg.hMin || hue <= cfg.hMax;
 		for (let y = 0; y < h; ++y) {
-			const L = 100 * (1 - y / (h - 1)), reach = skinChroma[y * w + x];
+			const L = 100 * (1 - y / (h - 1)), reach = gamutReach[y * w + x];
 			if (reach === 0)
 				continue;
 			const rgb = oklabToRgb(...labOfLch(L, Math.min(reach, cfg.cMax), hue)).map(v => Math.min(1, Math.max(0, v)));
@@ -1305,18 +1242,20 @@ function drawHSPlane(cfg, colors) {
 
 function drawSkinPlane(cfg, colors) {
 	const canvas = sizedCanvas("skin-canvas");
-	skinDraw = { canvas, colors, image: skinField(canvas.width, canvas.height, cfg),
+	skinDraw = { canvas, colors, image: skinField(canvas, cfg),
 		place: (color, c) => ({ x: color.lch[2] / 360 * c.width, y: (1 - color.lch[0] / 100) * (c.height - 1) }) };
 	paintChart(skinDraw);
+}
+
+function drawRangePlane(cfg) {
+	const canvas = sizedCanvas("range-canvas");
+	canvas.getContext("2d").putImageData(skinField(canvas, cfg), 0, 0);
 }
 
 function refreshBars(cfg) {
 	drawHueBar();
 	maskHueBar(cfg.hMin, cfg.hMax);
-	const planeHue = +$("cl-h").value;
-	$("cl-h-value").textContent = planeHue + "°";
-	drawCLPlane(planeHue);
-	maskPlane(cfg);
+	drawRangePlane(cfg);
 }
 
 function refreshLabels() {
@@ -1723,17 +1662,7 @@ const recentreChartL = () => { const cfg = readConfig(); $("hs-l").value = (cfg.
 for (const id of ["l-min", "l-max"])
 	$(id).addEventListener("input", recentreChartL);
 
-// The middle of the hue range, wrapped ranges included.
-function recentrePlaneHue() {
-	const min = +$("h-min").value, max = +$("h-max").value;
-	$("cl-h").value = Math.round(min <= max ? (min + max) / 2 : (min + (360 - min + max) / 2) % 360);
-}
-for (const id of ["h-min", "h-max"])
-	$(id).addEventListener("input", recentrePlaneHue);
-recentrePlaneHue();
-
-// The chart lightness and plane hue are view controls: they redraw their chart from what is
-// already generated, at most once a frame.
+// The chart lightness is a view control: it redraws its chart from what is already generated, at most once a frame.
 function redrawOnInput(id, redraw) {
 	let scheduled = false;
 	$(id).addEventListener("input", () => {
@@ -1744,7 +1673,6 @@ function redrawOnInput(id, redraw) {
 	});
 }
 redrawOnInput("hs-l", () => drawHSPlane(readConfig(), palette));
-redrawOnInput("cl-h", () => refreshBars(readConfig()));
 
 $("sort").addEventListener("change", scheduleRun);
 
@@ -1875,10 +1803,28 @@ $("state").addEventListener("keydown", e => { if (e.key === "Enter") applyPasted
 
 // ---------- pinned palettes ----------
 
-// Held for the session only. Each entry keeps the state string that reproduces it, so copying one
-// out is the way to keep it; the hexes are the strip drawn in the list and are never read back.
+// Kept in localStorage. Each entry keeps the state string that reproduces it; the hexes are the strip
+// drawn in the list and are never read back.
+// The key is namespaced: project sites on GitHub Pages share one origin.
+const PINS_KEY = "color-palette-generator.pins";
 const pins = [];
 let pinCount = 0;
+
+// Replaces the list in place: the handlers below close over the array.
+// A value that is not a list of well-formed entries is ignored as a whole: the next save replaces it.
+// The count continues past the highest number a stored default name carries, so a new pin never reuses one.
+function takeStoredPins(json) {
+	let stored;
+	try { stored = JSON.parse(json ?? "[]"); } catch { stored = []; }
+	if (!Array.isArray(stored) || !stored.every(e => typeof e?.name === "string" && typeof e.state === "string" && Array.isArray(e.hexes)))
+		stored = [];
+	pins.length = 0;
+	pins.push(...stored);
+	pinCount = Math.max(0, ...pins.map(entry => +(/^Palette (\d+)$/.exec(entry.name)?.[1] ?? 0)));
+}
+takeStoredPins(localStorage.getItem(PINS_KEY));
+
+const savePins = () => localStorage.setItem(PINS_KEY, JSON.stringify(pins));
 
 // The name is user text going into an attribute, so it must not be able to close it.
 const escapeAttribute = text => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -1905,6 +1851,7 @@ $("pin-add").addEventListener("click", () => {
 		hexes: palette.map(c => c.hex)
 	});
 	renderPins();
+	savePins();
 });
 
 // Tab-separated: a name may contain spaces, and the lines paste into a sheet as two columns.
@@ -1942,6 +1889,7 @@ function loadPins(text) {
 	}
 
 	renderPins();
+	savePins();
 	return added;
 }
 
@@ -1963,8 +1911,10 @@ $("pin-load").addEventListener("click", e => {
 // Renaming leaves the list alone: rebuilding it would take the focus out of the field mid-word.
 $("pin-list").addEventListener("input", e => {
 	const field = e.target.closest(".pin-name");
-	if (field)
+	if (field) {
 		pins[rowIndex(field)].name = field.value;
+		savePins();
+	}
 });
 
 $("pin-list").addEventListener("click", e => {
@@ -1978,8 +1928,19 @@ $("pin-list").addEventListener("click", e => {
 	if (drop) {
 		pins.splice(rowIndex(drop), 1);
 		renderPins();
+		savePins();
 	}
 });
+
+// Fires in every other tab when one saves, so each tab writes from the latest list.
+window.addEventListener("storage", e => {
+	if (e.key !== PINS_KEY)
+		return;
+	takeStoredPins(e.newValue);
+	renderPins();
+});
+
+renderPins();
 
 // A different palette on every load. Truncated to the 32 bits mulberry32 and the state string both
 // use, so the value in the box survives a save and restore unchanged.
