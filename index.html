@@ -1233,6 +1233,8 @@ function sizedCanvas(id) {
 
 function drawHSPlane(cfg, colors) {
 	const canvas = sizedCanvas("hs-canvas");
+	if (canvas.width === 0)
+		return;
 	const level = +$("hs-l").value;
 	$("hs-l-value").textContent = Math.round(level);
 	hsDraw = { canvas, colors, image: hcField(canvas.width, canvas.height, level, cfg),
@@ -1242,6 +1244,8 @@ function drawHSPlane(cfg, colors) {
 
 function drawSkinPlane(cfg, colors) {
 	const canvas = sizedCanvas("skin-canvas");
+	if (canvas.width === 0)
+		return;
 	skinDraw = { canvas, colors, image: skinField(canvas, cfg),
 		place: (color, c) => ({ x: color.lch[2] / 360 * c.width, y: (1 - color.lch[0] / 100) * (c.height - 1) }) };
 	paintChart(skinDraw);
@@ -1249,6 +1253,8 @@ function drawSkinPlane(cfg, colors) {
 
 function drawRangePlane(cfg) {
 	const canvas = sizedCanvas("range-canvas");
+	if (canvas.width === 0)
+		return;
 	canvas.getContext("2d").putImageData(skinField(canvas, cfg), 0, 0);
 }
 
