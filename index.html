@@ -1024,17 +1024,39 @@ function readConfig() {
 
 let drawnBarWidth = 0;
 
-// The hue's most vivid sRGB color: the largest chroma over lightness.
-// Lightness steps of 0.5 keep the hue bar smooth: coarser levels show as vertical bands where the best lightness switches.
-const PURE_HUE_LEVELS = 200;
+// The hue's most vivid sRGB color: the largest chroma over lightness. A coarse scan brackets the peak, golden-section
+// search narrows it to 0.1 L: chroma over lightness at one hue has a single peak, the gamut cusp.
+const PURE_HUE_LEVELS = 24;
 function pureHue(h) {
-	let best = [50, 0];
+	let bestLevel = 0, bestC = 0;
 	for (let n = 1; n < PURE_HUE_LEVELS; ++n) {
-		const L = 100 * n / PURE_HUE_LEVELS, C = gamutChroma(L, h);
-		if (C > best[1])
-			best = [L, C];
+		const C = gamutChroma(100 * n / PURE_HUE_LEVELS, h);
+		if (C > bestC) {
+			bestLevel = n;
+			bestC = C;
+		}
 	}
-	return colorAt(best[0], best[1], h);
+
+	const R = (Math.sqrt(5) - 1) / 2;
+	let lo = 100 * (bestLevel - 1) / PURE_HUE_LEVELS, hi = 100 * (bestLevel + 1) / PURE_HUE_LEVELS;
+	let a = hi - R * (hi - lo), b = lo + R * (hi - lo), Ca = gamutChroma(a, h), Cb = gamutChroma(b, h);
+	while (hi - lo > 0.1) {
+		if (Ca < Cb) {
+			lo = a;
+			a = b;
+			Ca = Cb;
+			b = lo + R * (hi - lo);
+			Cb = gamutChroma(b, h);
+		} else {
+			hi = b;
+			b = a;
+			Cb = Ca;
+			a = hi - R * (hi - lo);
+			Ca = gamutChroma(a, h);
+		}
+	}
+	const L = (lo + hi) / 2;
+	return colorAt(L, gamutChroma(L, h), h);
 }
 
 function drawHueBar() {
