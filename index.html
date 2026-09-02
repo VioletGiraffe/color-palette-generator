@@ -193,16 +193,8 @@
 	/* A name chip carries the chip height of a palette swatch, so a name's territory reads at the
 	   size the colors themselves do. */
 	#name-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-	.name-group { display: flex; gap: 4px; }
-	/* Boxed only once it holds more than one name, which is when the box means something. */
-	.name-group.merged { padding: 4px; border: 2px solid var(--accent); border-radius: 8px; }
 	.name-chip { position: relative; width: 104px; border: 1px solid var(--line); border-radius: 6px;
-		overflow: hidden; cursor: grab; background: none; touch-action: none; user-select: none; }
-	/* Its own dark plate, so the glyph carries over whatever territory is behind it. */
-	.name-chip .split { position: absolute; top: 3px; right: 3px; width: 18px; height: 18px; padding: 0;
-		font-size: 13px; line-height: 1; border-radius: 4px; cursor: pointer;
-		color: #fff; background: rgba(0, 0, 0, .55); border: 1px solid rgba(255, 255, 255, .4); }
-	.name-chip .split:hover { background: var(--accent); border-color: var(--accent); }
+		overflow: hidden; cursor: pointer; background: none; user-select: none; }
 	.name-chip:hover { border-color: var(--swatch-hover); }
 	.name-chip canvas { display: block; width: 100%; height: 64px; }
 	.name-chip .meta { padding: 4px 6px; font-size: 11px; line-height: 1.3; color: var(--ink); }
@@ -225,17 +217,6 @@
 		height: 3px;
 		background: var(--danger);
 	}
-	.name-chip.dragging { opacity: .35; }
-	.name-chip.target { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
-
-	/* The copy that follows the cursor: placed in viewport coordinates, and deaf to pointer events,
-	   or it would mask the chip it is dropped on. */
-	.name-chip.ghost { position: fixed; z-index: 50; pointer-events: none; background: var(--panel);
-		transform: rotate(-3deg); box-shadow: 0 10px 24px rgba(0, 0, 0, .5); }
-
-	/* Every element, not just the chip: the pointer spends the drag over other things. */
-	body.dragging-name, body.dragging-name * { cursor: grabbing !important; }
-
 	#fixed-colors { width: 100%; height: 56px; resize: vertical; font: 11px/1.5 ui-monospace, Consolas, monospace; }
 	#fixed-preview { display: flex; height: 18px; margin-top: 6px; border-radius: 4px; overflow: hidden; }
 	#fixed-preview:empty { display: none; }
@@ -402,7 +383,7 @@
 	</div>
 	<div id="names-body">
 		<div id="name-chips"></div>
-		<div class="hint" id="names-hint">Every name the generator can reach, each drawn at the lightness where it covers the most ground - eleven of them, white and black among them, cover nothing at all at mid lightness. Click a name to stop the generator using it; fixed colors are exempt. Drag one name onto another to merge them: merged names generate as a single name, so two colors sharing one have to sit further apart, while each swatch keeps its own label. Drag a name out of its box to split it off.</div>
+		<div class="hint" id="names-hint">Every name the generator can reach, each drawn at the lightness where it covers the most ground - eleven of them, white and black among them, cover nothing at all at mid lightness. Click a name to exclude it: a generated color that lands in it is outlined.</div>
 	</div>
 
 	<hr>
@@ -660,9 +641,8 @@ function mulberry32(seed) {
 	};
 }
 
-// The name tables when none are chosen: every name usable, none merged.
+// The name table when none is chosen: every name usable.
 const ALL_INCLUDED = Array.from({ length: NAME_SLOTS }, () => true);
-const NO_GROUPS = Array.from({ length: NAME_SLOTS }, (_, cell) => cell);
 
 // A draw is uniform over the box's OKLab volume: lightness and hue evenly, chroma by its square so
 // the sector's outer arc is not thinned, and draws sRGB cannot show rejected. A box sRGB shows
@@ -983,20 +963,19 @@ function identification(colors, cfg) {
 function attempt(rnd, cfg) {
 	const colors = pushApart(rnd, dartStart(rnd, cfg), cfg);
 	return { colors, ...identification(colors, cfg), gap: minimumGap(colors),
-		named: new Set(colors.map(color => cfg.groupOf[color.cell])).size };
+		named: new Set(colors.map(color => color.cell)).size };
 }
 
 // The best of the restarts by floor, then gap. `reachable` is a floor the box allows for this many
 // colors: one attempt free to use the walls, from its own seed so a poor start is not shared. The
 // restarts continue past the first RESTARTS while the best falls short of it or of RESTART_TARGET.
-// Callers that set no name tables report names as though none were merged.
 // Null when sRGB shows no color in the box.
 function generate(cfg) {
 	const sigma = Math.max(cfg.scale, 1);
 	const cells = boxCells(cfg);
 	if (!cells.centres.length)
 		return null;
-	const settings = { ...cfg, groupOf: cfg.groupOf || NO_GROUPS, sigma, limit: limitDistance(sigma),
+	const settings = { ...cfg, sigma, limit: limitDistance(sigma),
 		pushMin: cfg.pushMin ?? PUSH_ANGLE_MIN, pushMax: cfg.pushMax ?? PUSH_ANGLE_MAX,
 		cells: cells.fraction < SPARSE_FRACTION ? cells : null };
 	const reachable = attempt(mulberry32(settings.seed + 104729), { ...settings, hull: true }).floor;
@@ -1035,7 +1014,7 @@ function readConfig() {
 		cMin, cMax, lMin, lMax,
 		seed: +$("seed").value | 0,
 		fixed: parseFixedColors($("fixed-colors").value),
-		included: nameIncluded, groupOf: nameGroup
+		included: nameIncluded
 	};
 }
 
@@ -1401,32 +1380,11 @@ function refreshExport() {
 
 // ---------- name controls ----------
 
-// Which cells generation may place a color in, and which cells it scores as one name. readConfig
-// hands both to the generator, which only reads them.
+// Which cells are excluded: a generated color landing in one is marked. readConfig hands the table
+// to the generator, which only reads it.
 const nameIncluded = ALL_INCLUDED.slice();
-const nameGroup = NO_GROUPS.slice();
 
 const ALL_CELLS = CELL_NAMES.map((_, cell) => cell);
-
-// A group is named by its lowest member, so its leader is the cell naming itself.
-const groupLeaders = () => ALL_CELLS.filter(cell => nameGroup[cell] === cell);
-const groupMembers = leader => ALL_CELLS.filter(cell => nameGroup[cell] === leader);
-const inGroup = cell => groupMembers(nameGroup[cell]).length > 1;
-
-function mergeGroups(a, b) {
-	const [leader, absorbed] = ordered(nameGroup[a], nameGroup[b]);
-	for (const cell of ALL_CELLS)
-		if (nameGroup[cell] === absorbed)
-			nameGroup[cell] = leader;
-}
-
-// Whatever the cell led passes to the next lowest member, which must be read off before it leaves.
-function detachCell(cell) {
-	const led = nameGroup[cell] === cell ? groupMembers(cell).filter(member => member !== cell) : [];
-	nameGroup[cell] = cell;
-	for (const member of led)
-		nameGroup[member] = led[0];
-}
 
 // How much of the hue/chroma plane each name owns, at every lightness a chip may be drawn at.
 const CENSUS_LEVELS = Array.from({ length: 19 }, (_, n) => (n + 1) * 5);
@@ -1514,162 +1472,24 @@ function nameChip(cell) {
 	meta.append(name, level);
 
 	chip.append(territoryCanvas(cell), meta);
-
-	// Only where there is a group to leave, so the button never asks to undo nothing.
-	if (inGroup(cell)) {
-		const split = document.createElement("button");
-		split.className = "split";
-		split.textContent = "×";
-		split.title = "Split " + displayName(cell) + " off from the group";
-		chip.append(split);
-	}
 	return chip;
 }
 
 function renderNames() {
-	const groups = groupLeaders().map(groupMembers);
-	$("name-chips").replaceChildren(...groups.map(members => {
-		const box = document.createElement("div");
-		box.className = "name-group" + (members.length > 1 ? " merged" : "");
-		box.append(...members.map(nameChip));
-		return box;
-	}));
-
+	$("name-chips").replaceChildren(...ALL_CELLS.map(nameChip));
 	const excluded = ALL_CELLS.filter(cell => !nameIncluded[cell]).length;
-	const merged = groups.filter(members => members.length > 1).length;
-	$("names-summary").textContent = (CELL_NAMES.length - excluded) + " of " + CELL_NAMES.length + " in use"
-		+ (merged ? ", " + merged + " merged" : "");
+	$("names-summary").textContent = (CELL_NAMES.length - excluded) + " of " + CELL_NAMES.length + " in use";
 }
 
-const DRAG_THRESHOLD = 4;
-// Restored whenever a drag ends: during one, the caption says what releasing here would do.
-const NAMES_HINT = $("names-hint").textContent;
-let nameDrag = null;
-
-// The chip under a point in viewport coordinates, null where the point is over none.
-const chipAt = (x, y) => {
-	const under = document.elementFromPoint(x, y);
-	return under ? under.closest(".name-chip") : null;
-};
-
-const clearDragMarks = () => {
-	for (const chip of $("name-chips").querySelectorAll(".name-chip"))
-		chip.classList.remove("dragging", "target");
-};
-
-// The copy that rides the cursor. cloneNode leaves a canvas blank, so the territory is drawn
-// across; the split button goes, having nothing to act on in a copy.
-function liftedGhost(chip) {
-	const ghost = chip.cloneNode(true);
-	ghost.classList.add("ghost");
-	const split = ghost.querySelector(".split");
-	if (split)
-		split.remove();
-	ghost.querySelector("canvas").getContext("2d").drawImage(chip.querySelector("canvas"), 0, 0);
-	document.body.append(ghost);
-	return ghost;
-}
-
-// What releasing at the pointer would do, for the caption.
-function dragHint(over) {
-	if (over && over !== nameDrag.chip)
-		return "Release to merge " + displayName(nameDrag.cell) + " with " + displayName(+over.dataset.cell);
-	if (inGroup(nameDrag.cell))
-		return "Release on empty space to split " + displayName(nameDrag.cell) + " off";
-	return "Drop " + displayName(nameDrag.cell) + " on another name to merge the two";
-}
-
-function endNameDrag() {
-	if (nameDrag && nameDrag.ghost)
-		nameDrag.ghost.remove();
-	nameDrag = null;
-	document.body.classList.remove("dragging-name");
-	$("names-hint").textContent = NAMES_HINT;
-	clearDragMarks();
-}
-
-$("name-chips").addEventListener("pointerdown", event => {
-	const chip = event.target.closest(".name-chip");
-	if (!chip || event.button || event.target.closest(".split"))
-		return;
-	const box = chip.getBoundingClientRect();
-	nameDrag = { cell: +chip.dataset.cell, chip, moved: false, ghost: null,
-		x: event.clientX, y: event.clientY,
-		grabX: event.clientX - box.left, grabY: event.clientY - box.top };
-	event.preventDefault();
-});
-
-// The split button starts no drag, so its click stands on its own.
 $("name-chips").addEventListener("click", event => {
-	const split = event.target.closest(".split");
-	if (!split)
+	const chip = event.target.closest(".name-chip");
+	if (!chip)
 		return;
-	detachCell(+split.closest(".name-chip").dataset.cell);
+	const cell = +chip.dataset.cell;
+	nameIncluded[cell] = !nameIncluded[cell];
 	renderNames();
 	scheduleRun();
 });
-
-// A chip holds a canvas and text, either of which a browser will otherwise pick up as a native
-// drag: that swallows the pointer stream and the gesture never reaches the handlers below.
-$("name-chips").addEventListener("dragstart", event => event.preventDefault());
-
-// Watched on the document rather than the strip, and without pointer capture: the pointer leaves
-// the chip it started on by definition, and a drag released outside the strip still ends here.
-document.addEventListener("pointermove", event => {
-	if (!nameDrag)
-		return;
-	if (!nameDrag.moved && Math.hypot(event.clientX - nameDrag.x, event.clientY - nameDrag.y) < DRAG_THRESHOLD)
-		return;
-
-	// The ghost is cloned before the source is marked, so it does not inherit the faded look.
-	if (!nameDrag.moved) {
-		nameDrag.moved = true;
-		nameDrag.ghost = liftedGhost(nameDrag.chip);
-		nameDrag.chip.classList.add("dragging");
-		document.body.classList.add("dragging-name");
-	}
-
-	nameDrag.ghost.style.left = (event.clientX - nameDrag.grabX) + "px";
-	nameDrag.ghost.style.top = (event.clientY - nameDrag.grabY) + "px";
-
-	const over = chipAt(event.clientX, event.clientY);
-	for (const chip of $("name-chips").querySelectorAll(".name-chip"))
-		chip.classList.toggle("target", chip === over && chip !== nameDrag.chip);
-	$("names-hint").textContent = dragHint(over);
-});
-
-// A press that never moved toggles the name. A drag carries the one name it started on: onto
-// another chip it joins that chip's group, and on the strip's own background it leaves the group
-// it was in. A drop anywhere else is abandoned.
-document.addEventListener("pointerup", event => {
-	if (!nameDrag)
-		return;
-
-	const { cell, chip, moved } = nameDrag;
-	endNameDrag();
-
-	let changed = true;
-	if (!moved) {
-		nameIncluded[cell] = !nameIncluded[cell];
-	} else {
-		const under = document.elementFromPoint(event.clientX, event.clientY);
-		const onto = under ? under.closest(".name-chip") : null;
-		if (onto && onto !== chip) {
-			detachCell(cell);
-			mergeGroups(cell, +onto.dataset.cell);
-		} else if (!onto && under && $("name-chips").contains(under)) {
-			detachCell(cell);
-		} else {
-			changed = false;
-		}
-	}
-
-	renderNames();
-	if (changed)
-		scheduleRun();
-});
-
-document.addEventListener("pointercancel", endNameDrag);
 
 $("names-toggle").addEventListener("click", () => {
 	const body = $("names-body");
@@ -1677,54 +1497,31 @@ $("names-toggle").addEventListener("click", () => {
 	$("names-toggle").textContent = body.hidden ? "Show" : "Hide";
 });
 
-// A digit per cell. Which digits are in range is left to canonicalGroups, which reads any of them
-// as a partition.
-const NAME_GROUPS_PATTERN = new RegExp("^[0-9a-z]{" + CELL_NAMES.length + "}$");
-
-// The included names as a bit per cell, and the grouping as one base36 digit per cell naming its
-// group's leader.
-function stateNameFields() {
+// The included names as a bit per cell, base36. Summed as powers of two: there are more cells than
+// the 32 bits shifts work in.
+function stateNameField() {
 	let mask = 0;
 	for (const cell of ALL_CELLS)
 		if (nameIncluded[cell])
-			mask |= 1 << cell;
-	return [mask.toString(36), ALL_CELLS.map(cell => nameGroup[cell].toString(36)).join("")];
+			mask += 2 ** cell;
+	return mask.toString(36);
 }
 
-// Any assignment of cells to keys describes a partition. Taking the first cell holding each key as
-// its leader is what the chip order and the merge rules assume, and makes a hand-edited field
-// well-formed whatever it says.
-function canonicalGroups(keys) {
-	const leaderFor = new Map();
-	const groups = NO_GROUPS.slice();
-	for (const cell of ALL_CELLS) {
-		if (!leaderFor.has(keys[cell]))
-			leaderFor.set(keys[cell], cell);
-		groups[cell] = leaderFor.get(keys[cell]);
-	}
-	return groups;
-}
-
-// The name tables a parsed state describes. Empty fields are a string written before the names
-// could be chosen: all included, none merged.
-function nameTablesFrom(parsed) {
+// The name table a parsed state describes. An empty field is a string written before the names
+// could be chosen: all included.
+function nameTableFrom(parsed) {
 	const included = ALL_INCLUDED.slice();
 	if (parsed.included) {
 		const mask = parseInt(parsed.included, 36);
 		for (const cell of ALL_CELLS)
-			included[cell] = (mask & (1 << cell)) !== 0;
+			included[cell] = Math.floor(mask / 2 ** cell) % 2 === 1;
 	}
-	return {
-		included,
-		groupOf: parsed.groups ? canonicalGroups([...parsed.groups].map(digit => parseInt(digit, 36))) : NO_GROUPS.slice()
-	};
+	return { included };
 }
 
-function applyNameTables(tables) {
-	for (const cell of ALL_CELLS) {
-		nameIncluded[cell] = tables.included[cell];
-		nameGroup[cell] = tables.groupOf[cell];
-	}
+function applyNameTable(table) {
+	for (const cell of ALL_CELLS)
+		nameIncluded[cell] = table.included[cell];
 	renderNames();
 }
 
@@ -1746,7 +1543,7 @@ function stateString(cfg) {
 	return [STATE_VERSION, cfg.count, cfg.scale, cfg.hMin, cfg.hMax, cfg.cMin, cfg.cMax,
 		cfg.lMin, cfg.lMax, cfg.seed >>> 0, $("sort").checked ? 1 : 0,
 		stripHash($("backdrop").value), stripHash($("backdrop-color").value), $("format").value,
-		cfg.fixed.map(color => stripHash(color.hex)).join(","), ...stateNameFields()
+		cfg.fixed.map(color => stripHash(color.hex)).join(","), stateNameField()
 	].join(STATE_SEPARATOR);
 }
 
@@ -1761,24 +1558,23 @@ function findOption(id, stored) {
 function parseState(text) {
 	const [tag, ...fields] = text.trim().split(STATE_SEPARATOR);
 	// The sort flag, backdrop, custom color and export format always follow the nine control values.
-	// Fixed colors, then the included names and the grouping, were each added later: a string
-	// written before one of them ends where it was added, and the rest take their defaults.
+	// Fixed colors, then the included names, were each added later: a string written before one of
+	// them ends where it was added, and the rest take their defaults.
 	const required = STATE_IDS.length + 4;
-	if (tag !== STATE_VERSION || fields.length < required || fields.length > required + 3)
+	if (tag !== STATE_VERSION || fields.length < required || fields.length > required + 2)
 		return null;
 
 	const numbers = fields.slice(0, STATE_IDS.length + 1).map(f => f.trim() === "" ? NaN : Number(f));
-	const [backdrop, custom, format, fixed = "", included = "", groups = ""] = fields.slice(STATE_IDS.length + 1);
+	const [backdrop, custom, format, fixed = "", included = ""] = fields.slice(STATE_IDS.length + 1);
 	const backdropOption = findOption("backdrop", backdrop);
 	const formatOption = findOption("format", format);
 
 	if (numbers.some(n => !Number.isFinite(n)) || !backdropOption || !formatOption || !/^[0-9a-f]{6}$/i.test(custom)
 		|| !(fixed === "" || /^[0-9a-f]{6}(,[0-9a-f]{6})*$/i.test(fixed))
-		|| !(included === "" || /^[0-9a-z]{1,6}$/.test(included))
-		|| !(groups === "" || NAME_GROUPS_PATTERN.test(groups)))
+		|| !(included === "" || /^[0-9a-z]{1,8}$/.test(included)))
 		return null;
 
-	return { numbers, backdrop: backdropOption.value, custom, format: formatOption.value, fixed, included, groups };
+	return { numbers, backdrop: backdropOption.value, custom, format: formatOption.value, fixed, included };
 }
 
 const fixedFromField = field => field.split(",").filter(Boolean).map(hex => "#" + hex.toLowerCase());
@@ -1790,7 +1586,7 @@ function configFromState(parsed) {
 	const [cMin, cMax] = ordered(c1, c2);
 	const [lMin, lMax] = ordered(l1, l2);
 	return { count, scale, hMin, hMax, cMin, cMax, lMin, lMax, seed: seed | 0,
-		fixed: fixedFromField(parsed.fixed).map(colorFromHex), ...nameTablesFrom(parsed) };
+		fixed: fixedFromField(parsed.fixed).map(colorFromHex), ...nameTableFrom(parsed) };
 }
 
 // Out-of-range numbers are left to the inputs, which clamp to their own min and max.
@@ -1809,7 +1605,7 @@ function applyStateString(text) {
 
 	// Assigning a select's value fires no change event, so the backdrop is applied by hand.
 	applyBackdrop(currentBackdrop());
-	applyNameTables(nameTablesFrom(parsed));
+	applyNameTable(nameTableFrom(parsed));
 	recentreChartL();
 	run();
 	return true;
