@@ -197,22 +197,27 @@
 		overflow: hidden; cursor: pointer; background: none; user-select: none; }
 	.name-chip:hover { border-color: var(--swatch-hover); }
 	.name-chip canvas { display: block; width: 100%; height: 64px; }
-	.name-chip .meta { padding: 4px 6px; font-size: 11px; line-height: 1.3; color: var(--ink); }
+	/* The right padding leaves room for the showcase square, which spans both text lines at the strikeout's inset. */
+	.name-chip .meta { position: relative; padding: 4px 30px 4px 6px; font-size: 11px; line-height: 1.3; color: var(--ink); }
 	.name-chip .meta div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	/* Framed by the line color: the showcase of white or black would otherwise vanish into the panel of its theme. */
+	.name-chip .meta .sample { position: absolute; right: 4px; top: 50%; width: 20px; height: 20px; margin-top: -10px;
+		border-radius: 3px; box-shadow: inset 0 0 0 1px var(--line); }
 	.name-chip .meta .level { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
 	.name-chip.off { border-style: dashed; }
 	/* The territory keeps its true colors: the line is what marks the name as dropped, and a color
 	   is still worth seeing while deciding whether to drop it. */
-	.name-chip.off .meta { position: relative; color: var(--ink-dim); }
+	.name-chip.off .meta { color: var(--ink-dim); }
 	/* Ruled across the chip rather than set on the text: a line-through reaches only as far as the
 	   name is long, and the short names are the ones hardest to spot. Inset by less than .meta's
-	   6px gutter, so it overshoots the name at either end whatever the name's length.
+	   6px gutter, so it overshoots the name at either end whatever the name's length, and stops
+	   the same 4px short of the showcase square, which stays readable.
 	   Vertically it is .meta's top padding plus half a line, which centres it on the name. */
 	.name-chip.off .meta::after {
 		content: "";
 		position: absolute;
 		left: 4px;
-		right: 4px;
+		right: 28px;
 		top: calc(4px + 0.65em - 1.5px);
 		height: 3px;
 		background: var(--danger);
@@ -626,7 +631,7 @@ function cellOf(rgb) {
 const cellName = cell => CELL_NAMES[cell];
 
 // Cell-indexed tables run one slot past the names: a color the grid places outside the survey's
-// gamut carries OUTSIDE_GAMUT, which must read as an ordinary included, ungrouped name.
+// gamut carries OUTSIDE_GAMUT, which must read as an ordinary included name.
 const NAME_SLOTS = CELL_NAMES.length + 1;
 
 // ---------- generation ----------
@@ -1386,8 +1391,7 @@ function refreshExport() {
 
 // ---------- name controls ----------
 
-// Which cells are excluded: a generated color landing in one is marked. readConfig hands the table
-// to the generator, which only reads it.
+// Which cells are excluded: the generator keeps generated colors out of them (see usableLch).
 const nameIncluded = ALL_INCLUDED.slice();
 
 const ALL_CELLS = CELL_NAMES.map((_, cell) => cell);
@@ -1395,17 +1399,26 @@ const ALL_CELLS = CELL_NAMES.map((_, cell) => cell);
 // How much of the hue/chroma plane each name owns, at every lightness a chip may be drawn at.
 const CENSUS_LEVELS = Array.from({ length: 19 }, (_, n) => (n + 1) * 5);
 const CENSUS_HUES = 90, CENSUS_CHROMAS = 26;
+const CENSUS = CENSUS_LEVELS.map(() => new Int32Array(NAME_SLOTS));
 
-const CENSUS = CENSUS_LEVELS.map(level => {
-	const counts = new Int32Array(NAME_SLOTS);
+// Each name's showcase color: the census sample scoring highest on chroma plus a quarter of its
+// lightness, so the vivid member wins and the bright one among equals.
+const CELL_SWATCH = Array.from({ length: NAME_SLOTS }, () => ({ score: -1, hex: "#000000" }));
+
+CENSUS_LEVELS.forEach((level, n) => {
 	for (let hi = 0; hi < CENSUS_HUES; ++hi)
 		for (let ci = 0; ci < CENSUS_CHROMAS; ++ci) {
-			const lab = labOfLch(level, CHROMA_MAX * ci / (CENSUS_CHROMAS - 1), hi * 360 / CENSUS_HUES);
-			const rgb = oklabToRgb(...lab);
-			if (inGamut(rgb))
-				++counts[cellOf(rgb.map(v => Math.min(1, Math.max(0, v)))).cell];
+			const chroma = CHROMA_MAX * ci / (CENSUS_CHROMAS - 1);
+			const rgb = oklabToRgb(...labOfLch(level, chroma, hi * 360 / CENSUS_HUES));
+			if (!inGamut(rgb))
+				continue;
+			const shown = rgb.map(v => Math.min(1, Math.max(0, v)));
+			const { cell } = cellOf(shown);
+			++CENSUS[n][cell];
+			const score = chroma + level / 4;
+			if (score > CELL_SWATCH[cell].score)
+				CELL_SWATCH[cell] = { score, hex: toHex(shown) };
 		}
-	return counts;
 });
 
 // The plane where the name covers the most ground. Eleven names - white and black among them - own
@@ -1475,7 +1488,11 @@ function nameChip(cell) {
 	const level = document.createElement("div");
 	level.className = "level";
 	level.textContent = "L " + CELL_PEAK[cell] + "%";
-	meta.append(name, level);
+	const sample = document.createElement("span");
+	sample.className = "sample";
+	sample.style.background = CELL_SWATCH[cell].hex;
+	sample.title = CELL_SWATCH[cell].hex.toUpperCase();
+	meta.append(name, level, sample);
 
 	chip.append(territoryCanvas(cell), meta);
 	return chip;
