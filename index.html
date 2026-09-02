@@ -278,9 +278,17 @@
 		<label class="row"><span>Colors</span><span class="value" id="count-value">8</span></label>
 		<input type="range" id="count" min="1" max="40" value="8">
 
-		<label class="row" style="margin-top:12px"><span>Distinctness</span><span class="value" id="strict-value">18</span></label>
-		<input type="range" id="strict" min="0" max="50" step="0.5" value="18">
-		<div class="hint">How far apart similarly-named colors must sit before they read as distinct on their own. 0 asks only that colors differ side by side.</div>
+		<label class="row" style="margin-top:12px"><span>Distinctness</span><span class="value" id="strict-value">6</span></label>
+		<input type="range" id="strict" min="1" max="50" step="0.5" value="6">
+		<div class="hint">Width of the memory noise the colors are spread against, in ΔE. Low pushes only the closest pairs apart; high trades that for an even spread.</div>
+
+		<div class="range-pair" style="margin-top:12px; margin-bottom:0">
+			<div class="caption"><span>Push angle</span><span class="value" id="push-value"></span></div>
+			<div class="edge">min</div><div class="edge">max</div>
+			<input type="range" id="push-min" min="0" max="180" step="5" value="15">
+			<input type="range" id="push-max" min="0" max="180" step="5" value="120">
+		</div>
+		<div class="hint">A color confused too often steps off in a random direction this far from straight away from its neighbors.</div>
 	</div>
 
 	<hr>
@@ -319,15 +327,15 @@
 		<div class="range-pair">
 			<div class="caption"><span>Saturation</span><span class="value" id="s-value"></span></div>
 			<div class="edge">min</div><div class="edge">max</div>
-			<input type="range" id="s-min" min="0" max="100" value="45">
-			<input type="range" id="s-max" min="0" max="100" value="90">
+			<input type="range" id="s-min" min="0" max="100" value="21">
+			<input type="range" id="s-max" min="0" max="100" value="100">
 		</div>
 
 		<div class="range-pair" style="margin-bottom:0">
 			<div class="caption"><span>Lightness</span><span class="value" id="l-value"></span></div>
 			<div class="edge">min</div><div class="edge">max</div>
-			<input type="range" id="l-min" min="0" max="100" value="35">
-			<input type="range" id="l-max" min="0" max="100" value="65">
+			<input type="range" id="l-min" min="0" max="100" value="15">
+			<input type="range" id="l-max" min="0" max="100" value="68">
 		</div>
 	</div>
 
@@ -386,7 +394,7 @@
 	</div>
 	<div id="names-body">
 		<div id="name-chips"></div>
-		<div class="hint" id="names-hint">Every name the generator can reach, each drawn at the lightness where it covers the most ground - nine of them, white and black among them, cover nothing at all at mid lightness. Click a name to stop the generator using it; fixed colors are exempt. Drag one name onto another to merge them: merged names generate as a single name, so two colors sharing one have to sit further apart, while each swatch keeps its own label. Drag a name out of its box to split it off.</div>
+		<div class="hint" id="names-hint">Every name the generator can reach, each drawn at the lightness where it covers the most ground - eleven of them, white and black among them, cover nothing at all at mid lightness. Click a name to stop the generator using it; fixed colors are exempt. Drag one name onto another to merge them: merged names generate as a single name, so two colors sharing one have to sit further apart, while each swatch keeps its own label. Drag a name out of its box to split it off.</div>
 	</div>
 
 	<hr>
@@ -409,7 +417,7 @@
 <div class="panel" id="gamut">
 	<h2>3D gamut</h2>
 	<div class="plane" id="gamut-3d"></div>
-	<div class="hint">The sRGB gamut in OKLab, lightness up. Solid body: what the selected ranges allow. Cones: fixed colors. Amber line: hardest pair. Halos reach half the Distinctness distance, so two meeting mark a pair at the limit. Drag to rotate, double-click to reset.</div>
+	<div class="hint">The sRGB gamut in OKLab, lightness up. Solid body: what the selected ranges allow. Cones: fixed colors. Amber line: hardest pair. Halos reach half the Distinctness width, so two meeting mark a pair one noise width apart. Drag to rotate, double-click to reset.</div>
 </div>
 
 <div class="panel" id="side">
@@ -537,30 +545,31 @@ function toHex(rgb) {
 // Design", CHI 2012. Model data from https://github.com/StanfordHCI/c3, BSD licensed:
 //   Copyright (c) 2011, Stanford University. All rights reserved.
 // The survey binned sRGB into CIE Lab cubes 5 units on a side and tallied the words people gave to
-// each. 29 words earn a cell of their own; the rest are synonyms of one, or too rare to out-poll one.
+// each. 36 words earn a cell of their own; every other word is folded into the one its votes
+// co-occur with most, so synonyms count for the region they share instead of splitting it.
 // A bin belongs to the word with the highest vote share weighted by the word's rarity: unweighted,
 // generic words win everywhere as everyone's fallback and confine specific words to slivers of
-// their real regions. Weighted, purple owns 803 bins, orange 272, salmon 152.
+// their real regions. Weighted, purple owns 689 bins, orange 226, salmon 131.
 //
 // The tables below are generated: data/build_cells.py prints them, and --check reports whether the
 // ones here still match the model. Edits made by hand are lost at the next run.
-const CELL_NAMES = ["purple", "pink", "blue", "green", "brown", "grey", "teal", "light blue", "olive", "lavender", "light green", "orange", "red", "yellow", "dark green", "navy blue", "maroon", "black", "dark purple", "magenta", "tan", "salmon", "peach", "mauve", "lime green", "beige", "cyan", "white", "mustard"];
+const CELL_NAMES = ["purple", "blue", "pink", "brown", "lavender", "green", "light green", "olive", "light blue", "grey", "magenta", "dark green", "navy blue", "maroon", "teal", "orange", "dark purple", "tan", "red", "turquoise", "grey blue", "black", "peach", "mustard", "lime green", "salmon", "yellow", "mauve", "yellow green", "light pink", "brick red", "pale yellow", "white", "burnt orange", "off white", "beige"];
 
 // Bins form a regular grid, so a color's bin is arithmetic rather than a search.
 const GRID_STEP = 5, GRID_L0 = 0, GRID_A0 = -85, GRID_B0 = -110;
 const GRID_NL = 21, GRID_NA = 38, GRID_NB = 42;
 // No sRGB color reaches these bins, three quarters of the grid.
-const OUTSIDE_GAMUT = 29;
+const OUTSIDE_GAMUT = 36;
 // Set on a bin where people split their votes between names, or where the winning word barely beat
 // the runner-up: the color has a name, but not one a viewer would land on twice running.
-const UNSURE = 32;
+const UNSURE = 64;
 
 // Run-length encoded, a (symbol, run length) byte pair per run, in L then a then b order.
-const CELL_GRID_RLE = "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HSUuAyMBAwEdIw4ELgIjAR0hBgEOBi4CHR8GAiYBDgcuASgBHRwGBCYBDgUuASgBCAIdGwYBJgEGAy4BDgMuASgBCAIoAh0aAgEmAQYBJgEGASYBJQIOASgDCAQdGAIEJgIFBSgBCAYdFwIFJQEFBiQCKAIIAigBHRYCBSIBBQYlAQQHHRUCBSIBBQYlAQQIHRQCBiIBBQElAQUDJQEECR0TAgYgAQADIAElATcBBAodEgIGAAY3ARcCBAkdEQIGAAc3ARcBNwEkAQQIHRACBSIBAAg3ARcBNwIkAQQHHQ8CBSIBAAk3ARcBMAQEBh0OAgUgAQAKNwIwBCwCBAUdDAIFIgEACyABMAMQATABDAQsAisBHQsCBSIBAAsgARMBMwEwAhABLAEMBx0LAgUACyABEwEzARMCMAEsAQwIHQoCBQALIAETATMBEwQsAQwIHQoCBAALMwETATMBEwUzAQwIHQoCAwALMwETATMBEwMzBAwIHQoCAiABAAozARMBMwEdGgICAAcdIgADHf8dvwMBHSUDBR0jAwcdISYBIwUDAx0fBgEmAiMCLgIjAgMCHR0GAyYBLgYjASgCHRwmAQYDJgEuBQgEHRoiAQYBJgEGBA4CLgEIAygDCAEdGAICIgEGASYBBgElAQUBJQEFAQgBKAIIBR0XAgQiASUBBQUoAQgHHRYCBQUHJQEkAigBCAEoAx0UAgYiAQUHBAgdEwIHJQEFBgQJHRICByIBJQEFBQQKHRECByABAAIgASUCNwEkAQQKHRACBwAFIAEXAjcBBAodDwIGIgEABiABFwI3ARcBBAkdDgIGIAEAByABFwI3ARcBNwEECB0NAgYACSABFwI3AyQBBAcdDQIFAAogARcCNwIwASwBDAEsAQQDJAErAR0MAgUACyABNwMwASwBDAUsAQsDHQsCBAAMIAEzASECLAEMCCsBCwEdCwIDIAEACzMBEwEzBCwBDAgrAR0LAgIgAQAKIAEzARMBMwMTATMBLAEMCR0LAgEgAQAKIAETAjMEEwIzAQwJHQsgAQAKIAETATMEEwIzAywBDAgdCwAKMwETATMDEwIzAyEBMwEsAQwIHQsACTMBEwEzAxMBHRsACB3/HbcDBB0jAwcdIQMJHR8mAQYBAwkdHQYCJgEGAQMJHRsGBCYBBgEDBSMBKAEIAh0aBgEmAQYDJgIDAiMBKAEIBR0ZAgEmAQYEJgElASMBKAEIAigFHRcCAyIBBgEmAgUDJQEIASgCCAUdFgIGJQEFBggIHRQCBgUIJAIoAggBKAMdEwIGJQEFByQBBAgdEgIHJQEFBiUBBAkdEQIHIgElAQUFJAEECh0QAgcpASACJQEFASUBNwIECx0OAgciASADAAI3ARcCNwIECh0OAgYgAwAENwEXAjcDBAkdDQIGIAEABzcBFwE3ARcCNwEEByQBKwEdDAIGAAk3ARcBNwQ1ASQBBAQrAQsCHQ0CBAAKNwEXAjcDNQQrAQsEHQwCBAALIQIBAyEBLAQrAQsEHQ0CAgALIQEBBSEBLAEMBCwBCwMdDQIBAAshAQEHLAEMBgsDHQwACzMBIQEBBywBDAcrAQsBHQwACSABMwMhAgEFLAEMCR0MAAggARMBMwETATMCIQIBBCEBDAkdDAAHIAETATMBEwIzASEDAQUsAQwIHQwABjMBEwEzARMBMwIhAgEHLAEMCB0MAAUzARMBMwETATMBIQMBAh0bAAQzARMBMwEd/x1jAwQdIwMHHSEDCR0fBgEjAQMJHR0GAyMBAwkdGwYFIwEDCCMBHRomAQYFAwQjASgCCAMdGCIBBgEmAQYDJgIDAiMBKAEIBh0XAgImAQYBJgEGAiYBBQEjASgBCAMoBR0WAgQmAQYBJgEFBCUBKAIIBh0UAgclAQUGKAEIBx0TAgclAQUHJQEkAygEHRICBwUJBAc8AR0RAgglAQUHBAgkATwBHQ8CCCkBJQEFBSUBBAokAR0OAgcpAgkDJQI3AwQKJAEdDQIHKQEJBTcBFwE3ARcBNwEkAQQIJAELAR0NAgYpAQkEKQIXAjcBFwE3AgQHKwELAh0NAgUpAQkDKQMgARcCNwEXAjUCFQEkAQQCKwILAx0NAgQpBiADFwE3ARcBNwIVATUEKwELBR0NAgIiASkDIAMAAzcBIQIBAzUBFQE1ARUBNQELBh0NAgEiASAFAAQgASEBAQUhARUBNQQLBR0NIgEACSABIQEBBxUBNQQLBR0NAAkgASEBAQg1ARUDNQEsAQsEHQ0ACCABIQEBCSEBFQE1ASwBDAMLBB0MAAcgASEBAQssAQwGLAELAh0MAAYgASECAQssAQwJHQwABSABMwIhAgEKIQEMCR0MAAQgATMDIQIBCiEBDAkdDAADMwQhAwEKHRYAAjMFIQIBBB0eIAEzAyECHf8dDwMEHSMDBx0hAwkdHiYCAwodHAYCJgIDCh0bBgMmAgMKHRkmAQYEJgEjAQMIIwIdGAYBJgEGBQMFIwEoAQgEHRYCAiYBBgEmAQYEAwIjASgBCAcdFQIDIgEGASYCBgEmAQUBJQEoAQgDKAYdFAIFIgEmASUBBQQlAQgBKAIIBh0TAgclAQUGJQEIBygBHRECCCUBBQg0BCgBPAMdEAIFIgMFCTQEJAI8ARwBPAEdEAIDIgUlAQUHJAM0AiQDHAIdDwIDIgUpASUBBQYEAiQHPAEcAR0PAgIiBAkBKQQJATcEJAEEASQEBAMrAQsCHQ4CAiIDKQQJAxcBNwQEAiQDBAEkASsBCwMdDgICIgEpBAkEKQE3AhcCNQIVASQDKwELBR0OAgIJASkCCQY3ARcBNwEhAhUBNQQrAQsGHQ4CASkBCQgpASEBAQQVBDUCCwYdDikBCQghAQEGNQEVATUBFQMLBh0OKQEJBSkCIQEBByEBFQE1ARUCNQELBh0OKQMJASkCIAEhAQEIIQEVATUBFQI1AQsGHQ4gAikCIAIhAQEKFQI1ARUBNQILBR0OAAQgASEBAQshARUBNQIVATUBCwUdDgADIAEhAQENNQMsAQwCKwELAx0OAAMhAQEPLAEMBysBHQ4AAiEBARAdFwABIAEhAQEMHRszAiEDAQYdHxMBMwEhBAEDHSEzAiEEHSUzAR2/AwIdJAMGHSEDCR0fBgEDCh0dBgEmAQYBIwEDCh0bBgImAQYBAwsdGQYEJgEGAQMLHRcGASYBBgQmAgMIIwMdFiIBJgEGASYBBgQjAQMEIwEoAwgDHRUiAwYBJgEGBAMDKAEICB0TJwIiBAYBJgMFASUBKAEIBCgGHRInByIBJQEFBQgBKAMIBCgCHREiAScHJQEFBygBCAIoAQgCPAMdECICJwIHAycBJQEFByUBNAU8AhwCHQ8CASIBJwIHBCUBBQg0BzwBHAIdDyICJwEHBSUBBQc0CDwDHQ8iAScCBwMnASkCBQY0CTwDHQ8iAScBBwMJASkGNwQ0BysBCwMdDycCBwEnASkIFwM3ATUBNAULBR0PJwIJASkINwIhAhUCNQE2AhYBCwcdDicBCQEpCCEBAQQVAjUCNgIrAQsGHQ4pCAkBAQY1ARUBNQEVATUBNgErAQsGHQ4JAikGAQc1ARUB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";
+const CELL_GRID_RLE = "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AQRAAQAKJBsBA0EBAAUkIAEEAAIk/yT/JBJFAiQlCwRLASQjCwZLASQhDgELCCQfDgNLBAsFJBwOBUsCCwFLAgsCRwEHASQbTgEOBE4BSwVHAQcDJBpBAQ4BTgEOAU4CSQFLAkcBBwYkGAEDVAEUAVQCCQQHByQXAQNBARQCVAEJBUcBQwFHAgcDJBYBBBQBVAEUAQkFSQEDByQVAQRUARQCVAEJBQMIJBQBBRQBVAEUAUkBCQQDCSQTAQVBAVQBQAEAAUABUAFJAVsBAwokEgEFQQEABUABWwEbAVsBAwkkEQEFQAEABkABWwEbAVsCAwgkEAEFQAEACFsBGwFbAh4CQwEDBSQPAQUAClsBGwFNAQ0BTQFeAh4BXgJDAiQOAQUAC1sBTQENA14BHgNeAmECJAwBBQAMWwFNAg0CTQFeAR4BXgRhASQLAQVAAQALQAEKAU0DDQFNAhIBUgRhASQLAQRAAQALSgEKA0oBTQNSARIGJAoBBEABAAtKAgoFTQFSARIHJAoBA0EBAApAAUoCCgcSCCQKAQMACkABCgFKAQoIUgESByQKAQIACkABCgFKAQoBJBoBAUEBAAckIgADJP8kvwUBJCVFAgUDJCNLBEUBBQIkIQ4BCwRLAkUCJB8OAwsGSwFFASQdDgROAQsGSwFHASQcDgVLAQsDSwFHAgcBRwEkGk4BDgYLAksBRwIHBSQYAQJOA1QBFAEJAUkBRwEHCCQXAQMUA1QBCQQHCCQWAQNUARQCVAEJBkMBRwIHBCQUAQRBARQBVAEUAQkGAwgkEwEFFANJAQkFAwkkEgEFQQEUAVQBFAEJBQMKJBEBBlQCQAEAAUABCQFJAVsCAwokEAEGQAEABVsBGwJbAUMBAwkkDwEGQAEABkABGwJbAgMJJA4BBgAIQAEbAlsCXgEeAV4BAwRDASEBJA0BBgAJQAEbBF4BHgFeAR4CXgFhASEBYQEkDQEFAApAARsBWwJNAl4CHgJeAWECIQEkDAEFAAtAAVsBQgNNAV4CHgJeAmECIQEkCwEEAAxKAUIBAgNCARIDUgJeAWECIQEkCwEDAAtAAQoBSgJCAQICQgESCFIBJAsBAgALSgEKAUoBCgFKA0ICUgESCCQLAQEAC0oBCgVKBFIBEggkCwAKQAFKAgoGSgQSCCQLAAlAAQoBSgEKB0oEUgESByQLAAhAAQoBSgEKBCQbAAdAAST/JLcFBCQjBQckIU4BBQgkHw4BTgJFBAUEJB0OA04CSwJFBAUCJBsOBU4BSwVHAgcCJBoOB0sCRwEHBEcCJBlBAQ4BTgEOBAcCRwIHBiQXAQNBAVQECQJHAQcIJBYBBBQBVAEUAVQBCQRHAQcIJBQBBBQDVAEJBkcEBwNHASQTAQRBARQCVAEJBkkBAwZDARcBJBIBBRQBVAEUAUkBCQVJAQMIQwEkEQEFVAEUAVQCCQVDAQMKJBABBkQFCQFJAVsCAwskDgEGQQFEAQQBRANAAVsBGwQDCWEBJA4BBUEBBAFEBUABWwEbAVsEQwEDBUMBYQEhASQNAQVEA0AGWwEbAVsBGwJbAR4CXgFDAQMBYQEhAmEBJAwBBUQCQAYAAlsBGwJbAx4BXgQhAWECIQEkDQEDRAJAAwAGWwJCAQICQgFZAV4CHgFeAWECIQFhASQMAQNEAUACAAhAAUIBAgUZAV4BHgJeAWEBIQFhAU8BJA0BAUEBQAIACUIBAgZZAlIBEgFSAmEBTwEPASQNQQEAC0IBAgdZAhIFTwEPAiQMAApAAQoBSgFCAgIFQgESCA8BJAwACUoBCgFKBEICAgNCAVIBEggkDAAISgIKA0oEQgRSARIIJAwAB0oCCgVKCBIIJAwABUABCgFKAQoGSggSCCQMAARAAQoBSgEKB0oBJBsAA0ABCgFKAQoBJP8kYwUEJCMFByQhBQkkH04BDgEFCSQdDgQFCSQbDgROAgUHRQIkGg4FTgIFAkUCRwEHBCQYQQEOAU4BDgROAUcCBwNHBSQXAQJOAQ4DTgJHBAcHJBYBA0EBFAFUARQBVAEJAkcBBwkkFAEFFAFUARQBVAEJBEkBBwgkEwEFFAFUARQBVAEJBkcFBwFHAVcBJBIBBVQBFAJUAQkGSQFRAkMCAwFDAVcBFwEkEQEGFAFUARQBSQEJBlEBQwFRAUMCAwJXAhcBJA8BBkEBFAFUAgkFSQFDAVEBQwQDA1cCJA4BBkQCBAFEBEkBWwIbAUMFAwRDAWEBJA0BBgQCRAYbAVsEQwQDA2EBIQIkDQEFRAkbAVsBGwNDAgMDQwEhAWEBIQFhASQNAQNBAUQFBARbAhsBWwJCAVkBXgEeAV4BYQMhAWEBTwEkDQECQQFEAgQIWwJCAQICQgEZAVkBXgJhASECYQFPAQ8BJA0BAkQBBAZEA0IBAgVCARkBWQEZAV4CYQFPAg8CJA0BAQQFRAVCAQIGQgEZAVkBGQFZAg8FJA1EB0AEQgECBxkBWQMZAQ8FJA1AAkQDQAIAAkABQgECCFkBGQFZARkBWQESAU8BDwMkDQABQAQAA0ABQgECCVkBGQJZAVIBEgJPAQ8DJAwAB0ABSgFCAgIJWQJSARIFUgEPASQMAAZKAQoBSgNCAwIGQgFSARIIJAwABEABSgIKAUoGQgdSARIIJAwAA0ABSgIKBEoLUgESCCQMAAJAAQoBSgEKCEoECgJKASQWAAIKAUoBCgkkHkoCCgQk/yQPBQQkIwUHJCEFCSQeDgIFCiQcDgQFCiQbDgUFCiQZTgEOBgUHRQMkGE4CDgROAkUDRwMHBCQWQQEBAU4BDgVOAQcFRwYkFUECAQFBAQ4BTgJUAkcDBwkkFEgBQQIBAUEBFAFUARQBVAFJAQkBSQEHCiQTSAFBBBQBVAEUAVQBCQUHB0cBVwEkEUgGFAFUARQBVAEJBlECEQFRAlcCFwIkEEEDSAQUAlQBCQZJAREDUQNXARcCJBBBAkgCCAIUAVQBFAFJAQkFSQERBFEDVwEXAiQPAQFBAUgCCAFIAkQBVAFEAUkBCQRJAREFUQRXARcBJA8BAUEBSAMEB0QBWwNRAhEDUQRhAVcCJA4BAUEBSAJEAQQHWwIbA1EHYQFPAg8BJA5BAUgBRAEECVsBGwJbAUIBGQFWAVEDTwMPAyQOQQEECkQBWwFCAQICQgEZAVkCVgFPAg8FJA4ECUQCAgVZARkBWQEZAk8BDwYkDkQBBAREAQQBRAMCBkIBGQFZARkCWQEPBiQOBAFECAIHQgEZAVkBGQJZAQ8GJA4EAkQEBAFEAQIIQgEZAVkBGQNPAQ8FJA4EBkIBAgoZBFkCDwUkDkQBBANEAUIBAgtZARkBWQIZAVkBTwEPBCQOQAFEA0IBAgxCARkBWQEZAVkBEgNPAQ8CJA5AA0IDAgxZARkBWQESByQOAAJKA0IHAgNCBCQXAAFKDiQbCgFKAQoDSgIKAUoDJB9KAQoIJCEKBiQlCgEkvwUCJCQFBiQhBQkkHw4BRQEFCSQdDgJOAUUBBQokG04BDgJOAUUBBQokGU4CDgRFAQUKJBdTAk4BDgUFB0UEJBZTARMBUwFOAQ4DTgJFA0cDBwUkFUgCUwFOAg4DTgEHB0cF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JCNCAgIDJCUCAiT/JOIYAVgCGAEkIkUDWAEYAlgBGAEkH0YBBgFGAUUDWAEYAlgBGAEkHUYDBgJGAUUCWAEYAVgCGAEkGxMCRgQGAUYCRQFYARgBWAEYAiQZEwRGAQYCRgIGAkYBGAJYARgCJBcTBVMBBgVGAxgBWAEYAyQWEwYGB0YBBgEYAVgBGAMkFBMHUwEGB0YCGAFYAlwCJBMTCAYIRgJcBSQTEwdTAQYIRgFcARwBXAEcAlwBJBNTAUgEUwIGCVwDHAJcAVoBJBMIBwYIXAVaARoCJBMIBwYGRgFfA1oBGgUkEwgHRgIGAUYBIwFjASMBYwFfAhoGJBMIBUgBSQNjAiMCYwJfAVoBGgYkEwgEYAFJBGMCIwFjAlEBEQFaARoGJBMIA2ADSQJjAiMBYwFRAhECWgQaAyQTCAJgBV0BYwJWARYDVgJRAVcDWgIaASQTBANEAR0BXQEdAlYBFgZWARYBTwFXBCQUBAMdBVYBFgckGgQCHQZWAhYBJB8EAV0BHQYkIl0BHQNdAiQkHQJdASQnXQEk/yT/JDUYAlgBGAIkIkYBRQFYARgCWAEYAiQfRgIGAkYBWAEYAlgBGAIkHVMBBgFGAwYBRgFYARgCWAEYAiQbEwJGAQYDRgQYAVgBGAMkGRMERgEGBUYCGAFYARgDJBcTBVMBBgdGARgBWAEYBCQUEwcGCEYBWAIYAVgDJBMTB1MBBglYAlwCHAIkExMHBglGAVwGJBMTA1MEBgkcAVwBHAJcAVoBGgEkE0gGBgkcAVwDWgEaAyQTCAYGB0YBHwFfAR8BWgEaBSQTCAYGBUYBHwFfAR8DWgEaBSQTCAZgAWIBIgNiAV8CHwJfAVoBGgUkEwgESAEgAWABYgRjAV8CHwJfARoGJBMIAyABYAEgAmIDYwEjAWMBXwMaByQTCAIgBGABYgFjAiMBYwJRAloBGgUkFQgBIAFgASACYAFdAWMBVgckG0QBYAJdBFYBFgMkHwQBXQMdA1YBJCJdAh0DJCUdAyT/JP8k/yTXWAEYAVgEJBpTAQYJXAMcAVwCJBUTBQYJRgFcBiQVEwFTBAYIRgEcA1wBWgEaAiQVSAIIAUgBBghGAV8CXAEaBiQUCAQGBx8BXwEfAl8BGgYkFAgEBgNGAWICHwFfAR8DXwEaBiQUCARgAWIBIgJiAl8CHwNfARoGJBQIAmABIAFgAWIBIgFiA18CHwNaARoEJBYIASABYAEgAWABIgFiBF8CHwIkHCABYAEgAmIFYwEkIGABIAJgAWICVgEkI2ABXQEdAiQmXQIk/yT/JP8k/yT/JCcfAloBJBxgAiICYgJfAR8BXwEfBCQbSAEgAWACIgRiAR8BXwEkHyADYAEiAyQjIANiASIBJCUgAiT/JP8k/yQ0";
 
 // Name overlap between cells as a byte each, the full square matrix row-major: how much people
 // share words for the two cells' colors.
-const CELL_OVERLAP_B64 = "/y4pAAMXBxEArwAABAAAOFkP3pcBCgSzAAIIDAAu/wMAAggAAQBWAAIlAAAFIQIbswqwT4IAFQA2ACkD/wEAHWKwADIGAAAAA6gHCyELAAAADwAAeCUAAAAB/wQYdwjAANAAABi8AgAOAAAMAAAA1iYXFygDAgAE/yACATUDBB8SBAwBWjgQBIEZHToDIAAHWRcIHRgg/ykmJy4aAgEDHx8OHx8NJAYKNxJNFY4PBwBidwIp/2pRDnEAAAphQwAOBgAGAAABWBSuJxARAbAIASZq/wUsEwAAAQdgAQYLAgEAAAYFBL5XAQAAAMA1J1EF/wGZBQIfqAENGAIANwQJCp44DBddr1YyAAMuDiwB/wEABwABLTkLhncEJhGtAAsWNgAAAAbQBBpxE5kB/wAAIIYFAAoAAA8AAgHINiQwJQACAAAfAgAABQAA/yUZAQANBAECLjpgBwENAAJPBCUAABIBAAACBwAl/wEAAG8DAy4IYRUrAAMABQcAAAAYBAMKAR8AIBkB/xAAAAEAAC4EGQE1SgILoAAAA7wMH2EHqAGGAQAQ/wcDNQMADQAAAo0cEhIhOAWoAgEfQ2ABLQUAAAAH/xA2TBYBAAAdAQJCFgBZIQcAWg4AAQ05AA1vAAMQ/yVoYyIsC4EABgAFGA8CCw44Hw4GGAsKBAMBNTYl/zQIFgQDFwoJBQsR3hshABAfBgsChgABAwADTGg0/3gGAwGgAAQFCwOXswsABA0AAgB3AAIuAAAWYwh4/wVnKqcACwAdAAEKAAyBJAYBNwQPLgguDQEiFgYF/yaFJwzFASuDCrAAABkGAAAEJgA6YQQAACwEA2cm/55kACAAJhIETwAAHQoAAAkRAmAVGQAACwMBKoWe/y4BfAArOLOCDwA6NwEGCq0BBysBAh2BF6CnJ2Qu/wAcAC4SAAAA1gMSWAWeAMgBADWNAQAKAAAMAAEA/ycOFjICFQAmIE0UBDgLNg0DShwCBgkEC8UgfBwn/wNyWAgAeBcAFa6+DBYkAAACEkIABQUAAQAAAA4D/zcCDDYlFweOJ1cXNjACBQsSFgULCx0rJisuFnI3/wwAAAAoWQ8QAV0AJU8HoCEAGBEDAIMSOBIyWAIM/w==";
+const CELL_OVERLAP_B64 = "/ygpA78AAQASFHQAP08IAOYCAgkpDQQAAAcAtQAdBAANAAEBKP8CADoACAG2DAcCsgVcABkAAG7DCQAAAAAADAACAAAoAAIAKQL/AlIAAAABBtAABSUAAhsNHwADAV0AALAAdQDrGgAiAhEQAwAC/wMEBDUAIwIMAVECEA6WBwEEMhtLAw0BPwUDxQQGnAgdvzpSA/8AAgIzKHMBPDkRAJ0GBRhGChMAACMAtABjBwA4AAkJAAAABAD/1sUEEADHAQB8AAAKADIQDQAb5AAJALUAACILACocAQgABALW/6YUFQCYBgCBAAAMAFAdCgIZ0gAMAbMBAC0eAEolAAEANQLFpv8ELACzAQxgAwI5ACQXFwpCqQIODaICICgYGzI3ErYBADMEFAT/FQEFbgFbAAgBAKeqBgAAAwAABAMDAAFgAAoDFAwGIygQFSwV/woZEg4cAhs1AQx/HwkMDQQBOwwZFAaqEERRdAfQAnMAAAABCv8AEk4AAV8JIwAJBT4AAH4AkACqGAAYAgwLAAIADAHHmLMFGQD/BAJyAAINACgULwAYowAHAoIBBBgMAx0YP7IFATwBBgFuEhIE/xBGAEYBAESZMQAAAQAAIAADAAAaAAIBTwUlUTkAAAwBDk4CEP8ACWIofQAHHQ4TADoAewAVogAEPQEGCFwAAhF8gWBbHAByRgD/AAQGAMF+EQAMZgAEAVABAA8gABgQAAACEAAAAAMAAgEAAAkA/wApJAAAAlVnADcQBQQCMwsBvgcM5hkbDp0AAAIIG18CRmIEAP8HAwMhKgEDAAIAqwAQDwAMBgIDAgANlgYKDDkBNQkNASgGKQf/BgINGH54CR8aNRQVc00jdX7EAgAfBwUAAAAAASMAAH0AJAMG/wAAARMJAG0BHwAShgACNQECCW4AARgyUCSnDAAoRADBAAMCAP97BgAEKQACACEAAAc2AA8GKcMDBEYQHReqfwkUmQd+ACENAHv/FQECDQABIQoMAAJ2AB0eDQkBMgoNChcGHwUvMR0RAioYAQYV/wMMCgIAFQgCHwINFwYJBABdGxMAAgoACT4AAA4AVQF+EwABA/8+AJ8NMQVlLi4ZRV5/AAAASwAbGUIADAAYABMMZwN4CQQCDD7/HBOyEmECQaQEcTxQAAAAAwDk0qkDDQCjAQBmAAAJACkNCgAc/wASANMAACoLACwbBwCwDSMAAAIABH4AADoANwIfbQAAAp8TAP8CUwCeVwQVMxQYAAAAAQAJDA4AAQAHAAAEEAAaAQIBAA2yEgL/AGsAAeABBy8ntQx1P7QAAQ0EO5ACIHsBBas1HwAhFTESAFMA/wFuUAMsJhMcAAAABQC1s6IDDACCAABQBAAUACEKCAVh0wBrAf8AAXsLAjopHQLrA2MAAQIDGaoBAxUBAhAVEgAMAmUCAJ4AbgD/EwRBASUhBAAaxQcAACAAFBgEAKIAMw9zhgAAHy5BAFcBUAET/wIDrQUTAAAABAAiLSgBBgAYAAAPCwBNAAcCAi6kKgTgA3sEAv8OBn1zDSgiBjgLHhhgqhgMGgQgAQwjAjZ2DRkECxUBLAtBAw7/AYNQAAACnAAAABsAEAIDAD0AvgZ1NQAAF0VxADMHJgIBrQYB/wgYAQIRCAkqSjIKRAwdAgEYBwJ+AQ8dBl48LBQvEzolBX2DCP/UAQAQHQkcJTcDUQsYAQYQDAPEAgYeCX9QGxgnHCkhE3NQGNT/";
 const CELL_OVERLAP = (() => {
 	const bytes = atob(CELL_OVERLAP_B64), m = new Uint8Array(bytes.length);
 	for (let i = 0; i < m.length; ++i)
@@ -632,19 +641,7 @@ function mulberry32(seed) {
 	};
 }
 
-const CANDIDATES_PER_COLOR = 700;
-const RELOCATION_CANDIDATES = 250;
-const RELOCATIONS_PER_COLOR = 10;
-const RESTARTS = 2;
-// Word sharing between two colors falls off with distance about like a Gaussian of this width,
-// whatever their cells: measured from the survey, colors share words across a cell boundary as
-// freely as inside one. Floors CELL_OVERLAP, which is blind to position within a cell.
-const NAME_DECORRELATION = 15;
-// Sampling stops once this many times the candidate budget has been drawn, so a range holding no
-// included name still terminates and falls back on the colors it did find.
-const SAMPLING_HEADROOM = 4;
-
-// The name tables generation reads when the caller supplies none: every name usable, none merged.
+// The name tables when none are chosen: every name usable, none merged.
 const ALL_INCLUDED = Array.from({ length: NAME_SLOTS }, () => true);
 const NO_GROUPS = Array.from({ length: NAME_SLOTS }, (_, cell) => cell);
 
@@ -734,6 +731,11 @@ function sampleColor(rnd, cfg) {
 		if (rnd() * density.peak <= densityAt(density, h, s, l))
 			break;
 	}
+	return colorAt(h, s, l);
+}
+
+// The record every stage shares, from HSL fractions.
+function colorAt(h, s, l) {
 	const rgb = hsl2rgb(h, s, l);
 	return { h, s, l, rgb, lab: rgbToOklab(rgb), hex: toHex(rgb), ...cellOf(rgb) };
 }
@@ -752,92 +754,197 @@ function parseFixedColors(text) {
 	return [...new Set(tokens.map(token => "#" + token.replace("#", "").toLowerCase()))].map(colorFromHex);
 }
 
-// How much people share words for the two colors' cells, faded by distance: same-worded colors
-// far apart are still told apart by memory of the color itself. `cfg.scale` is the Distinctness
-// slider - same-named colors that far apart in deltaE are 1/e as confusable. Provisional
-// calibration: a single known-bad palette; data/bench.js judges at a fixed 30 regardless.
-// Cells the user merged overlap fully, which is what two colors of one cell already score.
-function confusability(a, b, apart, cfg) {
-	const overlap = cfg.groupOf[a.cell] === cfg.groupOf[b.cell] ? 1
-		: Math.max(CELL_OVERLAP[a.cell * CELL_NAMES.length + b.cell] / 255,
-			Math.exp(-((apart / NAME_DECORRELATION) ** 2)));
-	return overlap * Math.exp(-apart / Math.max(cfg.scale, 1e-9));
+// Identification model, as in data/identify.js: recall is the color plus Gaussian memory noise, the
+// viewer answers with the nearest entry. A lightness or chroma difference counts W_L or W_C times
+// its size against a hue difference. The noise width is the Distinctness slider.
+const W_L = 1;
+const W_C = 0.7;
+
+// Weighted squared distance in deltaE (OKLab x100): lightness and radial chroma differences by
+// their weights, the tangential hue difference as is.
+function apart2(p, q) {
+	const dL = (p[0] - q[0]) * W_L, dC = Math.hypot(p[1], p[2]) - Math.hypot(q[1], q[2]);
+	const da = p[1] - q[1], db = p[2] - q[2];
+	return dL * dL + (W_C * W_C - 1) * dC * dC + da * da + db * db;
 }
 
-// The color's identifiability against the palette: 1 minus its worst confusability, ignoring the
-// entry at `skip`. A repeated name is only as bad as its distance.
-// `gap`, the plain deltaE to the nearest entry, breaks ties between equal scores: at scale 0
-// every score is 1 and spreading colors apart is all that generation is left doing.
-function clearance(color, colors, skip, cfg) {
-	let score = 1, gap = Infinity;
-	for (let i = 0; i < colors.length; ++i)
-		if (i !== skip) {
-			const apart = distance(color.lab, colors[i].lab);
-			score = Math.min(score, 1 - confusability(color, colors[i], apart, cfg));
-			gap = Math.min(gap, apart);
-		}
-	return { included: cfg.included[color.cell], score, gap };
+// Abramowitz-Stegun 7.1.26, within 1.5e-7.
+function erfc(x) {
+	const t = 1 / (1 + 0.3275911 * Math.abs(x));
+	const poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+	const tail = poly * Math.exp(-x * x);
+	return x >= 0 ? tail : 2 - tail;
 }
 
-// Carrying an included name outranks any score: an excluded color loses to every included one, so
-// candidates in excluded names are passed over and colors already in one are relocated first.
-const clearer = (a, b) => a.included !== b.included ? a.included
-	: a.score !== b.score ? a.score > b.score
-	: a.gap > b.gap;
+// The chance noise of width `sigma` carries a recall past the midpoint to a color `d` away.
+const swapChance = (d, sigma) => 0.5 * erfc(d / (2 * sigma) / Math.SQRT2);
 
-// The best of a batch of random candidates: the one the palette confuses least.
-// `skip` is the entry being replaced, or -1 when appending.
-// The batch is filled with candidates in included names, so excluding names costs draws, not
-// candidate quality. Excluded candidates go unscored once one included candidate is in hand, and
-// are kept until then: a range reaching no included name still yields a palette.
-// With nothing excluded the draw is exactly `budget`, on the random sequence a seed always had.
-function bestCandidate(rnd, cfg, colors, skip, budget) {
-	let color = null, best = { included: false, score: -Infinity, gap: -Infinity };
-	for (let n = 0, found = 0; n < budget * SAMPLING_HEADROOM && found < budget; ++n) {
-		const candidate = sampleColor(rnd, cfg);
-		if (cfg.included[candidate.cell])
-			++found;
-		else if (found)
-			continue;
+// Nearest hue inside the range, which wraps when min > max.
+// Degrees between two hues, the short way round.
+const hueTurn = (a, b) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
 
-		const candidateScore = clearance(candidate, colors, skip, cfg);
-		if (clearer(candidateScore, best)) {
-			color = candidate;
-			best = candidateScore;
-		}
-	}
-	return { color, best };
+function clampHue(h, hMin, hMax) {
+	const inside = hMin <= hMax ? h >= hMin && h <= hMax : h >= hMin || h <= hMax;
+	if (inside)
+		return h;
+	return hueTurn(h, hMin) <= hueTurn(h, hMax) ? hMin : hMax;
 }
 
-// Seeded with the fixed colors, which occupy cells and are measured against like any other.
-function buildAttempt(rnd, cfg) {
+// The color at an OKLab point (deltaE units), moved into the sRGB gamut and the range box, and
+// whether it had to be moved.
+function colorInBox(L, a, b, cfg) {
+	const raw = oklabToRgb(L / 100, a / 100, b / 100);
+	const rgb = raw.map(v => Math.min(1, Math.max(0, v)));
+	const [h, s, l] = rgb2hsl(rgb);
+	const hue = clampHue(h, cfg.hMin, cfg.hMax);
+	const sat = Math.min(cfg.sMax, Math.max(cfg.sMin, s * 100)), light = Math.min(cfg.lMax, Math.max(cfg.lMin, l * 100));
+	const clamped = rgb.some((v, k) => v !== raw[k]) || hue !== h || sat !== s * 100 || light !== l * 100;
+	return { color: colorAt(hue, sat / 100, light / 100), clamped };
+}
+
+// Uniform draws the start spends on one color at most.
+const START_DRAWS = 1500;
+const RESTARTS = 4;
+const positionsOf = colors => colors.map(color => color.lab.map(v => v * 100));
+
+// The fixed colors, then for each color the first uniform draw at least the limit distance from
+// every color chosen so far. When none of the draws qualifies, the farthest of them: the box is too
+// full for the limit, and the draws are then spread as well as draws can be.
+function dartStart(rnd, cfg) {
 	const colors = cfg.fixed.slice();
-	for (let i = 0; i < cfg.count; ++i)
-		colors.push(bestCandidate(rnd, cfg, colors, -1, CANDIDATES_PER_COLOR).color);
+	const pos = positionsOf(colors);
+	const limit2 = cfg.limit * cfg.limit;
+	for (let i = 0; i < cfg.count; ++i) {
+		let pick = null, clearest = -1;
+		for (let n = 0; n < START_DRAWS && clearest < limit2; ++n) {
+			const draw = sampleColor(rnd, cfg);
+			const at = draw.lab.map(v => v * 100);
+			let nearest = Infinity;
+			for (const p of pos)
+				nearest = Math.min(nearest, apart2(at, p));
+			if (nearest > clearest) {
+				pick = draw;
+				clearest = nearest;
+			}
+		}
+		colors.push(pick);
+		pos.push(pick.lab.map(v => v * 100));
+	}
 	return colors;
 }
 
-// Moves whichever generated color the palette confuses most, repeatedly.
-function relocate(rnd, cfg, colors, rounds) {
-	for (let round = 0; round < rounds; ++round) {
-		let victim = -1, least = null;
-		for (let i = 0; i < colors.length; ++i) {
-			if (colors[i].fixed)
-				continue;
+// A color's chance of being misidentified may not exceed this: the start spaces every pair at it,
+// the pushes move a color while its chance summed over the others is above it.
+const ERROR_LIMIT = 0.02;
+// The weighted deltaE at which one pair's swap chance falls to ERROR_LIMIT.
+function limitDistance(sigma) {
+	let below = 0, above = 20 * sigma;
+	for (let n = 0; n < 40; ++n) {
+		const mid = (below + above) / 2;
+		if (swapChance(mid, sigma) > ERROR_LIMIT)
+			below = mid;
+		else
+			above = mid;
+	}
+	return above;
+}
+// Each push moves a color this far in deltaE.
+const PUSH_STEP = 1;
+const MAX_PUSHES = 1000;
+// A push goes in a random direction between `cfg.pushMin` and `cfg.pushMax` degrees off straight
+// away from the neighbors: straight away runs into box walls and cancels between neighbors on
+// opposite sides, a sideways step slides past both. These are the angles for callers that set none.
+const PUSH_ANGLE_MIN = 15, PUSH_ANGLE_MAX = 120;
+// Rejected pushes in a row after which a color is left where it is.
+const STALL_PUSHES = 25;
 
-			const score = clearance(colors[i], colors, i, cfg);
-			if (!least || clearer(least, score)) {
-				least = score;
-				victim = i;
+// A unit vector drawn uniformly from the band between PUSH_ANGLE_MIN and PUSH_ANGLE_MAX off the unit `axis`.
+function withinCone(rnd, axis, cfg) {
+	const nearest = Math.cos(cfg.pushMin * Math.PI / 180), farthest = Math.cos(cfg.pushMax * Math.PI / 180);
+	const cosine = nearest - rnd() * (nearest - farthest);
+	const sine = Math.sqrt(1 - cosine * cosine), turn = 2 * Math.PI * rnd();
+	// An orthonormal pair across the axis, from whichever coordinate axis is least aligned with it.
+	const pivot = Math.abs(axis[0]) < 0.6 ? [1, 0, 0] : [0, 1, 0];
+	const u = [pivot[1] * axis[2] - pivot[2] * axis[1], pivot[2] * axis[0] - pivot[0] * axis[2], pivot[0] * axis[1] - pivot[1] * axis[0]];
+	const uLength = Math.hypot(...u);
+	for (let k = 0; k < 3; ++k)
+		u[k] /= uLength;
+	const v = [axis[1] * u[2] - axis[2] * u[1], axis[2] * u[0] - axis[0] * u[2], axis[0] * u[1] - axis[1] * u[0]];
+	return axis.map((a, k) => a * cosine + (u[k] * Math.cos(turn) + v[k] * Math.sin(turn)) * sine);
+}
+
+// Pushes every color whose chance of being misidentified exceeds ERROR_LIMIT, a step at a time,
+// until none does or every such color has stalled. Nothing else moves. A color steps along a
+// heading drawn within the band off straight away from its neighbors, each neighbor weighing by
+// how steeply its swap chance falls with distance; the heading lasts while the color keeps being
+// pushed and its steps keep being accepted, and is redrawn otherwise. A push is dropped when it
+// raises the color's chance of being misidentified, or when the box or the gamut had to pull its
+// target back: the pushes otherwise walk colors onto the walls and leave them there.
+// Returns the state with the highest floor seen, the start included.
+function pushApart(rnd, colors, cfg) {
+	colors = colors.slice();
+	const pos = positionsOf(colors);
+	const rejected = pos.map(() => 0);
+	const heading = pos.map(() => null);
+	// The chance color `i` at `at` is recalled as another color, summed over the others.
+	const errorAt = (i, at) => {
+		let error = 0;
+		for (let j = 0; j < pos.length; ++j)
+			if (j !== i)
+				error += swapChance(Math.sqrt(apart2(at, pos[j])), cfg.sigma);
+		return error;
+	};
+	let best = colors.slice(), bestFloor = identification(colors, cfg).floor;
+	for (let n = 0, proposed = true; n < MAX_PUSHES && proposed; ++n) {
+		proposed = false;
+		const shift = pos.map(() => [0, 0, 0]);
+		for (let i = 0; i < pos.length; ++i) {
+			if (colors[i].fixed || errorAt(i, pos[i]) <= ERROR_LIMIT)
+				continue;
+			for (let j = 0; j < pos.length; ++j) {
+				if (j === i)
+					continue;
+				// Coincident colors have no line; they part along a.
+				const between = pos[i].map((v, k) => v - pos[j][k]);
+				const length = Math.hypot(...between);
+				const away = length > 1e-6 ? between.map(v => v / length) : [0, 1, 0];
+				const x = Math.sqrt(apart2(pos[i], pos[j])) / (2 * cfg.sigma);
+				const weight = Math.exp(-x * x / 2);
+				for (let k = 0; k < 3; ++k)
+					shift[i][k] += away[k] * weight;
 			}
 		}
-		if (victim < 0)
-			return;
 
-		const found = bestCandidate(rnd, cfg, colors, victim, RELOCATION_CANDIDATES);
-		if (clearer(found.best, least))
-			colors[victim] = found.color;
+		for (let i = 0; i < pos.length; ++i) {
+			const length = Math.hypot(...shift[i]);
+			if (colors[i].fixed || rejected[i] >= STALL_PUSHES)
+				continue;
+			if (length === 0) {
+				heading[i] = null;
+				continue;
+			}
+
+			proposed = true;
+			heading[i] ??= withinCone(rnd, shift[i].map(v => v / length), cfg);
+			const target = pos[i].map((v, k) => v + heading[i][k] * PUSH_STEP);
+			const { color: pushed, clamped } = colorInBox(target[0], target[1], target[2], cfg);
+			const at = pushed.lab.map(v => v * 100);
+			if (clamped || errorAt(i, at) > errorAt(i, pos[i])) {
+				++rejected[i];
+				heading[i] = null;
+				continue;
+			}
+			colors[i] = pushed;
+			pos[i] = at;
+			rejected[i] = 0;
+		}
+		const floor = identification(colors, cfg).floor;
+		if (floor > bestFloor) {
+			best = colors.slice();
+			bestFloor = floor;
+		}
 	}
+	return best;
 }
 
 // Pairs of two fixed colors are skipped throughout: generation cannot move either, so such a pair
@@ -851,58 +958,51 @@ function minimumGap(colors) {
 	return gap;
 }
 
-// The pair a viewer is likeliest to mix up, and its deltaE. Null pair below two colors, where no
-// pair exists. Distance breaks ties, so a tie at scale 0 still points at the closest pair.
-function worstPair(colors, cfg) {
-	let pair = null, apart = Infinity, worst = -1;
+// The chance each generated color is misidentified, summed over the others; the floor is the worst
+// color's chance of being identified. The pair is the one likeliest swapped, `apart` its weighted
+// deltaE and `confused` that chance. Null pair below two colors, where no pair exists.
+function identification(colors, cfg) {
+	const pos = positionsOf(colors);
+	const error = colors.map(() => 0);
+	let pair = null, apart = Infinity, confused = -1;
 	for (let i = 0; i < colors.length; ++i)
 		for (let j = i + 1; j < colors.length; ++j) {
 			if (colors[i].fixed && colors[j].fixed)
 				continue;
 
-			const d = distance(colors[i].lab, colors[j].lab);
-			const c = confusability(colors[i], colors[j], d, cfg);
-			if (c > worst || (c === worst && d < apart)) {
-				worst = c;
+			const d = Math.sqrt(apart2(pos[i], pos[j]));
+			const chance = swapChance(d, cfg.sigma);
+			error[i] += chance;
+			error[j] += chance;
+			if (chance > confused) {
+				confused = chance;
 				pair = [colors[i], colors[j]];
 				apart = d;
 			}
 		}
-	return { pair, apart };
+	let floor = 1;
+	colors.forEach((color, i) => {
+		if (!color.fixed)
+			floor = Math.min(floor, Math.max(0, 1 - error[i]));
+	});
+	return { floor, pair, apart, confused };
 }
 
-// Colors left in an excluded name rank an attempt before anything else, then the worst entry's
-// identifiability, deltaE spread breaking ties.
-const betterAttempt = (a, b) => a.excluded !== b.excluded ? a.excluded < b.excluded
-	: a.floor !== b.floor ? a.floor > b.floor
-	: a.gap > b.gap;
-
-// Callers that set no name tables generate as though every name were included and none merged,
-// which is what the page did before either could be chosen.
+// Callers that set no name tables report names as though none were merged.
 function generate(cfg) {
-	const settings = { ...cfg, included: cfg.included || ALL_INCLUDED, groupOf: cfg.groupOf || NO_GROUPS,
-		density: buildDensity(cfg) };
+	const sigma = Math.max(cfg.scale, 1);
+	const settings = { ...cfg, groupOf: cfg.groupOf || NO_GROUPS, sigma, limit: limitDistance(sigma), density: buildDensity(cfg),
+		pushMin: cfg.pushMin ?? PUSH_ANGLE_MIN, pushMax: cfg.pushMax ?? PUSH_ANGLE_MAX };
 	let best = null;
 	for (let n = 0; n < RESTARTS; ++n) {
 		const rnd = mulberry32(settings.seed + n * 7919);
-		const colors = buildAttempt(rnd, settings);
-		relocate(rnd, settings, colors, settings.count * RELOCATIONS_PER_COLOR);
-
-		// Fixed colors are exempt: the user named them, and generation cannot move them anyway.
-		let floor = 1, excluded = 0;
-		for (let i = 0; i < colors.length; ++i)
-			if (!colors[i].fixed) {
-				floor = Math.min(floor, clearance(colors[i], colors, i, settings).score);
-				if (!settings.included[colors[i].cell])
-					++excluded;
-			}
-
-		const attempt = { colors, floor, excluded, gap: minimumGap(colors),
+		const colors = pushApart(rnd, dartStart(rnd, settings), settings);
+		const attempt = { colors, ...identification(colors, settings), gap: minimumGap(colors),
 			named: new Set(colors.map(color => settings.groupOf[color.cell])).size };
-		if (!best || betterAttempt(attempt, best))
+		if (!best || attempt.floor > best.floor || (attempt.floor === best.floor && attempt.gap > best.gap))
 			best = attempt;
 	}
-	return { ...best, ...worstPair(best.colors, settings) };
+	return best;
 }
 
 // ---------- ui ----------
@@ -922,9 +1022,11 @@ const ordered = (a, b) => a <= b ? [a, b] : [b, a];
 function readConfig() {
 	const [sMin, sMax] = ordered(+$("s-min").value, +$("s-max").value);
 	const [lMin, lMax] = ordered(+$("l-min").value, +$("l-max").value);
+	const [pushMin, pushMax] = ordered(+$("push-min").value, +$("push-max").value);
 	return {
 		count: +$("count").value,
 		scale: +$("strict").value,
+		pushMin, pushMax,
 		hMin: +$("h-min").value, hMax: +$("h-max").value,
 		sMin, sMax, lMin, lMax,
 		seed: +$("seed").value | 0,
@@ -1231,6 +1333,7 @@ function refreshLabels() {
 	refreshBars(cfg);
 	$("count-value").textContent = cfg.count;
 	$("strict-value").textContent = cfg.scale.toFixed(1);
+	$("push-value").textContent = cfg.pushMin + "–" + cfg.pushMax + "°";
 	$("h-value").textContent = cfg.hMin + "–" + cfg.hMax + "°" + (cfg.hMin > cfg.hMax ? " (wraps)" : "");
 	$("s-value").textContent = cfg.sMin + "–" + cfg.sMax + "%";
 	$("l-value").textContent = cfg.lMin + "–" + cfg.lMax + "%";
@@ -1260,10 +1363,10 @@ function render(result, cfg) {
 	const status = $("status");
 	// A null pair means no measurable one at all: one color and nothing fixed to place it against.
 	const repeated = result.colors.length - result.named;
-	status.textContent = (result.pair ? "Hardest pair to tell apart (outlined): ΔE " + result.apart.toFixed(1) + " · " : "")
+	status.textContent = (result.pair ? "Hardest pair to tell apart (outlined): weighted ΔE " + result.apart.toFixed(1)
+			+ ", swapped " + (result.confused * 100).toFixed(1) + "% · worst color identified " + (result.floor * 100).toFixed(0) + "% · " : "")
 		+ result.named + " distinct color name" + (result.named === 1 ? "" : "s")
-		+ (repeated ? ", " + repeated + " repeating one of them" : "")
-		+ (result.excluded ? " · " + result.excluded + " left in an excluded name, the range holding too little else" : "");
+		+ (repeated ? ", " + repeated + " repeating one of them" : "");
 
 	const clashing = new Set(result.pair || []);
 	const marks = c => (c.fixed ? " fixed" : "") + (!c.fixed && !cfg.included[c.cell] ? " off-name" : "")
@@ -1346,7 +1449,7 @@ const CENSUS = CENSUS_LEVELS.map(level => {
 	return counts;
 });
 
-// The plane where the name covers the most ground. Nine names - white and black among them - own
+// The plane where the name covers the most ground. Eleven names - white and black among them - own
 // nothing at mid lightness, so chips drawn at one fixed lightness would be blank for a third of
 // them. Chips are honest about the plane they show rather than comparable across names.
 const CELL_PEAK = ALL_CELLS.map(cell => {
@@ -1795,7 +1898,7 @@ function scheduleRun() {
 		requestAnimationFrame(fire);
 }
 
-for (const id of [...STATE_IDS, "fixed-colors"])
+for (const id of [...STATE_IDS, "fixed-colors", "push-min", "push-max"])
 	$(id).addEventListener("input", () => { refreshLabels(); scheduleRun(); });
 
 const recentreChartL = () => $("hs-l").value = (+$("l-min").value + +$("l-max").value) / 2;
