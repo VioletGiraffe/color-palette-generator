@@ -332,7 +332,7 @@
 
 	<div class="bar">
 		<h2 style="margin:0; flex:1">Palette</h2>
-		<span style="font-size:12px; color:var(--ink-dim)">Backdrop</span>
+		<label for="backdrop" style="font-size:12px; color:var(--ink-dim)">Backdrop</label>
 		<select id="backdrop">
 			<option value="panel" selected>Panel</option>
 			<option value="#ffffff">White</option>
@@ -341,7 +341,7 @@
 			<option value="custom">Custom</option>
 		</select>
 		<input type="color" id="backdrop-color" value="#3c6ea5" title="Custom backdrop">
-		<span style="font-size:12px; color:var(--ink-dim)">Theme</span>
+		<label for="theme" style="font-size:12px; color:var(--ink-dim)">Theme</label>
 		<select id="theme">
 			<option value="auto" selected>Auto</option>
 			<option value="light">Light</option>
@@ -360,7 +360,7 @@
 
 	<div class="plane" id="hs-plane"><canvas id="hs-canvas"></canvas></div>
 	<div class="bar" style="margin-top: 8px">
-		<span style="font-size: 12px; color: var(--ink-dim)">Chart lightness</span>
+		<label for="hs-l" style="font-size: 12px; color: var(--ink-dim)">Chart lightness</label>
 		<input type="range" id="hs-l" min="0" max="100" step="0.5" value="50" style="flex: 1">
 		<span style="font-size: 12px; color: var(--ink-dim)" id="hs-l-value"></span>
 	</div>
@@ -405,7 +405,7 @@
 
 	<div class="group">
 		<h2>State</h2>
-		<input type="text" id="state" spellcheck="false">
+		<input type="text" id="state" spellcheck="false" aria-label="State string">
 		<div class="bar" style="margin-top:8px">
 			<button id="state-copy">Copy</button>
 			<button id="state-apply">Apply</button>
@@ -527,6 +527,10 @@ function toHex(rgb) {
 	return "#" + rgb.map(v => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, "0")).join("");
 }
 
+// A hue range runs from hMin upwards and wraps when hMin > hMax.
+const hueSpan = (hMin, hMax) => hMin <= hMax ? hMax - hMin : 360 - hMin + hMax;
+const hueInRange = (h, hMin, hMax) => hMin <= hMax ? h >= hMin && h <= hMax : h >= hMin || h <= hMax;
+
 // ---------- color naming ----------
 
 // A palette color is looked at alone rather than beside the others, so recognising it is a matter
@@ -641,13 +645,13 @@ const usableLch = (L, C, h, cfg) => showsLch(L, C, h) && cfg.included[cellOf(okl
 const UNIFORM_TRIES = 256;
 
 function sampleLch(rnd, cfg) {
-	const hueSpan = cfg.hMin <= cfg.hMax ? cfg.hMax - cfg.hMin : 360 - cfg.hMin + cfg.hMax;
+	const span = hueSpan(cfg.hMin, cfg.hMax);
 	const c2Min = cfg.cMin * cfg.cMin, c2Max = cfg.cMax * cfg.cMax;
 	let L = 0, C = 0, h = 0;
 	for (let n = 0; n < UNIFORM_TRIES; ++n) {
 		L = cfg.lMin + rnd() * (cfg.lMax - cfg.lMin);
 		C = Math.sqrt(c2Min + rnd() * (c2Max - c2Min));
-		h = (cfg.hMin + rnd() * hueSpan) % 360;
+		h = (cfg.hMin + rnd() * span) % 360;
 		if (usableLch(L, C, h, cfg))
 			return [L, C, h];
 	}
@@ -659,8 +663,8 @@ function sampleLch(rnd, cfg) {
 const CELL_STEPS = { L: 25, C: 25, h: 90 };
 const SPARSE_FRACTION = 1 / 32;
 function boxCells(cfg) {
-	const hueSpan = cfg.hMin <= cfg.hMax ? cfg.hMax - cfg.hMin : 360 - cfg.hMin + cfg.hMax;
-	const step = [(cfg.lMax - cfg.lMin) / CELL_STEPS.L, (cfg.cMax - cfg.cMin) / CELL_STEPS.C, hueSpan / CELL_STEPS.h];
+	const span = hueSpan(cfg.hMin, cfg.hMax);
+	const step = [(cfg.lMax - cfg.lMin) / CELL_STEPS.L, (cfg.cMax - cfg.cMin) / CELL_STEPS.C, span / CELL_STEPS.h];
 	const centres = [];
 	for (let li = 0; li < CELL_STEPS.L; ++li)
 		for (let ci = 0; ci < CELL_STEPS.C; ++ci)
@@ -738,13 +742,12 @@ function erfc(x) {
 // The chance noise of width `sigma` carries a recall past the midpoint to a color `d` away.
 const swapChance = (d, sigma) => 0.5 * erfc(d / (2 * sigma) / Math.SQRT2);
 
-// Nearest hue inside the range, which wraps when min > max.
 // Degrees between two hues, the short way round.
 const hueTurn = (a, b) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
 
+// Nearest hue inside the range.
 function clampHue(h, hMin, hMax) {
-	const inside = hMin <= hMax ? h >= hMin && h <= hMax : h >= hMin || h <= hMax;
-	if (inside)
+	if (hueInRange(h, hMin, hMax))
 		return h;
 	return hueTurn(h, hMin) <= hueTurn(h, hMax) ? hMin : hMax;
 }
@@ -857,7 +860,7 @@ function pushApart(rnd, colors, cfg) {
 				error += swapChance(Math.sqrt(apart2(at, pos[j])), cfg.sigma);
 		return error;
 	};
-	let best = colors.slice(), bestFloor = identification(colors, cfg).floor;
+	let best = colors.slice(), bestFloor = identification(colors, cfg, pos).floor;
 	for (let n = 0, proposed = true; n < MAX_PUSHES && proposed; ++n) {
 		proposed = false;
 		const shift = pos.map(() => [0, 0, 0]);
@@ -902,7 +905,7 @@ function pushApart(rnd, colors, cfg) {
 			pos[i] = at;
 			rejected[i] = 0;
 		}
-		const floor = identification(colors, cfg).floor;
+		const floor = identification(colors, cfg, pos).floor;
 		if (floor > bestFloor) {
 			best = colors.slice();
 			bestFloor = floor;
@@ -925,8 +928,8 @@ function minimumGap(colors) {
 // The chance each generated color is misidentified, summed over the others; the floor is the worst
 // color's chance of being identified. The pair is the one likeliest swapped, `apart` its weighted
 // deltaE and `confused` that chance. Null pair below two colors, where no pair exists.
-function identification(colors, cfg) {
-	const pos = positionsOf(colors);
+// A caller stepping the colors passes the positions it already keeps for them.
+function identification(colors, cfg, pos = positionsOf(colors)) {
 	const error = colors.map(() => 0);
 	let pair = null, apart = Infinity, confused = -1;
 	for (let i = 0; i < colors.length; ++i)
@@ -985,10 +988,9 @@ function generate(cfg) {
 
 const $ = id => document.getElementById(id);
 let palette = [];
-// The last result and the config that made it: a change to how the palette is shown redraws from these.
+// The last result and the config that made it: a change to how the palette is shown redraws from
+// these, and the 3D module picks them up when it loads, after the first render.
 let lastResult = null, lastCfg = null;
-// The last result's hardest pair: read by the 3D module when it loads, after the first render.
-let lastWorstPair = null;
 // Each chart's canvas, kept field image and drawn marker positions, so a highlight change
 // repaints markers and hovering hit-tests them without recomputing the field.
 let hsDraw = null, skinDraw = null;
@@ -1118,9 +1120,7 @@ function hcField(w, h, lightness, cfg) {
 
 	for (let x = 0; x < w; ++x) {
 		const hue = x / w * 360;
-		const inHue = cfg.hMin <= cfg.hMax
-			? hue >= cfg.hMin && hue <= cfg.hMax
-			: hue >= cfg.hMin || hue <= cfg.hMax;
+		const inHue = hueInRange(hue, cfg.hMin, cfg.hMax);
 
 		for (let y = 0; y < h; ++y) {
 			const C = CHROMA_MAX * (1 - y / (h - 1));
@@ -1174,7 +1174,7 @@ function skinField(canvas, cfg) {
 	const data = image.data;
 	for (let x = 0; x < w; ++x) {
 		const hue = x / w * 360;
-		const inHue = cfg.hMin <= cfg.hMax ? hue >= cfg.hMin && hue <= cfg.hMax : hue >= cfg.hMin || hue <= cfg.hMax;
+		const inHue = hueInRange(hue, cfg.hMin, cfg.hMax);
 		for (let y = 0; y < h; ++y) {
 			const L = 100 * (1 - y / (h - 1)), reach = gamutReach[y * w + x];
 			if (reach === 0)
@@ -1217,12 +1217,15 @@ function paintChart(draw) {
 			draw.marks.push({ x: x - w, y, color });
 	}
 
+	// Read where a ring is drawn, and once: the read resolves style, and most repaints draw none.
+	let accent = null;
 	for (const { x, y, color } of draw.marks) {
 		drawMarker(ctx, x, y, color);
 		if (color === highlightedColor) {
+			accent ??= getComputedStyle(document.body).getPropertyValue("--accent").trim();
 			ctx.beginPath();
 			ctx.arc(x, y, (color.fixed ? TRIANGLE_RADIUS : DOT_RADIUS) + 4, 0, Math.PI * 2);
-			ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue("--accent").trim();
+			ctx.strokeStyle = accent;
 			ctx.lineWidth = 2;
 			ctx.stroke();
 		}
@@ -1296,7 +1299,7 @@ function sortedByHue(colors, hMin) {
 function render(result, cfg) {
 	const colors = result ? result.colors : [];
 	palette = $("sort").checked ? sortedByHue(colors, cfg.hMin) : colors;
-	lastWorstPair = result ? result.pair : null;
+	const worstPair = result?.pair ?? null;
 	// Every view is rebuilt below without a highlight; the hovered object may not even survive.
 	highlightedColor = null;
 
@@ -1310,7 +1313,7 @@ function render(result, cfg) {
 		+ result.named + " distinct color name" + (result.named === 1 ? "" : "s")
 		+ (repeated ? ", " + repeated + " repeating one of them" : "");
 
-	const clashing = new Set(lastWorstPair || []);
+	const clashing = new Set(worstPair || []);
 	const marks = c => (c.fixed ? " fixed" : "") + (!c.fixed && !cfg.included[c.cell] ? " off-name" : "")
 		+ (clashing.has(c) ? " clash" : "");
 
@@ -1331,7 +1334,7 @@ function render(result, cfg) {
 	drawSkinPlane(cfg, palette);
 	drawHSPlane(cfg, palette);
 	if (window.update3D)
-		window.update3D(cfg, palette, lastWorstPair);
+		window.update3D(cfg, palette, worstPair);
 	refreshExport();
 }
 
@@ -2130,7 +2133,7 @@ function clearGroup(group) {
 // closed band and needs no hue end caps.
 function regionMeshes(cfg) {
 	const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
-	const span = cfg.hMin <= cfg.hMax ? cfg.hMax - cfg.hMin : 360 - cfg.hMin + cfg.hMax;
+	const span = hueSpan(cfg.hMin, cfg.hMax);
 	const hue = t => (cfg.hMin + t * span) % 360;
 	const chroma = t => cfg.cMin + t * (cfg.cMax - cfg.cMin);
 	const light = t => cfg.lMin + t * (cfg.lMax - cfg.lMin);
@@ -2274,7 +2277,7 @@ window.addEventListener("resize", resize);
 resize();
 
 // The classic script has already generated and drawn: pick up its state, then follow its hooks.
-window.update3D(readConfig(), palette, lastWorstPair);
+window.update3D(lastCfg, palette, lastResult?.pair ?? null);
 
 // The loop runs only while the panel is on screen. A hidden tab needs no handling of its own:
 // the loop is requestAnimationFrame-driven and the browser stalls it there.
