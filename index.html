@@ -1387,6 +1387,17 @@ const CELL_PEAK = ALL_CELLS.map(cell => {
 	return CENSUS_LEVELS[at];
 });
 
+// Chip display order: achromatic swatches first by lightness, chromatics by hue. Grays have no
+// meaningful hue - atan2 collapses them to 0 next to reds - so they get their own group.
+const CELL_ORDER = (() => {
+	const lch = ALL_CELLS.map(cell => lchOf(rgbToOklab(parseHex(CELL_SWATCH[cell]))));
+	const achromatic = c => lch[c][1] < 2;
+	return ALL_CELLS.slice().sort((a, b) => {
+		if (achromatic(a) !== achromatic(b)) return achromatic(a) ? -1 : 1;
+		return achromatic(a) ? lch[a][0] - lch[b][0] : lch[a][2] - lch[b][2];
+	});
+})();
+
 const CHIP_WIDTH = 104, CHIP_HEIGHT = 64;
 
 // The name's territory in its own plane: its colors as they are, the rest ghosted so the panel
@@ -1454,7 +1465,7 @@ function nameChip(cell) {
 }
 
 function renderNames() {
-	$("name-chips").replaceChildren(...ALL_CELLS.map(nameChip));
+	$("name-chips").replaceChildren(...CELL_ORDER.map(nameChip));
 	const excluded = ALL_CELLS.filter(cell => !nameIncluded[cell]).length;
 	$("names-summary").textContent = (CELL_NAMES.length - excluded) + " of " + CELL_NAMES.length + " in use";
 }
