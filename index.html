@@ -244,6 +244,7 @@
 	.pin { display: flex; flex-wrap: wrap; gap: 4px; }
 	.pin-name { flex: 1; min-width: 0; }
 	.pin-drop { padding: 2px 8px; line-height: 1; }
+	#pin-clear.armed { color: var(--danger); border-color: var(--danger); }
 	/* The strip is the restore control: the largest target in the row, and it shows what it restores. */
 	.pin-strip { flex: 0 0 100%; display: flex; height: 18px; padding: 0; overflow: hidden; }
 	.pin-strip span { flex: 1; }
@@ -420,6 +421,7 @@
 			<button id="pin-add">Pin</button>
 			<button id="pin-copy" hidden>Copy all</button>
 			<button id="pin-load">Load</button>
+			<button id="pin-clear" hidden>Clear all</button>
 		</div>
 		<textarea id="pin-paste" spellcheck="false" hidden placeholder="Paste copied lines, then press Load again"></textarea>
 		<div id="pin-list"></div>
@@ -1838,7 +1840,9 @@ const escapeAttribute = text => text.replace(/&/g, "&amp;").replace(/"/g, "&quot
 const rowIndex = el => +el.closest(".pin").dataset.index;
 
 function renderPins() {
+	disarmClear();
 	$("pin-copy").hidden = pins.length === 0;
+	$("pin-clear").hidden = pins.length === 0;
 	$("pin-list").innerHTML = pins.map((entry, i) =>
 		'<div class="pin" data-index="' + i + '">'
 			+ '<input type="text" class="pin-name" spellcheck="false" value="' + escapeAttribute(entry.name) + '">'
@@ -1912,6 +1916,34 @@ $("pin-load").addEventListener("click", e => {
 	box.value = "";
 	box.hidden = true;
 	flashLabel(e.currentTarget, added ? "+" + added : "none");
+});
+
+// Two presses: the first arms the button, the second clears.
+// Any change to the list disarms it: the armed press applies to the list as it stood.
+let clearArmed = null;
+
+function disarmClear() {
+	if (!clearArmed)
+		return;
+	clearTimeout(clearArmed);
+	clearArmed = null;
+	$("pin-clear").textContent = "Clear all";
+	$("pin-clear").classList.remove("armed");
+}
+
+$("pin-clear").addEventListener("click", e => {
+	if (!clearArmed) {
+		e.currentTarget.textContent = "Sure?";
+		e.currentTarget.classList.add("armed");
+		clearArmed = setTimeout(disarmClear, 3000);
+		return;
+	}
+
+	pins.length = 0;
+	// No name survives the clear, so the next default name starts from one.
+	pinCount = 0;
+	renderPins();
+	savePins();
 });
 
 // Renaming leaves the list alone: rebuilding it would take the focus out of the field mid-word.
