@@ -984,6 +984,8 @@ function generate(cfg) {
 
 const $ = id => document.getElementById(id);
 let palette = [];
+// The last result and the config that made it: a change to how the palette is shown redraws from these.
+let lastResult = null, lastCfg = null;
 // The last result's hardest pair: read by the 3D module when it loads, after the first render.
 let lastWorstPair = null;
 // Each chart's canvas, kept field image and drawn marker positions, so a highlight change
@@ -1641,27 +1643,48 @@ function copy(text, label, message) {
 function run() {
 	refreshLabels();
 	refreshState();
-	const cfg = readConfig();
-	render(generate(cfg), cfg);
+	lastCfg = readConfig();
+	lastResult = generate(lastCfg);
+	render(lastResult, lastCfg);
 }
 
-let runScheduled = false;
+// The views again from the last result. Sorting, the theme and the canvas sizes are all settled in
+// render, so none of them needs a new palette, which at high color counts costs seconds.
+function redrawLastResult() {
+	refreshLabels();
+	render(lastResult, lastCfg);
+}
 
-// At most one generate outstanding, fired on the next animation frame: a drag emits events far
+let passScheduled = false, generatePending = false;
+
+// At most one pass outstanding, fired on the next animation frame: a drag emits events far
 // faster than the ~200ms a palette costs at the top of the ranges, and the frame boundary lets
-// the browser paint between runs.
+// the browser paint between passes.
+// A generate asked for in the same frame as a redraw wins: it ends in one.
 // A hidden tab gets no frames, so there a timer stands in: the work must not strand until the
 // tab is shown.
-function scheduleRun() {
-	if (runScheduled)
+function schedulePass(full) {
+	generatePending ||= full;
+	if (passScheduled)
 		return;
-	runScheduled = true;
-	const fire = () => { runScheduled = false; run(); };
+	passScheduled = true;
+	const fire = () => {
+		passScheduled = false;
+		const generating = generatePending;
+		generatePending = false;
+		if (generating)
+			run();
+		else
+			redrawLastResult();
+	};
 	if (document.hidden)
 		setTimeout(fire, 0);
 	else
 		requestAnimationFrame(fire);
 }
+
+function scheduleRun() { schedulePass(true); }
+function scheduleRedraw() { schedulePass(false); }
 
 for (const id of [...STATE_IDS, "fixed-colors", "push-min", "push-max"])
 	$(id).addEventListener("input", () => { refreshLabels(); scheduleRun(); });
@@ -1682,10 +1705,11 @@ function redrawOnInput(id, redraw) {
 }
 redrawOnInput("hs-l", () => drawHSPlane(readConfig(), palette));
 
-$("sort").addEventListener("change", scheduleRun);
+// Sorting is settled in render, so the palette itself is unchanged.
+$("sort").addEventListener("change", scheduleRedraw);
 
 // The output panel is flexible, so its canvas needs re-sizing to each new width.
-window.addEventListener("resize", scheduleRun);
+window.addEventListener("resize", scheduleRedraw);
 $("format").addEventListener("change", () => { refreshExport(); refreshState(); });
 $("generate").addEventListener("click", () => { $("seed").value = (+$("seed").value | 0) + 1; run(); });
 
@@ -1733,9 +1757,8 @@ function applyTheme() {
 	document.documentElement.dataset.theme = choice === "auto" ? (systemDark.matches ? "dark" : "light") : choice;
 }
 
-// The 3D materials take their colors when they are built, so a theme change redraws the views, as
-// a resize does. The palette is seeded, so the redraw reproduces it exactly.
-const retheme = () => { applyTheme(); scheduleRun(); };
+// The 3D materials take their colors when they are built, so a theme change redraws the views.
+const retheme = () => { applyTheme(); scheduleRedraw(); };
 $("theme").addEventListener("change", retheme);
 systemDark.addEventListener("change", retheme);
 
