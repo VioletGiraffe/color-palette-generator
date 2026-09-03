@@ -118,7 +118,8 @@ for (const box of boxes)
 			const result = __page.generate({ count, seed, fixed: [], scale: 30, ...box });
 			ms += Date.now() - t0;
 			names += result.named;
-			gap += result.gap;
+			// The page reports the closest pair's weighted deltaE as `apart`.
+			gap += result.apart;
 			const id = identificationScore(result.colors);
 			score += id.mean;
 			floor += id.floor;

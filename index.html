@@ -269,7 +269,7 @@
 			<label for="count">Colors</label>
 			<label for="strict" class="row" style="margin: 0"><span>Distinctness</span><span class="value" id="strict-value">3.5</span></label>
 			<input type="number" id="count" min="1" max="40" step="1" value="8">
-			<input type="range" id="strict" min="1" max="50" step="0.5" value="3.5">
+			<input type="range" id="strict" min="1" max="10" step="0.5" value="3.5">
 		</div>
 		<div class="hint">Width of the memory noise the colors are spread against, in ΔE. Low pushes only the closest pairs apart; high trades that for an even spread.</div>
 
@@ -579,12 +579,6 @@ function gamutChroma(L, h) {
 			return breaks[n] * 100;
 	}
 	return 0;
-}
-
-// Scaled x100 so the useful range reads like CIE delta-E rather than 0.01 steps.
-function distance(a, b) {
-	const dl = a[0] - b[0], da = a[1] - b[1], db = a[2] - b[2];
-	return Math.sqrt(dl * dl + da * da + db * db) * 100;
 }
 
 function toHex(rgb) {
@@ -1026,7 +1020,9 @@ function withinCone(rnd, axis, cfg) {
 // when the box or the gamut had to pull its target back: the pushes otherwise walk colors onto the
 // walls and leave them there. `cfg.hull` keeps the pulled-back pushes instead, for the floor the
 // box allows when its walls may be used.
-// Returns the state with the highest floor seen, the start included.
+// Returns the state with the highest floor seen, the start included; equal floors go to the one
+// whose closest pair sits furthest apart, the only thing separating states above a sigma where
+// every color is confused and every floor is zero. That distance is `identification`'s `apart`.
 function pushApart(rnd, colors, cfg) {
 	colors = colors.slice();
 	const pos = positionsOf(colors);
@@ -1040,7 +1036,7 @@ function pushApart(rnd, colors, cfg) {
 				error += swapChance(Math.sqrt(apart2(at, pos[j])), cfg.sigma);
 		return error;
 	};
-	let best = colors.slice(), bestFloor = identification(colors, cfg, pos).floor;
+	let best = colors.slice(), bestScore = identification(colors, cfg, pos);
 	for (let n = 0, proposed = true; n < MAX_PUSHES && proposed; ++n) {
 		proposed = false;
 		const shift = pos.map(() => [0, 0, 0]);
@@ -1085,29 +1081,21 @@ function pushApart(rnd, colors, cfg) {
 			pos[i] = at;
 			rejected[i] = 0;
 		}
-		const floor = identification(colors, cfg, pos).floor;
-		if (floor > bestFloor) {
+		const score = identification(colors, cfg, pos);
+		if (score.floor > bestScore.floor || (score.floor === bestScore.floor && score.apart > bestScore.apart)) {
 			best = colors.slice();
-			bestFloor = floor;
+			bestScore = score;
 		}
 	}
 	return best;
 }
 
-// Pairs of two fixed colors are skipped throughout: generation cannot move either, so such a pair
-// must neither rank an attempt nor be pointed at as the offender.
-function minimumGap(colors) {
-	let gap = Infinity;
-	for (let i = 0; i < colors.length; ++i)
-		for (let j = i + 1; j < colors.length; ++j)
-			if (!colors[i].fixed || !colors[j].fixed)
-				gap = Math.min(gap, distance(colors[i].lab, colors[j].lab));
-	return gap;
-}
-
 // The chance each generated color is misidentified, summed over the others; the floor is the worst
 // color's chance of being identified. The pair is the one likeliest swapped, `apart` its weighted
 // deltaE and `confused` that chance. Null pair below two colors, where no pair exists.
+// The swap chance falls with distance, so `apart` is also the closest pair's distance, which ranks
+// attempts against each other. Pairs of two fixed colors are skipped: generation cannot move
+// either, so such a pair must neither rank an attempt nor be pointed at as the offender.
 // A caller stepping the colors passes the positions it already keeps for them.
 function identification(colors, cfg, pos = positionsOf(colors)) {
 	const error = colors.map(() => 0);
@@ -1138,7 +1126,7 @@ function identification(colors, cfg, pos = positionsOf(colors)) {
 // One start pushed apart, with its scores.
 function attempt(rnd, cfg) {
 	const colors = pushApart(rnd, dartStart(rnd, cfg), cfg);
-	return { colors, ...identification(colors, cfg), gap: minimumGap(colors),
+	return { colors, ...identification(colors, cfg),
 		named: new Set(colors.map(color => color.cell)).size };
 }
 
@@ -1158,7 +1146,7 @@ function generate(cfg) {
 	let best = null;
 	for (let n = 0; n < MAX_RESTARTS && (n < RESTARTS || best.floor < Math.max(RESTART_TARGET, reachable - RESTART_SHORTFALL)); ++n) {
 		const made = attempt(mulberry32(settings.seed + n * 7919), settings);
-		if (!best || made.floor > best.floor || (made.floor === best.floor && made.gap > best.gap))
+		if (!best || made.floor > best.floor || (made.floor === best.floor && made.apart > best.apart))
 			best = made;
 	}
 	return { ...best, reachable };
