@@ -292,7 +292,6 @@ maximum below the gamut's reach for the hues in use keeps them off it.
 ## Not yet tried
 - Stratified placement: seeded k-means partition of the box, one random draw per region.
 - Metropolis sampling at a temperature, the principled distinctness-versus-randomness knob.
-- Reporting the box's achievable optimum for the current N, so a forced palette is visible as such.
 - A switch for the wall margin, since it is the distinctness-versus-typicality knob (see steps 13, 14).
 - Re-measuring the steps at the calibrated constants.
 
@@ -305,7 +304,8 @@ letters, answer letter by letter, dozens of palettes) was dropped: it measured m
 while the real task is one palette after a week of use. The question answered for each pair was "would I
 still confuse these two after learning the palette for a while".
 
-Data: `data/calibration-verdicts-16px.json`, 40 palettes at 16 px (details in `data/README.md`). Result:
+Data: `data/calibration-verdicts-16px.json`, 78 palettes at 16 px (details in `data/README.md`). The table
+below is fitted on 40 of them, the axes and validation rounds; the 38 region palettes came later. Result:
 
 | | hue | chroma | lightness |
 |---|---|---|---|
@@ -361,10 +361,75 @@ at 2 log-likelihood units includes 1: hue sectors best 0.9 to 1.1, dark and vivi
 gamut. The dark pairs judged lightness-only earlier (6 marginal of 16) did not recur with mixed-direction
 pairs, so if that effect exists it is specific to lightness steps among dark colors.
 
+## Lightness relative to the cusp
+
+The lightness range was absolute OKLCh L, and the cusp - the lightness where a hue reaches its most chroma -
+moves with hue: 96.8 at yellow, 45.2 at blue. One absolute band therefore clips the hues whose peak is bright
+and admits only washed-out colors where it is dark. At the old default of 20 to 80, every hue from 73 to 220
+had its peak above the band.
+
+The range is now stated against the cusp: 0 black, 100 white, `CUSP_ANCHOR` 50 the cusp at every hue,
+piecewise linear either side so the two maps are exact inverses. A range then selects the same standing in
+every hue's own gamut. Ottosson's Okhsv does the same thing for color pickers, mapping the cusp to a fixed
+coordinate; Okhsl does not, its lightness being a hue-independent toe function. He also notes that fitting
+the gamut to a cylinder costs perceptual uniformity, which is why the coordinate is confined to the selected
+region: every distance and the whole identification model stay in absolute OKLab, where the calibration put
+them.
+
+Three places needed the coordinate handled rather than substituted:
+
+- A uniform draw takes the hue first, then lightness evenly between that hue's absolute bounds. Drawing in
+  the relative coordinate and converting would crowd the draws wherever the map compresses.
+- The sparse-box grid stores its centres in the relative coordinate, so a cell is the same size at every hue
+  and a jitter within one cannot leave the range, as it could not before.
+- `pointInBox` clamps the hue first, the bounds depending on it, and decides whether the lightness moved in
+  the relative coordinate: the round trip through the absolute one need not land on the same float, and
+  comparing absolutes would mark almost every push clamped and reject it.
+
+Default 20 to 60, `STATE_VERSION` v3. In the charts the hatched bands now follow the cusp ridge instead of
+running level.
+
+## Gamut boundary by cubic roots
+
+Anchoring the range on the cusp made the cusp's accuracy matter, and checking it turned up a defect under it.
+`gamutChroma` bisected along the constant-lightness, constant-hue ray, which assumes the in-gamut chromas
+form one span from zero. They do not. In linear sRGB the gamut is exactly a cube, six half-spaces; OKLab's
+cube root bends a straight ray into a curve that can leave the cube and re-enter, and the rays graze its
+corners. The round trip is exact to 1e-7, so this is geometry, not precision.
+
+Measured against the cube's own colors: 44 of 1944 surface colors were called out of gamut at their own
+lightness and hue. The worst is `#0000ff`, short by 4.76 chroma; blue's cusp read L 49.0 chroma 28.77 against
+the vertex at L 45.2 chroma 31.32.
+
+Two cheaper repairs were measured and rejected:
+
+- **Scanning outward-in for the last crossing.** The re-entered span is 0.002 chroma wide or a single point -
+  the ray is tangent to the corner - so no scan finds it. At 32 and 64 steps it costs 1.8x and 2.83x the
+  `showsLch` calls of the bisection for nothing.
+- **A looser `inGamut` tolerance.** At -1e-3 it recovers pure blue but moves every one of 5640 sampled cells,
+  median 0.13 chroma and 25.9 at L 4, where the gamut is a sliver a fraction of a chroma wide.
+
+Adopted: solve the boundary instead of sampling it. Along the ray each LMS term is linear in chroma and then
+cubed, so every linear channel is a cubic in chroma and the sRGB box is six cubic inequalities. Their roots
+cut the ray into spans wholly in or out, and the outermost span that is in gives the answer.
+
+| | bisection | cubic roots |
+|---|---|---|
+| cube-surface colors unreachable at their own L and hue | 44 of 1944 | 0 of 5046 |
+| cusp against the cube vertex, six corners | up to 3.8 L | within 0.02 L |
+| 40k calls | 51.9 ms | 26.5 ms |
+| cusp table build | 40 ms | 8 ms |
+
+It is faster because six closed-form solves beat twenty `showsLch` evaluations. Two consequences worth
+knowing: the solver returns the exact boundary, so it and `showsLch` disagree by up to `inGamut`'s tolerance
+near black - at L 3 hue 260 the red channel crosses zero at chroma 1.2237 while `showsLch` accepts to 1.302 -
+and chroma over lightness is no longer everywhere single-peaked, though the golden-section cusp search still
+finds the maximum within 0.03 chroma at every hue.
+
 ## Files
 
 - `index.html`: step 18 with the calibrated constants, the skin chart, the plane hue scrub and the empty-box
-  handling. The shipped page.
+  handling, the analytic gamut boundary and the cusp-relative lightness range. The shipped page.
 - `experimental-gradient.html`: step 2, the soft-max descent. The score ceiling.
 - `experimental-gradient-restricted-push.html`: step 4, dart start with a straight push.
 - `experimental-wholeset-start.html`: step 9, whole-set start.

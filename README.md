@@ -47,3 +47,7 @@ You always get the best palette found; nothing fails outright short of an empty 
 likeliest to be mixed up is reported above the swatches with its weighted distance and swap
 chance, and outlined; the worst color's identification rate is given with the best this range can
 reach for the count, so a forced palette is visible as such.
+
+`data/evolution.md` is the design history behind all of this: every generator tried and the numbers
+it produced, the negative results, the calibration that fixed the constants, and the gamut and
+lightness work that followed.

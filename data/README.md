@@ -4,6 +4,11 @@
 derived from the files here. Nothing in this directory is loaded at runtime — the page stays a
 single self-contained file.
 
+`evolution.md`, alongside this file, is the design history: what was tried for the generator, the
+numbers each step produced, the negative results, and how the metric below was arrived at. Read it
+before changing the generator or the identification model — most of the obvious alternatives have
+been measured there already.
+
 ## Where the data comes from
 
 `c3_data.json` is the color naming model from [c3](https://github.com/StanfordHCI/c3), built by
