@@ -1817,14 +1817,20 @@ $("state").addEventListener("keydown", e => { if (e.key === "Enter") applyPasted
 const PINS_KEY = "color-palette-generator.pins";
 const pins = [];
 let pinCount = 0;
+// The clear button's pending confirmation: renderPins disarms it, so it is initialised before the first render.
+let clearArmed = null;
+
+// The hexes are written into a style attribute, so an entry carrying anything else in them is not usable.
+const isWellFormedPin = entry => typeof entry?.name === "string" && typeof entry.state === "string"
+	&& Array.isArray(entry.hexes) && entry.hexes.every(hex => /^#[0-9a-f]{6}$/i.test(hex));
 
 // Replaces the list in place: the handlers below close over the array.
 // A value that is not a list of well-formed entries is ignored as a whole: the next save replaces it.
-// The count continues past the highest number a stored default name carries, so a new pin never reuses one.
+// The count starts past the highest number a stored default name carries, so a restored name is not handed out again.
 function takeStoredPins(json) {
 	let stored;
 	try { stored = JSON.parse(json ?? "[]"); } catch { stored = []; }
-	if (!Array.isArray(stored) || !stored.every(e => typeof e?.name === "string" && typeof e.state === "string" && Array.isArray(e.hexes)))
+	if (!Array.isArray(stored) || !stored.every(isWellFormedPin))
 		stored = [];
 	pins.length = 0;
 	pins.push(...stored);
@@ -1922,8 +1928,6 @@ $("pin-load").addEventListener("click", e => {
 
 // Two presses: the first arms the button, the second clears.
 // Any change to the list disarms it: the armed press applies to the list as it stood.
-let clearArmed = null;
-
 function disarmClear() {
 	if (!clearArmed)
 		return;
