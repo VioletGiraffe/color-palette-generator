@@ -609,7 +609,8 @@ function cellOf(rgb) {
 	return { cell: symbol & ~UNSURE, confident: (symbol & UNSURE) === 0 };
 }
 
-const cellName = cell => CELL_NAMES[cell];
+// The slot past the names carries no word of its own: cellOf lands there for a color no bin near it names.
+const cellName = cell => CELL_NAMES[cell] ?? "unnamed";
 
 // Cell-indexed tables run one slot past the names: a color the grid places outside the survey's
 // gamut carries OUTSIDE_GAMUT, which must read as an ordinary included name.
@@ -2039,7 +2040,6 @@ const toScene = lab => [lab[1], lab[0] - 0.5, lab[2]];
 
 const container = $("gamut-3d");
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-renderer.setPixelRatio(window.devicePixelRatio);
 container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -2115,7 +2115,8 @@ const regionGroup = new THREE.Group(), markerGroup = new THREE.Group(),
 	pairGroup = new THREE.Group(), zoneGroup = new THREE.Group();
 scene.add(regionGroup, markerGroup, pairGroup, zoneGroup);
 
-// Every rebuilt mesh owns its geometry and material, so a rebuild can dispose both.
+// Nothing in these groups outlives its rebuild, so a clear disposes what it finds. Meshes of one
+// rebuild do share geometries and materials, so those disposes repeat, which three.js ignores.
 function clearGroup(group) {
 	group.traverse(object => {
 		if (object.geometry) object.geometry.dispose();
@@ -2255,7 +2256,13 @@ renderer.domElement.addEventListener("pointerleave", () => setHighlight(null));
 
 function resize() {
 	const w = container.clientWidth, h = container.clientHeight;
+	// Either side at zero leaves the frustum degenerate; the next resize with a real size sets it.
+	if (w === 0 || h === 0)
+		return;
+
 	const half = 0.62, aspect = w / h;
+	// Read here rather than once at load: a move to a monitor of another density changes it.
+	renderer.setPixelRatio(window.devicePixelRatio);
 	renderer.setSize(w, h);
 	camera.left = -half * aspect;
 	camera.right = half * aspect;
