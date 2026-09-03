@@ -1830,9 +1830,11 @@ function takeStoredPins(json) {
 	pins.push(...stored);
 	pinCount = Math.max(0, ...pins.map(entry => +(/^Palette (\d+)$/.exec(entry.name)?.[1] ?? 0)));
 }
-takeStoredPins(localStorage.getItem(PINS_KEY));
+// Storage access throws where site data is blocked. Nothing below depends on it, so the list starts empty.
+try { takeStoredPins(localStorage.getItem(PINS_KEY)); } catch {}
 
-const savePins = () => localStorage.setItem(PINS_KEY, JSON.stringify(pins));
+// Same on write, where the store can also be full: the list is then kept for the session only.
+const savePins = () => { try { localStorage.setItem(PINS_KEY, JSON.stringify(pins)); } catch {} };
 
 // The name is user text going into an attribute, so it must not be able to close it.
 const escapeAttribute = text => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -1925,7 +1927,7 @@ let clearArmed = null;
 function disarmClear() {
 	if (!clearArmed)
 		return;
-	clearTimeout(clearArmed);
+	clearTimeout(clearArmed.timer);
 	clearArmed = null;
 	$("pin-clear").textContent = "Clear all";
 	$("pin-clear").classList.remove("armed");
@@ -1935,9 +1937,13 @@ $("pin-clear").addEventListener("click", e => {
 	if (!clearArmed) {
 		e.currentTarget.textContent = "Sure?";
 		e.currentTarget.classList.add("armed");
-		clearArmed = setTimeout(disarmClear, 3000);
+		clearArmed = { at: performance.now(), timer: setTimeout(disarmClear, 3000) };
 		return;
 	}
+
+	// A press this soon after arming is the second half of a double-click: the button stays armed.
+	if (performance.now() - clearArmed.at < 400)
+		return;
 
 	pins.length = 0;
 	// No name survives the clear, so the next default name starts from one.
