@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Fits the naming score of data/identify.js to a calibrate-names.html log: whether the cell overlap
+// Fits the naming score of data/identify.js to a data/calibrate-names.html log: whether the cell overlap
 // table predicts that two colors get the same name, and whether the distance between them adds
 // anything the table does not already say.
 //

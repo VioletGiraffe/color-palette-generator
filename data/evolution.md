@@ -418,7 +418,7 @@ behind an escape button. Data: `data/naming-verdicts-16px.json`, 120 colors judg
 minutes, median 6 words offered, the escape never used.
 
 - `NAME_DECAY` measures 8 weighted deltaE (6 to 11 at 2 log-likelihood units, 4 to 8 by a color-level
-  bootstrap) against the shipped 18, which costs 3.9 units; no decay at all costs 33. Same-cell pairs got
+  bootstrap), adopted; the 18 carried from the old bench costs 3.9 units, no decay at all 33. Same-cell pairs got
   the same word 50% of the time under 5 weighted deltaE, 28% at 5 to 10, 17% at 10 to 15. The fit is on the
   raw weighted distance, which is what `nameCollision` uses; naming on the lightness-corrected distance
   would need a refit.
@@ -513,8 +513,8 @@ finds the maximum within 0.03 chroma at every hue.
 - `experimental-error-filter.html`: step 10, own-error filter with the gamut margin.
 - `experimental-error-trigger.html`: step 14, error trigger with the wall margin.
 - `experimental-clamp-refusal.html`: step 15, exact clamp refusal, the copy that became `index.html`.
-- `data/identify.js`, `data/fit.js`, `calibrate.html`: the metric and its calibration; see `data/README.md`.
+- `data/identify.js`, `data/fit.js`, `data/calibrate.html`: the metric and its calibration; see `data/README.md`.
 - `data/calibration-log.json`: the verdicts the constants are fitted to.
-- `calibrate-chroma.html`, `calibrate-hue.html`, `data/fit_hue.js`, `data/fit_chroma.js`: the position-term
+- `data/calibrate-chroma.html`, `data/calibrate-hue.html`, `data/fit_hue.js`, `data/fit_chroma.js`: the position-term
   rounds; their logs are `data/light-calibration-log.json`, `data/chroma-log.json`, `data/hue-log.json`.
-- `calibrate-names.html`, `data/fit_names.js`, `data/naming-verdicts-16px.json`: the naming round.
+- `data/calibrate-names.html`, `data/fit_names.js`, `data/naming-verdicts-16px.json`: the naming round.

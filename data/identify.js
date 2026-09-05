@@ -17,9 +17,9 @@
 //     node data/identify.js --hex "#rrggbb ..."     one palette
 //     node data/identify.js --file palettes.txt     one palette per line, // comments
 //
-// The identification constants are measured with calibrate.html and data/fit.js, where a pair's
-// standing in the gamut counts for with calibrate-hue.html and data/fit_hue.js, and the naming ones
-// with calibrate-names.html and data/fit_names.js; see data/README.md.
+// The identification constants are measured with data/calibrate.html and data/fit.js, where a pair's
+// standing in the gamut counts for with data/calibrate-hue.html and data/fit_hue.js, and the naming ones
+// with data/calibrate-names.html and data/fit_names.js; see data/README.md.
 
 "use strict";
 const fs = require("fs");
@@ -356,11 +356,9 @@ function loadPage(pagePath) {
 
 const rgbOf = hex => [1, 3, 5].map(at => parseInt(hex.slice(at, at + 2), 16) / 255);
 
-// How far apart two colors must be for a shared name to stop mattering, in weighted deltaE. Not
-// fitted: the calibration verdicts answer whether two colors are told apart, never whether they are
-// called the same. Set so the pairs the old name-based bench was built around still read as confusable.
-// calibrate-names.html and data/fit_names.js measure the naming side directly.
-const NAME_DECAY = 18;
+// How far apart two colors must be for a shared name to stop mattering, in weighted deltaE: 6 to 11
+// at 2 log-likelihood units from the naming round (data/calibrate-names.html, data/fit_names.js).
+const NAME_DECAY = 8;
 
 // The naming score, kept apart from the identification one rather than folded in: it asks whether
 // two entries would be described the same way, which distance alone cannot see. A pair collides by

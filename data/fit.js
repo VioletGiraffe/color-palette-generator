@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Fits the weights of data/identify.js and the page's Distinctness default to calibrate.html
+// Fits the weights of data/identify.js and the page's Distinctness default to data/calibrate.html
 // verdicts by maximum likelihood: an ordered probit over the weighted pair distance ("too close"
 // below one threshold, "marginal" up to a second, fine above, each boundary blurred by a softness),
 // with a lapse rate for stray marks. Prints the constants to paste, the likelihood profile along

@@ -95,7 +95,7 @@ four geometries and fitted the calibration verdicts worse than this formula in e
 
 Its constants (noise width, the two weights, swatch size) are measured, not assumed:
 
-1. Open `calibrate.html` and judge its palettes one at a time, scattered on a ground at the swatch
+1. Open `data/calibrate.html` and judge its palettes one at a time, scattered on a ground at the swatch
    size the palette is meant for: mark each pair you would mix up after living with the palette as
    too close or marginal; unmarked pairs count as fine. Download the log when done; more rounds
    narrow the fit, and logs fit together, so a long session can be split over sittings.
