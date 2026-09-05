@@ -267,9 +267,9 @@
 	<div class="group">
 		<div class="range-pair" style="grid-template-columns: auto 1fr; align-items: center; margin-bottom: 0">
 			<label for="count">Colors</label>
-			<label for="strict" class="row" style="margin: 0"><span>Distinctness</span><span class="value" id="strict-value">3.5</span></label>
+			<label for="strict" class="row" style="margin: 0"><span>Distinctness</span><span class="value" id="strict-value">3.0</span></label>
 			<input type="number" id="count" min="1" max="40" step="1" value="8">
-			<input type="range" id="strict" min="1" max="10" step="0.5" value="3.5">
+			<input type="range" id="strict" min="1" max="10" step="0.5" value="3">
 		</div>
 		<div class="hint">Width of the memory noise the colors are spread against, in ΔE. Low pushes only the closest pairs apart; high trades that for an even spread.</div>
 
@@ -668,8 +668,9 @@ function cuspLightness(h) {
 // cusp sits at CUSP_ANCHOR at every hue, 0 is black and 100 is white. A range therefore selects the
 // same standing in every hue's own gamut, where an absolute range clips the hues whose peak is
 // bright and admits only washed-out colors where it is dark.
-// Only the selected region is stated this way. Every distance, and the whole identification model,
-// stays in absolute OKLab: the recall noise is a perceptual quantity and this coordinate is not.
+// The metric reads this coordinate too: how far a pair stands up its hue's gamut sets how much
+// distance it needs, which `apart2` applies as a gain. Everything else about a distance is absolute
+// OKLab.
 const CUSP_ANCHOR = 50;
 
 // Piecewise linear either side of the cusp, so both maps are exact inverses and both are strictly
@@ -889,14 +890,28 @@ function parseFixedColors(text) {
 // viewer answers with the nearest entry. A lightness or chroma difference counts W_L or W_C times
 // its size against a hue difference. The noise width is the Distinctness slider.
 const W_L = 0.35;
-const W_C = 0.5;
+const W_C = 0.6;
+// A dark pair needs more distance than the weights alone give it: the calibration puts the fine
+// threshold at 6.5 weighted deltaE near white and 16.5 near black, against 8 at the cusp. Measured
+// over three rounds on the light ground; see data/README.md. The gain is on the whole distance, not
+// on the lightness weight - lightness-stepped and hue-stepped pairs move together with lightness.
+const LIGHTNESS_EXPONENT = 0.4;
+// Without a floor the gain reaches zero at black, where every pair would read as confusable. The
+// calibration reaches down to 6, so anything under this is extrapolation either way.
+const LIGHTNESS_FLOOR = 5;
+
+// Where a position stands in its own hue's gamut. Callers keep this alongside the positions rather
+// than deriving it per pair: a palette evaluates sixteen to thirty pairs per position it makes.
+const relativeLightnessOf = p => relativeL(p[0], (Math.atan2(p[2], p[1]) * 180 / Math.PI + 360) % 360);
+const relativeLightnessesOf = pos => pos.map(relativeLightnessOf);
 
 // Weighted squared distance in deltaE (OKLab x100): lightness and radial chroma differences by
-// their weights, the tangential hue difference as is.
-function apart2(p, q) {
+// their weights, the tangential hue difference as is, the pair's standing in the gamut as a gain.
+function apart2(p, q, relLp, relLq) {
 	const dL = (p[0] - q[0]) * W_L, dC = Math.hypot(p[1], p[2]) - Math.hypot(q[1], q[2]);
 	const da = p[1] - q[1], db = p[2] - q[2];
-	return dL * dL + (W_C * W_C - 1) * dC * dC + da * da + db * db;
+	const gain = (Math.max(LIGHTNESS_FLOOR, (relLp + relLq) / 2) / CUSP_ANCHOR) ** LIGHTNESS_EXPONENT;
+	return (dL * dL + (W_C * W_C - 1) * dC * dC + da * da + db * db) * gain * gain;
 }
 
 // Abramowitz-Stegun 7.1.26, within 1.5e-7.
@@ -951,22 +966,26 @@ const positionsOf = colors => colors.map(color => color.lab.map(v => v * 100));
 function dartStart(rnd, cfg) {
 	const colors = cfg.fixed.slice();
 	const pos = positionsOf(colors);
+	const relL = relativeLightnessesOf(pos);
 	const limit2 = cfg.limit * cfg.limit;
 	for (let i = 0; i < cfg.count; ++i) {
 		let pick = null, clearest = -1;
 		for (let n = 0; n < START_DRAWS && clearest < limit2; ++n) {
 			const draw = samplePoint(rnd, cfg);
 			const at = positionOf(draw);
+			const atRelL = relativeLightnessOf(at);
 			let nearest = Infinity;
-			for (const p of pos)
-				nearest = Math.min(nearest, apart2(at, p));
+			for (let k = 0; k < pos.length; ++k)
+				nearest = Math.min(nearest, apart2(at, pos[k], atRelL, relL[k]));
 			if (nearest > clearest) {
 				pick = draw;
 				clearest = nearest;
 			}
 		}
+		const kept = positionOf(pick);
 		colors.push(colorAt(...pick));
-		pos.push(positionOf(pick));
+		pos.push(kept);
+		relL.push(relativeLightnessOf(kept));
 	}
 	return colors;
 }
@@ -1026,22 +1045,24 @@ function withinCone(rnd, axis, cfg) {
 function pushApart(rnd, colors, cfg) {
 	colors = colors.slice();
 	const pos = positionsOf(colors);
+	// Kept beside the positions and rewritten wherever one moves, since `apart2` reads it.
+	const relL = relativeLightnessesOf(pos);
 	const rejected = pos.map(() => 0);
 	const heading = pos.map(() => null);
-	// The chance color `i` at `at` is recalled as another color, summed over the others.
-	const errorAt = (i, at) => {
+	// The chance color `i` standing at `at` is recalled as another color, summed over the others.
+	const errorAt = (i, at, atRelL) => {
 		let error = 0;
 		for (let j = 0; j < pos.length; ++j)
 			if (j !== i)
-				error += swapChance(Math.sqrt(apart2(at, pos[j])), cfg.sigma);
+				error += swapChance(Math.sqrt(apart2(at, pos[j], atRelL, relL[j])), cfg.sigma);
 		return error;
 	};
-	let best = colors.slice(), bestScore = identification(colors, cfg, pos);
+	let best = colors.slice(), bestScore = identification(colors, cfg, pos, relL);
 	for (let n = 0, proposed = true; n < MAX_PUSHES && proposed; ++n) {
 		proposed = false;
 		const shift = pos.map(() => [0, 0, 0]);
 		for (let i = 0; i < pos.length; ++i) {
-			if (colors[i].fixed || errorAt(i, pos[i]) <= ERROR_LIMIT)
+			if (colors[i].fixed || errorAt(i, pos[i], relL[i]) <= ERROR_LIMIT)
 				continue;
 			for (let j = 0; j < pos.length; ++j) {
 				if (j === i)
@@ -1050,7 +1071,7 @@ function pushApart(rnd, colors, cfg) {
 				const between = pos[i].map((v, k) => v - pos[j][k]);
 				const length = Math.hypot(...between);
 				const away = length > 1e-6 ? between.map(v => v / length) : [0, 1, 0];
-				const x = Math.sqrt(apart2(pos[i], pos[j])) / (2 * cfg.sigma);
+				const x = Math.sqrt(apart2(pos[i], pos[j], relL[i], relL[j])) / (2 * cfg.sigma);
 				const weight = Math.exp(-x * x / 2);
 				for (let k = 0; k < 3; ++k)
 					shift[i][k] += away[k] * weight;
@@ -1071,17 +1092,20 @@ function pushApart(rnd, colors, cfg) {
 			const target = pos[i].map((v, k) => v + heading[i][k] * PUSH_STEP);
 			const { lch, clamped } = pointInBox(target[0], target[1], target[2], cfg);
 			const at = positionOf(lch);
+			const atRelL = relativeLightnessOf(at);
 			const color = colorAt(...lch);
-			if ((clamped && !cfg.hull) || !cfg.included[color.cell] || errorAt(i, at) > errorAt(i, pos[i])) {
+			if ((clamped && !cfg.hull) || !cfg.included[color.cell]
+					|| errorAt(i, at, atRelL) > errorAt(i, pos[i], relL[i])) {
 				++rejected[i];
 				heading[i] = null;
 				continue;
 			}
 			colors[i] = color;
 			pos[i] = at;
+			relL[i] = atRelL;
 			rejected[i] = 0;
 		}
-		const score = identification(colors, cfg, pos);
+		const score = identification(colors, cfg, pos, relL);
 		if (score.floor > bestScore.floor || (score.floor === bestScore.floor && score.apart > bestScore.apart)) {
 			best = colors.slice();
 			bestScore = score;
@@ -1097,7 +1121,7 @@ function pushApart(rnd, colors, cfg) {
 // attempts against each other. Pairs of two fixed colors are skipped: generation cannot move
 // either, so such a pair must neither rank an attempt nor be pointed at as the offender.
 // A caller stepping the colors passes the positions it already keeps for them.
-function identification(colors, cfg, pos = positionsOf(colors)) {
+function identification(colors, cfg, pos = positionsOf(colors), relL = relativeLightnessesOf(pos)) {
 	const error = colors.map(() => 0);
 	let pair = null, apart = Infinity, confused = -1;
 	for (let i = 0; i < colors.length; ++i)
@@ -1105,7 +1129,7 @@ function identification(colors, cfg, pos = positionsOf(colors)) {
 			if (colors[i].fixed && colors[j].fixed)
 				continue;
 
-			const d = Math.sqrt(apart2(pos[i], pos[j]));
+			const d = Math.sqrt(apart2(pos[i], pos[j], relL[i], relL[j]));
 			const chance = swapChance(d, cfg.sigma);
 			error[i] += chance;
 			error[j] += chance;

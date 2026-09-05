@@ -9,7 +9,7 @@
 
 "use strict";
 const fs = require("fs");
-const { labOf } = require("./identify.js");
+const { labOf, relativePosition } = require("./identify.js");
 
 const WEIGHTS = [0.25, 0.3, 0.35, 0.4, 0.5, 0.6, 0.7, 0.85, 1, 1.2, 1.4, 1.7, 2, 2.5];
 // The "too close" threshold and the width of the marginal band above it, in weighted deltaE.
@@ -23,6 +23,18 @@ const LAPSES = [0.005, 0.02, 0.05];
 // threshold itself a pair is still judged marginal half the time.
 const SWAP_LIMIT = 0.02;
 const FINE_MARGIN = 2;
+// Whether the metric's scale varies with where a pair sits in the gamut: the distance times
+// relative chroma and relative lightness each raised to an exponent, against the middle of their
+// ranges. Zero exponents are the flat metric, so the fit nests it and the profiles say whether the
+// data asks for anything else. Relative coordinates keep the two conditions apart - in absolute
+// chroma only reds, blues and magentas reach past 20, so a chroma level is also a hue selection.
+const SHAPES = [-0.6, -0.45, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.45, 0.6];
+const CHROMA_REF = 0.5, LIGHTNESS_REF = 50;
+// A pair at the neutral axis or at the gamut's ends has no meaningful standing; its exponent would
+// swing the gain without bound.
+const RELATIVE_CHROMA_FLOOR = 0.05, RELATIVE_LIGHTNESS_FLOOR = 5;
+// Grid steps either side of the flat fit that the shape fit may move the other parameters by.
+const NEAR = { weight: 1, threshold: 4, band: 2, softness: 1 };
 // The page's Distinctness slider moves in these steps.
 const SIGMA_STEP = 0.5;
 const GRADES = ["close", "marginal", "fine"];
@@ -45,11 +57,13 @@ if (!sessions.length) {
 const pairKey = (a, b) => Math.min(a, b) + "," + Math.max(a, b);
 
 // Every pair of every palette: squared lightness, radial chroma and hue (chord less radial) differences,
-// as confusionMatrix in identify.js measures them; the verdict; the probe condition if any.
+// as confusionMatrix in identify.js measures them; where the pair sits in the gamut, as the mean of
+// its two colors' relative coordinates; the verdict; the probe condition if any.
 const pairs = [];
 for (const session of sessions) {
 	const labs = session.hexes.map(labOf);
 	const chroma = labs.map(lab => Math.hypot(lab[1], lab[2]));
+	const relative = labs.map(relativePosition);
 	const grade = new Map(session.verdicts.map(v => [pairKey(v.a, v.b), GRADES.indexOf(v.grade)]));
 	const probe = new Map((session.probes || []).map(p => [pairKey(p.a, p.b), p]));
 	for (let i = 0; i < labs.length; ++i)
@@ -58,22 +72,70 @@ for (const session of sessions) {
 			const chord2 = (labs[i][1] - labs[j][1]) ** 2 + (labs[i][2] - labs[j][2]) ** 2;
 			const p = probe.get(pairKey(i, j));
 			pairs.push({ dL2: dL * dL, dC2: dC * dC, dH2: Math.max(0, chord2 - dC * dC), grade: grade.get(pairKey(i, j)) ?? 2,
-				condition: p ? (p.region || p.axis) + " " + p.distance : null, region: p?.region || null });
+				relL: Math.max(RELATIVE_LIGHTNESS_FLOOR, (relative[i][0] + relative[j][0]) / 2),
+				relC: Math.max(RELATIVE_CHROMA_FLOOR, (relative[i][1] + relative[j][1]) / 2),
+				condition: p ? (p.region || p.axis) + " " + p.distance : null });
 		}
 }
 const graded = GRADES.map((_, g) => pairs.filter(p => p.grade === g).length);
 const sizes = [...new Set(sessions.map(s => s.swatchPx))];
+const gaps = [...new Set(sessions.map(s => s.spotGap ?? "unrecorded"))];
 console.log(sessions.length + " palettes, " + pairs.length + " pairs: " + graded[0] + " too close, " + graded[1] + " marginal, "
-	+ graded[2] + " fine; swatch " + sizes.join("/") + " px");
+	+ graded[2] + " fine; swatch " + sizes.join("/") + " px, spot gap " + gaps.join("/"));
 if (sizes.length > 1)
 	console.log("warning: mixed swatch sizes fit one set of thresholds");
+// How far apart the swatches sat is part of what a verdict answers: a pair too far to compare in one
+// look reads as fine whatever its distance, so a log spanning layouts fits a blend of two tasks.
+if (gaps.length > 1)
+	console.log("warning: mixed spot gaps (" + gaps.join(", ") + ") fit one set of thresholds");
 
-const weightedDistances = (wL, wC) => pairs.map(p => Math.sqrt(wL * wL * p.dL2 + wC * wC * p.dC2 + p.dH2));
+// The ground bounds what a lightness result can claim: a dark pair on the dark ground is hard to see
+// before it is hard to tell apart. A palette judged on both grounds answers the stricter question -
+// whether the pair holds up on either - and its verdicts are not the same measurement as one seen
+// on a single ground, so the split is reported rather than pooled silently.
+// A log from the both-grounds schedule lists every ground it reached; one from the light-only
+// schedule names the single ground it fixes.
+const groundsOf = s => s.grounds || (s.ground ? [s.ground] : []);
+const seenBoth = sessions.filter(s => groundsOf(s).length > 1);
+const seenOne = sessions.filter(s => groundsOf(s).length === 1);
+const unrecorded = sessions.length - seenBoth.length - seenOne.length;
+if (unrecorded === sessions.length)
+	console.log("warning: no ground recorded in this log, so a lightness result cannot be told from the ground");
+else {
+	console.log("\npalettes by the grounds they were seen on:");
+	for (const [label, group] of [["both", seenBoth], ["one only", seenOne],
+			["unrecorded", sessions.filter(s => !groundsOf(s).length)]])
+		if (group.length)
+			console.log("  " + label.padEnd(11) + String(group.length).padStart(3) + " palettes, "
+				+ String(group.flatMap(s => s.verdicts).length).padStart(3) + " marks");
+	if (seenBoth.length && (seenOne.length || unrecorded))
+		console.log("warning: palettes judged on both grounds answer a stricter question than those judged on one");
+	const byGround = new Map();
+	for (const mark of sessions.flatMap(s => s.verdicts))
+		if (mark.ground)
+			byGround.set(mark.ground, (byGround.get(mark.ground) || 0) + 1);
+	if (byGround.size)
+		console.log("  marks made on: " + [...byGround].sort().map(([g, n]) => g + " " + n).join(", "));
+}
+
+const weightedDistances = (wL, wC, qC = 0, qL = 0) => pairs.map(p => Math.sqrt(wL * wL * p.dL2 + wC * wC * p.dC2 + p.dH2)
+	* (p.relC / CHROMA_REF) ** qC * (p.relL / LIGHTNESS_REF) ** qL);
 
 // Chance of each grade for a pair at weighted distance d.
 function gradeChances(d, t1, t2, s) {
 	const close = normalCdf((t1 - d) / s), fine = normalCdf((d - t2) / s);
 	return [close, Math.max(0, 1 - close - fine), fine];
+}
+
+// Log-likelihood of every verdict at these distances and boundaries, one entry per lapse rate.
+function logLikelihoods(d, t1, t2, s) {
+	const ll = LAPSES.map(() => 0);
+	for (let k = 0; k < pairs.length; ++k) {
+		const chance = gradeChances(d[k], t1, t2, s)[pairs[k].grade];
+		for (let l = 0; l < LAPSES.length; ++l)
+			ll[l] += Math.log((1 - LAPSES[l]) * chance + LAPSES[l] / GRADES.length);
+	}
+	return ll;
 }
 
 const t0 = Date.now();
@@ -83,29 +145,25 @@ for (const wL of WEIGHTS)
 		const d = weightedDistances(wL, wC);
 		for (const t1 of THRESHOLDS)
 			for (const band of BANDS)
-				for (const s of SOFTNESS) {
-					const ll = LAPSES.map(() => 0);
-					for (let k = 0; k < pairs.length; ++k) {
-						const chance = gradeChances(d[k], t1, t1 + band, s)[pairs[k].grade];
-						for (let l = 0; l < LAPSES.length; ++l)
-							ll[l] += Math.log((1 - LAPSES[l]) * chance + LAPSES[l] / GRADES.length);
-					}
-					ll.forEach((v, l) => fits.push({ wL, wC, t1, band, s, lapse: LAPSES[l], ll: v }));
-				}
+				for (const s of SOFTNESS)
+					logLikelihoods(d, t1, t1 + band, s)
+						.forEach((v, l) => fits.push({ wL, wC, t1, band, s, lapse: LAPSES[l], ll: v }));
 	}
 fits.sort((a, b) => b.ll - a.ll);
 const best = fits[0];
 console.log("grid of " + fits.length + " settings in " + ((Date.now() - t0) / 1000).toFixed(1) + " s");
 
+const describe = f => "wL " + f.wL + " wC " + f.wC + " close below " + f.t1 + " fine above " + (f.t1 + f.band)
+	+ " softness " + f.s + " lapse " + f.lapse
+	+ (f.qC === undefined ? "" : " chroma^" + f.qC + " lightness^" + f.qL);
+
 // Log-likelihood against the best fit, the other parameters at their best for each value:
 // a value within about 2 is not distinguishable from the best.
-function profile(name, values, pick) {
+function profile(name, values, pick, sorted = fits, top = best) {
 	console.log("\n" + name + " profile: value, log-likelihood below the best, the rest of the fit");
 	for (const value of values) {
-		const top = fits.find(f => pick(f) === value);
-		console.log("  " + String(value).padStart(5) + "  " + (top.ll - best.ll).toFixed(1).padStart(7)
-			+ "   wL " + top.wL + " wC " + top.wC + " close below " + top.t1 + " fine above " + (top.t1 + top.band)
-			+ " softness " + top.s + " lapse " + top.lapse);
+		const at = sorted.find(f => pick(f) === value);
+		console.log("  " + String(value).padStart(5) + "  " + (at.ll - top.ll).toFixed(1).padStart(7) + "   " + describe(at));
 	}
 }
 profile("wL", WEIGHTS, f => f.wL);
@@ -147,28 +205,38 @@ if (pooled.size) {
 	}
 }
 
-// Region probes: the factor on their distances that fits their verdicts best, the rest of the fit held.
-// Below 1 the metric overstates distances there (colors are less distinct than it says), above 1 understates.
-const FACTORS = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6, 1.8];
-const regions = [...new Set(pairs.map(p => p.region).filter(Boolean))];
-if (regions.length) {
-	console.log("\nregion factors: best, the range within 2 log-likelihood units, probe pairs");
-	for (const region of regions) {
-		const lls = FACTORS.map(factor => {
-			let ll = 0;
-			pairs.forEach((pair, k) => {
-				const d = bestDistances[k] * (pair.region === region ? factor : 1);
-				const chance = gradeChances(d, best.t1, best.t1 + best.band, best.s)[pair.grade];
-				ll += Math.log((1 - best.lapse) * chance + best.lapse / GRADES.length);
-			});
-			return ll;
-		});
-		const top = Math.max(...lls);
-		const within = FACTORS.filter((_, k) => lls[k] >= top - 2);
-		console.log("  " + region.padEnd(10) + String(FACTORS[lls.indexOf(top)]).padStart(5) + "   " + within[0] + " to " + within[within.length - 1]
-			+ "   " + pairs.filter(p => p.region === region).length + " pairs");
-	}
-}
+// Does the metric's scale depend on where the pair sits? The two exponents are fitted jointly, the
+// other parameters free within NEAR grid steps of the flat fit so a shape cannot be bought by
+// shifting a boundary it trades off against.
+const near = (values, value, span) => {
+	const at = values.indexOf(value);
+	return values.slice(Math.max(0, at - span), at + span + 1);
+};
+
+const shapeStart = Date.now();
+const shapeFits = [];
+for (const qC of SHAPES)
+	for (const qL of SHAPES)
+		for (const wL of near(WEIGHTS, best.wL, NEAR.weight))
+			for (const wC of near(WEIGHTS, best.wC, NEAR.weight)) {
+				const d = weightedDistances(wL, wC, qC, qL);
+				for (const t of near(THRESHOLDS, best.t1, NEAR.threshold))
+					for (const band of near(BANDS, best.band, NEAR.band))
+						for (const s of near(SOFTNESS, best.s, NEAR.softness))
+							logLikelihoods(d, t, t + band, s)
+								.forEach((v, l) => shapeFits.push({ qC, qL, wL, wC, t1: t, band, s, lapse: LAPSES[l], ll: v }));
+			}
+shapeFits.sort((a, b) => b.ll - a.ll);
+const shaped = shapeFits[0];
+console.log("\nshape grid of " + shapeFits.length + " settings in " + ((Date.now() - shapeStart) / 1000).toFixed(1) + " s");
+// The flat metric is nested at both exponents zero, so this is never negative; under about 2 the
+// data does not ask for a shape.
+console.log("  " + (shaped.ll - best.ll).toFixed(1) + " log-likelihood units better than the flat metric");
+profile("chroma exponent", SHAPES, f => f.qC, shapeFits, shaped);
+profile("lightness exponent", SHAPES, f => f.qL, shapeFits, shaped);
+for (const [name, values, value] of [["chroma exponent", SHAPES, shaped.qC], ["lightness exponent", SHAPES, shaped.qL]])
+	if (value === values[0] || value === values[values.length - 1])
+		console.log("\nwarning: " + name + " at the edge of its grid");
 
 // The z with normalCdf(-z) = SWAP_LIMIT: a pair at weighted distance d swaps with chance normalCdf(-d / 2 sigma).
 let zLow = 0, zHigh = 10;

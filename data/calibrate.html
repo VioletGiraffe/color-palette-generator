@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Identification calibration</title>
+<style>
+	:root {
+		color-scheme: light dark;
+		--bg: #f4f4f4; --panel: #ffffff; --ink: #1c1c1c; --ink-dim: #6a6a6a; --line: #d4d4d4; --accent: #3c6ea5; --warn: #c0453a;
+	}
+	@media (prefers-color-scheme: dark) {
+		:root { --bg: #161616; --panel: #202020; --ink: #e6e6e6; --ink-dim: #9a9a9a; --line: #3a3a3a; --accent: #6ea0d8; --warn: #e06a5e; }
+	}
+	* { box-sizing: border-box; }
+	body { margin: 0; padding: 16px; font: 14px/1.45 system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+	h1 { font-size: 18px; margin: 0 0 6px; }
+	h2 { font-size: 14px; margin: 0 0 8px; }
+	p, .hint { margin: 0 0 8px; }
+	.hint { font-size: 12px; color: var(--ink-dim); }
+	#layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
+	@media (max-width: 800px) { #layout { grid-template-columns: 100%; } }
+	.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+	label.row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+	label.row input[type=number] { width: 70px; }
+	textarea { width: 100%; font: 12px/1.4 ui-monospace, monospace; }
+	button { font: inherit; padding: 5px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); cursor: pointer; }
+	button:hover { border-color: var(--accent); }
+	button:disabled { opacity: 0.5; cursor: default; }
+	button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+	.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+	#arena { position: relative; height: 240px; max-width: 620px; border-radius: 6px; overflow: hidden; user-select: none; }
+	.spot { position: absolute; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+	.spot.selected .chip { outline: 2px solid var(--accent); outline-offset: 2px; }
+	.spot .letter { font-weight: 600; font-size: 12px; }
+	#single { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: none; }
+	#marks { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; min-height: 26px; }
+	.mark { border: 1px solid var(--line); border-radius: 6px; padding: 2px 4px 2px 8px; font-size: 12px; display: flex; align-items: center; gap: 4px; }
+	.mark.close { border-color: var(--warn); }
+	.mark button { padding: 0 5px; border: none; background: none; line-height: 1; }
+	#progress { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+	[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<h1>Identification calibration</h1>
+<p class="hint">Sets the constants in <code>data/identify.js</code> and the page's Distinctness default. Each palette is shown once,
+scattered on a ground at the swatch size; mark every pair you would mix up after living with the palette for a while, as too
+close or as marginal. Unmarked pairs count as fine. Palettes carry pairs of deliberately similar colors at known weighted
+distances, drawn across the gamut. Run the log through <code>node data/fit.js log.json</code>; more rounds narrow the fit.</p>
+
+<div id="layout">
+<div>
+	<div class="panel" id="setup">
+		<h2>Setup</h2>
+		<label class="row">Swatch size, px <input type="number" id="swatch-px" value="16" min="4" max="64"></label>
+		<div class="hint">Each round places one lightness pair and one hue pair at every distance, spread over nine cells of
+		relative lightness and relative chroma, at a hue drawn at random. Two of the three lightness bands sit below the cusp:
+		this round is for how the metric behaves among dark colors, which is where both earlier logs say it is wrong.</div>
+		<label class="row">Colors per palette <input type="number" id="count" value="10" min="4" max="12"></label>
+		<label class="row">Probe pairs per palette <input type="number" id="pairs" value="4" min="0" max="5"></label>
+		<label class="row">Rounds over all conditions <input type="number" id="rounds" value="7" min="0" max="40"></label>
+		<div class="hint">Each round is three palettes. Seven is 21: the weights and thresholds are already pinned by the
+		28-palette round, so every palette here goes to the lightness question. Rounds judged later at these same settings pool
+		with earlier ones, so this is a floor, not a commitment - and a long run is better split over sittings, since nothing is
+		stored between them.</div>
+		<div class="hint">Custom palettes, one hex list per line, each shown as an extra palette without probes:</div>
+		<textarea id="custom" rows="3" placeholder="#1f77b4 #ff7f0e #2ca02c ..."></textarea>
+		<div class="actions"><button class="primary" id="start">Start</button></div>
+		<div class="hint" id="schedule-status"></div>
+	</div>
+	<div class="panel">
+		<h2>Log</h2>
+		<div id="log-status" class="hint">0 palettes recorded.</div>
+		<div class="actions">
+			<button id="export">Show JSON</button>
+			<button id="download">Download</button>
+			<button id="clear">Clear</button>
+		</div>
+		<textarea id="json" rows="6" hidden></textarea>
+	</div>
+</div>
+
+<div>
+	<div class="panel" id="session" hidden>
+		<h2>Palette <span id="progress"></span></h2>
+		<div id="arena"><div id="single"></div></div>
+		<div class="hint">Click two swatches, then mark the pair. Keys: a letter selects, T marks too close, M marginal, Escape
+		clears the selection, Enter goes to the next palette. "One by one" shows each color alone, in random order. The ground is
+		light throughout and does not flip: it is the harder one at both ends of the range, so every mark is the pessimistic
+		verdict and belongs to a ground known in advance. A pair you cannot see is not the same as a pair you cannot tell apart,
+		and only the second is what this measures.</div>
+		<div class="actions">
+			<button id="close" disabled>Too close</button>
+			<button id="marginal" disabled>Marginal</button>
+			<button id="replay">One by one</button>
+		</div>
+		<div id="marks"></div>
+		<div class="actions"><button class="primary" id="next">Next palette</button><button id="skip">Skip</button></div>
+	</div>
+</div>
+</div>
+
+<script>
+"use strict";
+
+// ---------- color math (OKLab, as in index.html; x100 so distances read like deltaE) ----------
+
+function srgbToLinear(u) {
+	return u <= 0.04045 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4);
+}
+
+function labOf(hex) {
+	const n = parseInt(hex.slice(1), 16);
+	const r = srgbToLinear((n >> 16 & 255) / 255), g = srgbToLinear((n >> 8 & 255) / 255), b = srgbToLinear((n & 255) / 255);
+	const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+	const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+	const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+	return [
+		(0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s) * 100,
+		(1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s) * 100,
+		(0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s) * 100];
+}
+
+// The a and b weight of each LMS term, and the LMS mix of each linear channel: gamutChroma solves
+// these same expressions symbolically and must use the identical numbers.
+const LMS_A = [0.3963377774, -0.1055613458, -0.0894841775];
+const LMS_B = [0.2158037573, -0.0638541728, -1.2914855480];
+const RGB_FROM_LMS = [
+	[4.0767416621, -3.3077115913, 0.2309699292],
+	[-1.2684380046, 2.6097574011, -0.3413193965],
+	[-0.0041960863, -0.7034186147, 1.7076147010]];
+
+// Linear sRGB from OKLab, lightness and chroma normalized to 0..1.
+function oklabToLinear(L, a, b) {
+	const l = (L + LMS_A[0] * a + LMS_B[0] * b) ** 3;
+	const m = (L + LMS_A[1] * a + LMS_B[1] * b) ** 3;
+	const s = (L + LMS_A[2] * a + LMS_B[2] * b) ** 3;
+	return [
+		RGB_FROM_LMS[0][0] * l + RGB_FROM_LMS[0][1] * m + RGB_FROM_LMS[0][2] * s,
+		RGB_FROM_LMS[1][0] * l + RGB_FROM_LMS[1][1] * m + RGB_FROM_LMS[1][2] * s,
+		RGB_FROM_LMS[2][0] * l + RGB_FROM_LMS[2][1] * m + RGB_FROM_LMS[2][2] * s];
+}
+
+// Null when the color is outside sRGB. The tolerance absorbs a boundary color's rounding, which
+// gamutChroma's does not: this one decides whether a hex can be made, that one where the edge is.
+function hexOf(lab) {
+	const lin = oklabToLinear(lab[0] / 100, lab[1] / 100, lab[2] / 100);
+	const rgb = lin.map(u => u <= 0.0031308 ? u * 12.92 : 1.055 * u ** (1 / 2.4) - 0.055);
+	if (rgb.some(v => v < -0.002 || v > 1.002))
+		return null;
+	return "#" + rgb.map(v => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, "0")).join("");
+}
+
+const hueOf = lab => (Math.atan2(lab[2], lab[1]) * 180 / Math.PI + 360) % 360;
+const inGamut = rgb => rgb.every(v => v >= -1e-6 && v <= 1 + 1e-6);
+
+// ---------- the sRGB gamut and its cusp (as in index.html, which is the reference) ----------
+
+// Above the most chroma sRGB shows anywhere (32.25, at magenta).
+const CHROMA_MAX = 32.5;
+
+// The real roots of a x^3 + b x^2 + c x + d, degenerating to the quadratic and the line.
+function cubicRoots(a, b, c, d) {
+	if (Math.abs(a) < 1e-12) {
+		if (Math.abs(b) < 1e-12)
+			return Math.abs(c) < 1e-12 ? [] : [-d / c];
+		const discriminant = c * c - 4 * b * d;
+		if (discriminant < 0)
+			return [];
+		const root = Math.sqrt(discriminant);
+		return [(-c + root) / (2 * b), (-c - root) / (2 * b)];
+	}
+
+	// Depressed to t^3 + p t + q, where x is t less a third of the quadratic coefficient.
+	const quad = b / a, lin = c / a, base = d / a;
+	const shift = quad / 3;
+	const p = lin - quad * quad / 3;
+	const q = 2 * quad * quad * quad / 27 - quad * lin / 3 + base;
+	if (Math.abs(p) < 1e-14)
+		return [Math.cbrt(-q) - shift];
+
+	const delta = q * q / 4 + p * p * p / 27;
+	if (delta > 0) {
+		const root = Math.sqrt(delta);
+		return [Math.cbrt(-q / 2 + root) + Math.cbrt(-q / 2 - root) - shift];
+	}
+	// Three real roots: p is negative here, so the trigonometric form applies.
+	const scale = 2 * Math.sqrt(-p / 3);
+	const angle = Math.acos(Math.min(1, Math.max(-1, 3 * q / (p * scale)))) / 3;
+	return [0, 1, 2].map(k => scale * Math.cos(angle - 2 * Math.PI * k / 3) - shift);
+}
+
+// The most chroma sRGB shows at this lightness and hue; 0 at black and white.
+// Along the ray each LMS term is linear in chroma and then cubed, so every linear channel is a
+// cubic in it and the sRGB box is six cubic inequalities. Their roots cut the ray into spans that
+// are wholly in or out, and the outermost span that is in gives the answer.
+function gamutChroma(L, h) {
+	const turn = h * Math.PI / 180, toA = Math.cos(turn), toB = Math.sin(turn);
+	const light = L / 100, limit = CHROMA_MAX / 100;
+	// The LMS terms as light + slope * chroma.
+	const slope = LMS_A.map((a, n) => a * toA + LMS_B[n] * toB);
+	const breaks = [0, limit];
+	for (const mix of RGB_FROM_LMS) {
+		let c3 = 0, c2 = 0, c1 = 0, c0 = 0;
+		for (let n = 0; n < 3; ++n) {
+			const w = mix[n], k = slope[n];
+			c3 += w * k * k * k;
+			c2 += w * 3 * light * k * k;
+			c1 += w * 3 * light * light * k;
+			c0 += w * light * light * light;
+		}
+		for (const target of [0, 1])
+			for (const root of cubicRoots(c3, c2, c1, c0 - target))
+				if (root > 0 && root < limit)
+					breaks.push(root);
+	}
+
+	breaks.sort((p, q) => p - q);
+	for (let n = breaks.length - 1; n > 0; --n) {
+		const mid = (breaks[n - 1] + breaks[n]) / 2;
+		if (inGamut(oklabToLinear(light, mid * toA, mid * toB)))
+			return breaks[n] * 100;
+	}
+	return 0;
+}
+
+// The lightness at which sRGB shows the most chroma at this hue, the gamut cusp. A coarse scan
+// brackets the peak, golden-section search narrows it to 0.1 L: chroma over lightness at one hue
+// has a single peak.
+const CUSP_SCAN_LEVELS = 24;
+function searchCuspLightness(h) {
+	let bestLevel = 0, bestC = 0;
+	for (let n = 1; n < CUSP_SCAN_LEVELS; ++n) {
+		const C = gamutChroma(100 * n / CUSP_SCAN_LEVELS, h);
+		if (C > bestC) {
+			bestLevel = n;
+			bestC = C;
+		}
+	}
+
+	const R = (Math.sqrt(5) - 1) / 2;
+	let lo = 100 * (bestLevel - 1) / CUSP_SCAN_LEVELS, hi = 100 * (bestLevel + 1) / CUSP_SCAN_LEVELS;
+	let a = hi - R * (hi - lo), b = lo + R * (hi - lo), Ca = gamutChroma(a, h), Cb = gamutChroma(b, h);
+	while (hi - lo > 0.1) {
+		if (Ca < Cb) {
+			lo = a;
+			a = b;
+			Ca = Cb;
+			b = lo + R * (hi - lo);
+			Cb = gamutChroma(b, h);
+		} else {
+			hi = b;
+			b = a;
+			Cb = Ca;
+			a = hi - R * (hi - lo);
+			Ca = gamutChroma(a, h);
+		}
+	}
+	return (lo + hi) / 2;
+}
+
+// The cusp depends on the hue alone, so the search runs once per sample and everything else reads
+// the samples. Built on first use: the search is far too slow to run per draw.
+// The six sRGB primaries and secondaries are corners of the ridge; their hues are sampled too, so
+// no interpolated segment spans one.
+const CUSP_STEP = 1;
+const CUSP_CORNER_HUES = ["#ff0000", "#ffff00", "#00ff00", "#00ffff", "#0000ff", "#ff00ff"]
+	.map(hex => hueOf(labOf(hex)));
+let cuspSamples = null;
+
+function cuspTable() {
+	if (!cuspSamples) {
+		const hues = Array.from({ length: Math.round(360 / CUSP_STEP) }, (_, n) => n * CUSP_STEP)
+			.concat(CUSP_CORNER_HUES).sort((a, b) => a - b);
+		cuspSamples = { hues, light: hues.map(searchCuspLightness) };
+	}
+	return cuspSamples;
+}
+
+// The cusp lightness at any hue, straight between the samples either side of it.
+function cuspLightness(h) {
+	const { hues, light } = cuspTable();
+	const hue = ((h % 360) + 360) % 360;
+	// The first sample is hue 0, so the search never lands before it and `before` stays in range.
+	let lo = 0, hi = hues.length;
+	while (lo < hi) {
+		const mid = (lo + hi) >> 1;
+		if (hues[mid] <= hue)
+			lo = mid + 1;
+		else
+			hi = mid;
+	}
+	// Past the last sample the segment wraps to the first, a turn of 360 away.
+	const before = lo - 1, after = lo % hues.length;
+	const start = hues[before], end = hues[after] + (after === 0 ? 360 : 0);
+	const within = end > start ? (hue - start) / (end - start) : 0;
+	return light[before] * (1 - within) + light[after] * within;
+}
+
+// Absolute lightness from a standing in the hue's own gamut, piecewise linear either side of the
+// cusp: 0 is black, CUSP_ANCHOR the cusp, 100 white. Probes are placed in these coordinates, and in
+// relative chroma, so that a chroma level is not also a hue selection - in absolute chroma only
+// reds, blues and magentas reach past 20.
+const CUSP_ANCHOR = 50;
+function absoluteL(relative, h) {
+	const cusp = cuspLightness(h);
+	return relative <= CUSP_ANCHOR ? cusp * relative / CUSP_ANCHOR
+		: cusp + (100 - cusp) * (relative - CUSP_ANCHOR) / (100 - CUSP_ANCHOR);
+}
+
+// ---------- session construction ----------
+
+const LABELS = "ABCDEFGHIJKL";
+// Random anchor orders tried per palette before the one hosting the most conditions is kept.
+const BUILD_ATTEMPTS = 30;
+// Anchor draws tried per condition before it is given up on.
+const PROBE_TRIES = 300;
+// Lightness and hue only. A chroma step needs room in the gamut, and the dark band has none: at
+// relative lightness 10 to 28 a chroma condition places once in forty tries past distance 7.5, so
+// keeping the axis would give the dark band a different axis mix from the light one and let the
+// mix stand in for lightness, which is how the last round's chroma exponent came about.
+// Lightness against hue within a band is also the contrast that says whether the dark effect is
+// the whole metric scaling or the lightness weight alone.
+const AXES = ["L", "H"];
+// The weights from the last data/fit.js run. Probes are placed at weighted distances, so a
+// condition means the same thing along every axis; the weights only choose where to sample, not
+// what the fit infers.
+const FIT_W_L = 0.35, FIT_W_C = 0.6;
+// Probe distances in weighted deltaE, straddling the boundary widely enough to stay informative
+// where the local scale differs by half again. A rung that saturates carries no information: the
+// 28-palette round marked 21 of 21 at 4.5 and 0 of 13 at 13, so both rails are gone. The turn sat
+// at 9 to 11 there and judging on the light ground alone can only move it up, hence the top rung.
+const PROBE_DISTANCES = [6, 7.5, 9, 10.5, 12.5];
+// sRGB rounding moves a twin off its target; a pair further out than this is redrawn.
+const DISTANCE_TOLERANCE = 0.6;
+// Colors not in the same probe pair keep this weighted distance apart. Two softness units past the
+// fine threshold a clearance pair reads fine 98 times in 100, and the gamut holds no four pairs at
+// a wider one: at 14 only a third of the pairs asked for can be placed.
+const CLEARANCE = 12;
+// Anchor cells: bands of relative lightness and of relative chroma, with the hue drawn uniformly.
+// Every cell is reachable at every hue, which absolute ranges cannot manage - the gamut ties high
+// chroma to the reds, blues and magentas, and low lightness to the same hues again.
+// Two of the three lightness bands sit below the cusp at 50: the lightness exponent is what this
+// round is for, and the dark side is where both logs say the metric is wrong.
+const LIGHTNESS_BANDS = [[10, 28], [28, 46], [55, 80]];
+const CHROMA_BANDS = [[0.15, 0.4], [0.4, 0.7], [0.65, 0.95]];
+
+// The fitted metric, as data/identify.js: lightness and radial chroma differences by weight, the hue chord as is.
+function weightedDistance(p, q) {
+	const dL = (p[0] - q[0]) * FIT_W_L, dC = Math.hypot(p[1], p[2]) - Math.hypot(q[1], q[2]);
+	const chord2 = (p[1] - q[1]) ** 2 + (p[2] - q[2]) ** 2;
+	return Math.sqrt(dL * dL + FIT_W_C * FIT_W_C * dC * dC + Math.max(0, chord2 - dC * dC));
+}
+
+// Ground behind the swatches, the same for every palette. Light is the pessimistic one: a bright
+// surround veils a dark pair far more than a light pair, so every colour is at its least separable
+// here. One ground throughout is what makes a mark attributable - judged on two, a pair is marked
+// on whichever came first and the lightness exponent cannot be read out.
+const GROUND = "#e4e4e4";
+const GROUND_NAME = "light";
+const LETTER_INK = "#1c1c1c";
+// One-by-one replay: each color alone for SHOW_MS, blank ground for BLANK_MS between.
+const SHOW_MS = 900;
+const BLANK_MS = 300;
+// Scattered layout: least distance between swatch centers, and their inset from the arena edge.
+// Close enough that the whole palette is taken in at once - hunting for a swatch across a wide
+// arena is a search task, and a pair too far apart to compare in one look reads as fine whatever
+// its distance. Recorded per palette, since it is part of what the verdicts answer.
+const SPOT_GAP = 54;
+const SPOT_INSET = 18;
+const PLACE_TRIES = 300;
+
+function shuffled(list) {
+	const out = list.slice();
+	for (let i = out.length - 1; i > 0; --i) {
+		const j = Math.floor(Math.random() * (i + 1));
+		[out[i], out[j]] = [out[j], out[i]];
+	}
+	return out;
+}
+
+// A color at a hue and a standing in that hue's gamut; null where sRGB has nothing there.
+function colorAt(h, relativeL, relativeC) {
+	const L = absoluteL(relativeL, h), C = relativeC * gamutChroma(L, h);
+	const turn = h * Math.PI / 180;
+	return hexOf([L, C * Math.cos(turn), C * Math.sin(turn)]);
+}
+
+// The anchor moved a weighted distance along one axis in its own frame. A hue step turns by the
+// angle whose chord is the distance, so all three axes land the same weighted distance away before
+// sRGB rounding. Tries both signs; null when neither lands in gamut.
+function twinOf(lab, axis, d) {
+	const C = Math.hypot(lab[1], lab[2]);
+	for (const sign of shuffled([1, -1])) {
+		let out = null;
+		if (axis === "L")
+			out = hexOf([lab[0] + sign * d / FIT_W_L, lab[1], lab[2]]);
+		// A chroma or hue step needs a radial direction, which the neutral axis does not have.
+		else if (C < 1)
+			return null;
+		else if (axis === "C") {
+			const scale = (C + sign * d / FIT_W_C) / C;
+			if (scale > 0)
+				out = hexOf([lab[0], lab[1] * scale, lab[2] * scale]);
+		} else if (2 * C >= d) {
+			const turn = Math.atan2(lab[2], lab[1]) + sign * 2 * Math.asin(d / (2 * C));
+			out = hexOf([lab[0], C * Math.cos(turn), C * Math.sin(turn)]);
+		}
+		if (out)
+			return out;
+	}
+	return null;
+}
+
+// An anchor drawn in the condition's cell and a twin its weighted distance away along its axis,
+// both clear of the palette so far.
+function probePair(condition, clear) {
+	const [lMin, lMax] = condition.lightness, [cMin, cMax] = condition.chroma;
+	for (let t = 0; t < PROBE_TRIES; ++t) {
+		const anchor = colorAt(Math.random() * 360, lMin + Math.random() * (lMax - lMin), cMin + Math.random() * (cMax - cMin));
+		if (!anchor || !clear(anchor))
+			continue;
+		const lab = labOf(anchor), twin = twinOf(lab, condition.axis, condition.distance);
+		if (twin && clear(twin) && Math.abs(weightedDistance(lab, labOf(twin)) - condition.distance) < DISTANCE_TOLERANCE)
+			return [anchor, twin];
+	}
+	return null;
+}
+
+// A color anywhere in the gamut, to fill a palette out past its probe pairs.
+function fillerColor(clear) {
+	for (let t = 0; t < PROBE_TRIES; ++t) {
+		const hex = colorAt(Math.random() * 360, 10 + Math.random() * 80, 0.1 + Math.random() * 0.85);
+		if (hex && clear(hex))
+			return hex;
+	}
+	return null;
+}
+
+// A palette of `count` colors holding one probe pair per condition and unrelated fillers elsewhere.
+// A condition no pair can be built for is dropped; null when the palette cannot be filled at all.
+function buildPalette(count, conditions) {
+	const hexes = [], probes = [];
+	const clear = hex => hexes.every(h => weightedDistance(labOf(h), labOf(hex)) >= CLEARANCE);
+	for (const condition of conditions) {
+		const pair = probePair(condition, clear);
+		if (!pair)
+			continue;
+		probes.push({ a: hexes.length, b: hexes.length + 1, axis: condition.axis, distance: condition.distance });
+		hexes.push(...pair);
+	}
+	while (hexes.length < count) {
+		const filler = fillerColor(clear);
+		if (!filler)
+			return null;
+		hexes.push(filler);
+	}
+
+	// Letters go to a random order, so a probe pair is not always adjacent.
+	const order = shuffled(hexes.map((_, i) => i));
+	const at = [];
+	order.forEach((from, to) => at[from] = to);
+	return { hexes: order.map(i => hexes[i]), probes: probes.map(p => ({ ...p, a: at[p.a], b: at[p.b] })) };
+}
+
+// One condition per axis and distance, each dealt a cell from a deck holding every cell twice and
+// reshuffled every round, so the cells stay evenly covered however many rounds are judged.
+function scheduledConditions() {
+	const cells = LIGHTNESS_BANDS.flatMap(lightness => CHROMA_BANDS.map(chroma => ({ lightness, chroma })));
+	const deck = shuffled(cells).concat(shuffled(cells));
+	return shuffled(AXES.flatMap(axis => PROBE_DISTANCES.map(distance => ({ axis, distance }))))
+		.map((condition, n) => ({ ...condition, ...deck[n % deck.length] }));
+}
+
+// Conditions spread over as few palettes as `pairs` allows, evenly rather than sliced: slicing
+// leaves the remainder its own palette, which is nine filler colors judged for one probe pair.
+function dealt(conditions, pairs) {
+	const palettes = Math.ceil(conditions.length / pairs);
+	const out = Array.from({ length: palettes }, () => []);
+	conditions.forEach((condition, n) => out[n % palettes].push(condition));
+	return out;
+}
+
+function buildSchedule() {
+	const count = +$("count").value, pairs = +$("pairs").value, rounds = +$("rounds").value;
+	const sessions = [];
+	let dropped = 0;
+	for (let round = 0; round < rounds && pairs > 0; ++round) {
+		for (const chunk of dealt(scheduledConditions(), pairs)) {
+			let palette = null;
+			for (let attempt = 0; attempt < BUILD_ATTEMPTS && (!palette || palette.probes.length < chunk.length); ++attempt) {
+				const built = buildPalette(count, chunk);
+				if (built && (!palette || built.probes.length > palette.probes.length))
+					palette = built;
+			}
+			if (palette)
+				sessions.push(palette);
+			dropped += chunk.length - (palette ? palette.probes.length : 0);
+		}
+	}
+	for (const line of $("custom").value.split(/\r?\n/)) {
+		const hexes = line.match(/#?[0-9a-f]{6}\b/gi)?.map(t => "#" + t.replace("#", "").toLowerCase()) || [];
+		if (hexes.length > 1 && hexes.length <= LABELS.length)
+			sessions.push({ hexes, probes: [] });
+	}
+	return { sessions: shuffled(sessions), dropped };
+}
+
+// ---------- log ----------
+
+const $ = id => document.getElementById(id);
+// Version 1 logs hold recall trials, which the fit no longer reads.
+const LOG_VERSION = 2;
+// The log lives for the page and is downloaded, never stored: a log that outlives the page silently
+// carries earlier runs into a later one, judged under whatever the page did then.
+// Clears what an earlier version of this page left behind. Reaching localStorage throws outright
+// where a browser withholds it, and nothing here needs it.
+try { localStorage.removeItem("identification-calibration-log"); } catch {}
+const log = { version: LOG_VERSION, sessions: [] };
+
+function saveLog() {
+	const marked = log.sessions.reduce((n, s) => n + s.verdicts.length, 0);
+	$("log-status").textContent = log.sessions.length + " palettes judged this visit, " + marked + " pairs marked."
+		+ (log.sessions.length ? " Download before leaving." : "");
+	if (!$("json").hidden)
+		$("json").value = JSON.stringify(log);
+}
+
+// Nothing is stored, so a reload or a stray close would take the run with it.
+addEventListener("beforeunload", event => {
+	if (log.sessions.length) {
+		event.preventDefault();
+		event.returnValue = "";
+	}
+});
+
+$("export").onclick = () => {
+	$("json").hidden = !$("json").hidden;
+	$("json").value = JSON.stringify(log);
+};
+$("download").onclick = () => {
+	const url = URL.createObjectURL(new Blob([JSON.stringify(log)], { type: "application/json" }));
+	const link = Object.assign(document.createElement("a"), { href: url, download: "calibration-log.json" });
+	link.click();
+	URL.revokeObjectURL(url);
+};
+$("clear").onclick = () => {
+	if (confirm("Discard the palettes judged this visit? They are not stored anywhere else.")) {
+		log.sessions = [];
+		saveLog();
+	}
+};
+
+// ---------- running a session ----------
+
+let schedule = [], sessionIndex = -1, session = null, spots = [], selected = [], replayTimer = 0;
+// Verdicts of the current palette by pair key "a,b" with a < b; a pair marked again takes the new grade.
+const verdicts = new Map();
+
+const pairKey = (a, b) => Math.min(a, b) + "," + Math.max(a, b);
+
+$("start").onclick = () => {
+	const built = buildSchedule();
+	schedule = built.sessions;
+	$("schedule-status").textContent = schedule.length + " palettes" + (built.dropped ? ", " + built.dropped + " conditions no pair could be built for" : "") + ".";
+	sessionIndex = -1;
+	nextSession();
+};
+
+function nextSession() {
+	stopReplay();
+	if (++sessionIndex >= schedule.length) {
+		$("session").hidden = true;
+		$("schedule-status").textContent += " All done.";
+		return;
+	}
+	verdicts.clear();
+	// The ground is recorded even though it never varies: a log read later cannot tell which round
+	// it came from, and the two are not poolable.
+	session = { ...schedule[sessionIndex], swatchPx: +$("swatch-px").value, spotGap: SPOT_GAP,
+		ground: GROUND_NAME, started: new Date().toISOString(), replays: 0 };
+	$("progress").textContent = (sessionIndex + 1) + " / " + schedule.length;
+	$("session").hidden = false;
+	layoutSpots();
+	clearSelection();
+	renderMarks();
+}
+
+// Scatters the palette over the arena: random positions at least SPOT_GAP apart, the last try kept
+// when none clears.
+function layoutSpots() {
+	const arena = $("arena");
+	const px = session.swatchPx;
+	const width = arena.clientWidth - 2 * SPOT_INSET, height = arena.clientHeight - 2 * SPOT_INSET;
+	const placed = [];
+	for (let i = 0; i < session.hexes.length; ++i) {
+		let x, y;
+		for (let t = 0; t < PLACE_TRIES; ++t) {
+			x = SPOT_INSET + Math.random() * width;
+			y = SPOT_INSET + Math.random() * height;
+			if (placed.every(p => Math.hypot(p[0] - x, p[1] - y) >= SPOT_GAP))
+				break;
+		}
+		placed.push([x, y]);
+	}
+	spots = session.hexes.map((hex, i) => {
+		const spot = document.createElement("div");
+		spot.className = "spot";
+		spot.style.cssText = "left:" + (placed[i][0] - px / 2) + "px;top:" + (placed[i][1] - px / 2) + "px";
+		const chip = document.createElement("div");
+		chip.className = "chip";
+		chip.style.cssText = "width:" + px + "px;height:" + px + "px;background:" + hex;
+		const letter = document.createElement("div");
+		letter.className = "letter";
+		letter.textContent = LABELS[i];
+		spot.append(chip, letter);
+		spot.onclick = () => toggleSelected(i);
+		return spot;
+	});
+	arena.replaceChildren($("single"), ...spots);
+	paintGround();
+}
+
+function paintGround() {
+	$("arena").style.background = GROUND;
+	for (const spot of spots)
+		spot.lastChild.style.color = LETTER_INK;
+}
+
+function select(indices) {
+	selected = indices;
+	spots.forEach((spot, k) => spot.classList.toggle("selected", selected.includes(k)));
+	$("close").disabled = $("marginal").disabled = selected.length < 2;
+}
+
+// A third selection replaces the older of the two.
+const toggleSelected = i => select(selected.includes(i) ? selected.filter(k => k !== i) : [...selected.slice(-1), i]);
+const clearSelection = () => select([]);
+
+function mark(grade) {
+	if (selected.length < 2)
+		return;
+	const [a, b] = [Math.min(...selected), Math.max(...selected)];
+	verdicts.set(pairKey(a, b), { a, b, grade, ground: GROUND_NAME });
+	clearSelection();
+	renderMarks();
+}
+
+$("close").onclick = () => mark("close");
+$("marginal").onclick = () => mark("marginal");
+
+function renderMarks() {
+	$("marks").replaceChildren(...[...verdicts.entries()].map(([key, v]) => {
+		const item = document.createElement("div");
+		item.className = "mark " + v.grade;
+		item.textContent = LABELS[v.a] + "/" + LABELS[v.b] + " " + (v.grade === "close" ? "too close" : "marginal");
+		const remove = document.createElement("button");
+		remove.textContent = "×";
+		remove.title = "Unmark";
+		remove.onclick = () => {
+			verdicts.delete(key);
+			renderMarks();
+		};
+		item.append(remove);
+		return item;
+	}));
+}
+
+// Shows each color alone at the arena's center in a fresh random order, then restores the spots.
+function replay() {
+	stopReplay();
+	++session.replays;
+	const order = shuffled(session.hexes);
+	const px = session.swatchPx;
+	for (const spot of spots)
+		spot.style.visibility = "hidden";
+	let i = 0;
+	const step = () => {
+		if (i >= order.length)
+			return stopReplay();
+		$("single").style.cssText = "display:block;width:" + px + "px;height:" + px + "px;background:" + order[i++];
+		replayTimer = setTimeout(() => {
+			$("single").style.display = "none";
+			replayTimer = setTimeout(step, BLANK_MS);
+		}, SHOW_MS);
+	};
+	step();
+}
+
+function stopReplay() {
+	clearTimeout(replayTimer);
+	replayTimer = 0;
+	$("single").style.display = "none";
+	for (const spot of spots)
+		spot.style.visibility = "";
+}
+
+$("replay").onclick = replay;
+
+$("next").onclick = () => {
+	log.sessions.push({ ...session, verdicts: [...verdicts.values()] });
+	saveLog();
+	nextSession();
+};
+$("skip").onclick = nextSession;
+
+document.addEventListener("keydown", e => {
+	if ($("session").hidden || e.ctrlKey || e.metaKey || e.altKey || e.target.matches("input, textarea"))
+		return;
+	const key = e.key.toUpperCase();
+	if (key === "T")
+		mark("close");
+	else if (key === "M")
+		mark("marginal");
+	else if (key === "ESCAPE")
+		clearSelection();
+	else if (key === "ENTER")
+		$("next").onclick();
+	else if (LABELS.includes(key) && LABELS.indexOf(key) < session.hexes.length)
+		toggleSelected(LABELS.indexOf(key));
+	else
+		return;
+	e.preventDefault();
+});
+
+saveLog();
+</script>
+</body>
+</html>

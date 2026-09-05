@@ -1,8 +1,9 @@
 # Generation evolution
 
 What was tried for the generator in `experimental.html`, in order, with the numbers each step produced.
-`index.html` and its name-based generator are described in `README.md`; this file covers the rework that
-replaced names with a recall model, and the metric built to judge it. Paths are relative to the repo root.
+The original page steered generation by color names; this file covers the rework that replaced names with a
+recall model, the metric built to judge it, and the rework's promotion to `index.html`. Paths are relative to
+the repo root.
 
 ## The yardstick
 
@@ -24,6 +25,8 @@ Differences under about a point are noise.
 The old `data/bench.js` (name overlap times a 30 dE distance falloff) disagrees with this metric in direction:
 it prefers the name-aware `index.html` (worst 0.579) over the reworked page (0.496 to 0.516), since the rework
 repeats names at large N. Each generator wins on the metric it optimizes. Calibration decides which is right.
+That script is gone; its scorer is now the naming score `identify.js` reports beside the identification one,
+off the page's own overlap table rather than a copy of the survey data.
 
 ## Steps
 
@@ -294,10 +297,14 @@ maximum below the gamut's reach for the hues in use keeps them off it.
 - Metropolis sampling at a temperature, the principled distinctness-versus-randomness knob.
 - A switch for the wall margin, since it is the distinctness-versus-typicality knob (see steps 13, 14).
 - Re-measuring the steps at the calibrated constants.
+- Steering by name crowding: a per-color penalty from the name entropy of the color's neighbourhood in the
+  survey grid, so palettes avoid colors no single name wins. Not the original page's steering, which worked
+  from pairwise name overlap; crowding is a property of one color, and the naming round validated it as a
+  nameability measure (see the naming round under Calibration).
 
 ## Calibration
 
-`calibrate.html` shows one palette at a time, scattered at the swatch size on a light or dark ground, and
+`calibrate.html` shows one palette at a time, scattered at the swatch size on a ground, and
 records which pairs the viewer marks as too close or marginal; unmarked pairs are fine. `data/fit.js` fits an
 ordered probit over the weighted pair distance to the verdicts. An earlier design by recall trials (learn
 letters, answer letter by letter, dozens of palettes) was dropped: it measured memory under time pressure,
@@ -345,9 +352,12 @@ through the same ordered-probit link as the analytic distance, each over sigma a
 
 None came close, so the yardstick is now the analytic formula: pair swap chance from the polar weighted
 distance, a color's error the sum over its pairs, the same as the pages optimize. Baseline of step 18 on it
-at the adopted constants (floor / worst seed): default box 6, 8, 10 colors 98.1 / 98.0, 97.9 / 96.8,
-96.6 / 95.4; narrow box 98.1 / 97.7, 96.0 / 95.1, 92.7 / 91.4. The box binds from 8 colors in the narrow
-box and at 10 in the default one.
+at the adopted constants (floor / worst seed): default box 6, 8, 10 colors 98.3 / 98.1, 98.1 / 98.0,
+98.0 / 97.5; narrow box 98.4 / 98.1, 98.1 / 97.5, 97.5 / 96.7. The narrow box still binds at 10 colors, by
+0.5 points of floor. Scores move with the constants, so they compare only within one set of them: at sigma
+3.5 and wC 0.5 the same runs read 1 to 5 points lower, narrow 10 colors most of all. These boxes reach only
+to relative lightness 20, so the lightness exponent barely shows in them; it bites in a box that reaches
+the dark end.
 
 Two refinements the verdicts suggested were tested on the analytic model and are not supported at this data
 volume: a hue distance scaled per 60-degree sector gains 2.4 log-likelihood units for six parameters, a
@@ -360,6 +370,73 @@ at 2 log-likelihood units includes 1: hue sectors best 0.9 to 1.1, dark and vivi
 (0.7 to 1.1). A 25% regional effect would have shown; none did. The metric is treated as uniform over the
 gamut. The dark pairs judged lightness-only earlier (6 marginal of 16) did not recur with mixed-direction
 pairs, so if that effect exists it is specific to lightness steps among dark colors.
+
+A second round on 2026-09-04 replaced the region schedule with relative coordinates: probes at a set weighted
+distance along one axis, crossed with three lightness and three chroma bands measured against the cusp and
+the gamut boundary rather than in absolute units, so a chroma level is no longer also a hue selection. Each
+palette was judged on a light and a dark ground and marked at its worst. 28 palettes moved wC from 0.5 to 0.6
+and the rule sigma from 3.5 to 3; wL held at 0.35 and is now pinned harder than the 78-palette log managed
+(0.4 costs 7.3 log-likelihood units, where before it was inside the range). Position dependence is still not
+supported: the chroma exponent's -0.2 comes from the chroma axis, which the distance cap confines to middle
+chroma, and vanishes among the hue and lightness probes that reach every band.
+
+A third and fourth round then separated the three candidate position terms, which had each been standing
+in for the others. The chroma round reported a chroma slope of 0.6 and, once a hue term was allowed, gave
+it all up: its high chroma level was reachable only at blues and magentas, whose cusps are dark, so hue,
+chroma and lightness moved together at r 0.65 to 0.74. The hue round dropped the chroma axis - a hue step
+turns at constant chroma and so needs no room above the level, which is what had confined the levels to
+the blues - and crossed six hue sectors with two chroma levels, drawing lightness across the whole span
+each hue and level allow. That brought the three predictors to r under 0.07 and settled all of them:
+
+| term | value | earns | adopted |
+|---|---|---|---|
+| relative lightness exponent | 0.40 | 16.1 log-likelihood units | yes |
+| hue trough at 285 degrees | amplitude 0.10 | 4.3 units for 2 parameters | no |
+| chroma exponent | -0.05 | 0.1 units | no |
+
+The hue term is held because it is marginal and because it vanishes under absolute lightness, which the
+data cannot rule out: the two lightness coordinates correlate at 0.81 and relative wins by 1.9 units.
+Adopted: `apart2` and `recallDistance` multiply the distance by the pair's standing in the gamut, which
+costs the generator 20 to 54 per cent more pair evaluations - the stricter metric lowers the floors it can
+reach, so the pushes stall later and the restarts run longer. The lookup itself is amortized: a palette
+evaluates 16 to 31 pairs for every relative lightness it computes, which is why the positions carry it.
+
+The ground is the effect the round could not measure. Dark colors that separate cleanly on a dark ground
+collapse on a light one, strongly enough to need no statistics; light colors lose a little on a light ground
+too, so the penalty is one-directional and not a symmetric squashing about mid lightness. Veiling glare fits:
+a bright surround adds a luminance floor, and a common addend compresses a dark pair's ratio far more than a
+light pair's. The log cannot show it, because a pair is marked once at its worst and 60 of 71 marks landed on
+whichever ground came first. Scoring stays pessimistic and ground-blind; a lightness exponent would need a
+round judged on the light ground alone.
+
+### Naming round
+
+`calibrate-names.html` shows colors one at a time at the swatch size and asks what each is called;
+`data/fit_names.js` fits the naming score's distance decay to the answers. The words offered are a sweep:
+every cell owning a grid bin within 22 OKLab units of the color, plus the color's own cell, with the full 36
+behind an escape button. Data: `data/naming-verdicts-16px.json`, 120 colors judged 2026-09-05 in 6.8
+minutes, median 6 words offered, the escape never used.
+
+- `NAME_DECAY` measures 8 weighted deltaE (6 to 11 at 2 log-likelihood units, 4 to 8 by a color-level
+  bootstrap) against the shipped 18, which costs 3.9 units; no decay at all costs 33. Same-cell pairs got
+  the same word 50% of the time under 5 weighted deltaE, 28% at 5 to 10, 17% at 10 to 15. The fit is on the
+  raw weighted distance, which is what `nameCollision` uses; naming on the lightness-corrected distance
+  would need a refit.
+- The page's cell matched the answer 53% of the time, but the median cell overlap on a disagreement is
+  0.65 and only 9 of 120 answers are a genuinely different word: the winner-take-all partition picks one of
+  two words the survey treats as near-synonyms (pink / light pink, purple / lavender, lavender / mauve).
+  Some pale violets are assigned to white, a partition artifact at the pale edge.
+- The overlap table predicts a shared word monotonically over its whole range, so the score's machinery
+  is sound and only its constant was off. The unsure flag holds: 59% agreement on confident bins, 38% on
+  flagged ones.
+
+Negative result: hesitation carries no signal of its own. Time per answer rises with how crowded the
+color's neighbourhood is (median 2.6 s in the two quietest quartiles of neighbourhood name entropy, 3.3 s
+in the two most crowded) and agreement falls with it (67% to 37%), but every computable crowding measure
+predicts the answer better than time does (z 2.2 to 3.0 against 1.5 at n=120). Crowding is a property of
+the grid; the timings validate it as a nameability measure and add nothing beyond it. Agreement with the
+table is capped by crowding, not by the observer, so a disagreement in a crowded region is not evidence
+against the table.
 
 ## Lightness relative to the cusp
 
@@ -437,4 +514,7 @@ finds the maximum within 0.03 chroma at every hue.
 - `experimental-error-trigger.html`: step 14, error trigger with the wall margin.
 - `experimental-clamp-refusal.html`: step 15, exact clamp refusal, the copy that became `index.html`.
 - `data/identify.js`, `data/fit.js`, `calibrate.html`: the metric and its calibration; see `data/README.md`.
-- `data/calibration-verdicts-16px.json`: the verdicts the constants are fitted to.
+- `data/calibration-log.json`: the verdicts the constants are fitted to.
+- `calibrate-chroma.html`, `calibrate-hue.html`, `data/fit_hue.js`, `data/fit_chroma.js`: the position-term
+  rounds; their logs are `data/light-calibration-log.json`, `data/chroma-log.json`, `data/hue-log.json`.
+- `calibrate-names.html`, `data/fit_names.js`, `data/naming-verdicts-16px.json`: the naming round.
