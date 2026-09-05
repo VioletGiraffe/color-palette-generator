@@ -114,7 +114,8 @@ What was tried and did not pay, with the number that decided it. Details are in 
 9. **More start draws**: 5000 against 1500 gains nothing and costs 5x time.
 10. **Wider dart spacing** (step 12): searching the largest spacing the draws fill gains 0.1. Random
     placement is at its packing ceiling near the limit already (finding 2).
-11. **Push step and stall count**: 0.5 / 1 / 2 dE and 10 / 25 / 60 rejections all within 0.3.
+11. **Push step and stall count**: 0.5 / 1 / 2 dE and 10 / 25 / 60 rejections all within 0.3. The stall
+    count is not flat at the calibrated metric; see the knob re-measurement under Calibration.
 12. **Error limits below 2%** (step 13): 1% and 0.5% gain 0.6 to 0.8 overall, nothing in the full box,
     and push more colors to the walls.
 13. **Gamut margin alone** (step 10): removes the 00 / FF channels but only where the saturation max is 100;
@@ -296,7 +297,6 @@ maximum below the gamut's reach for the hues in use keeps them off it.
 - Stratified placement: seeded k-means partition of the box, one random draw per region.
 - Metropolis sampling at a temperature, the principled distinctness-versus-randomness knob.
 - A switch for the wall margin, since it is the distinctness-versus-typicality knob (see steps 13, 14).
-- Re-measuring the steps at the calibrated constants.
 - Steering by name crowding: a per-color penalty from the name entropy of the color's neighbourhood in the
   survey grid, so palettes avoid colors no single name wins. Not the original page's steering, which worked
   from pairwise name overlap; crowding is a property of one color, and the naming round validated it as a
@@ -353,8 +353,8 @@ through the same ordered-probit link as the analytic distance, each over sigma a
 None came close, so the yardstick is now the analytic formula: pair swap chance from the polar weighted
 distance, a color's error the sum over its pairs, the same as the pages optimize. Baseline of step 18 on it
 at the adopted constants (floor / worst seed): default box 6, 8, 10 colors 98.3 / 98.1, 98.1 / 98.0,
-98.0 / 97.5; narrow box 98.4 / 98.1, 98.1 / 97.5, 97.5 / 96.7. The narrow box still binds at 10 colors, by
-0.5 points of floor. Scores move with the constants, so they compare only within one set of them: at sigma
+98.0 / 97.6; narrow box 98.4 / 98.1, 98.1 / 98.0, 97.7 / 96.7. The narrow box still binds at 10 colors, by
+0.3 points of floor. Scores move with the constants, so they compare only within one set of them: at sigma
 3.5 and wC 0.5 the same runs read 1 to 5 points lower, narrow 10 colors most of all. These boxes reach only
 to relative lightness 20, so the lightness exponent barely shows in them; it bites in a box that reaches
 the dark end.
@@ -437,6 +437,27 @@ predicts the answer better than time does (z 2.2 to 3.0 against 1.5 at n=120). C
 the grid; the timings validate it as a nameability measure and add nothing beyond it. Agreement with the
 table is capped by crowding, not by the observer, so a disagreement in a crowded region is not evidence
 against the table.
+
+### Knobs re-measured at the calibrated metric
+
+Every optimizer knob was tuned at the provisional constants. Re-measured at the calibrated ones over 20
+seeds, both benchmark boxes, 6 to 20 colors; deltas are points of floor / worst seed against the shipped
+values. The steps themselves cannot be re-run: their pages predate the OKLCh controls the harness needs.
+
+The bar (every color under 2% error) holds through 10 colors in the default box and 8 in the narrow one;
+at 16 nearly every color is over it and at 20 all are, so above 12 the boxes are full and the floor is
+what the packing allows.
+
+| knob | shipped | result |
+|---|---|---|
+| restart target 0.9, cap 16 | kept | engages only where the bar is lost (20 colors, 16 in the narrow box) and pays there: cap 4 costs 1.1 / 2.0 at 20 for a third of the time; the shortfall rule alone stops too early, 0.9 / 2.0 at 20; target 0.98 gains 0.5 to 0.7 at 12 to 16 but restarts 16 times at 6 colors for nothing; cap 32 gains 0.4 to 0.6 at 20 for double the time |
+| `START_DRAWS` 1500 | kept | 500 within noise, 5000 costs 2 to 4x for nothing |
+| `PUSH_STEP` 1 | kept | 0.5 flat and slower, 2 loses up to 0.5 from 16 colors up |
+| `RESTART_SHORTFALL` 0.02 | kept | 0.01 and 0.05 within 0.1 |
+| `STALL_PUSHES` 25 | **60** | 10 loses 0.6 / 0.8 on average and 1.9 / 2.5 at 20; 60 gains 0.4 / 0.5 on average, 0.6 to 0.8 at 12 to 16, 1.1 / 1.4 at 20, within 1.3x time and faster at 20 in the default box since better attempts need fewer restarts (15.6 to 10.4); 100 and 150 add 0.1 to 0.2 more at up to 2x time |
+
+The stricter metric lowers the floors an attempt can reach, so a color that stalls at 25 rejections is
+still short of what more patience finds. Nothing moves at 6 to 8 colors, which are at the bar already.
 
 ## Lightness relative to the cusp
 

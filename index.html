@@ -1013,7 +1013,7 @@ const MAX_PUSHES = 1000;
 // opposite sides, a sideways step slides past both. These are the angles for callers that set none.
 const PUSH_ANGLE_MIN = 15, PUSH_ANGLE_MAX = 120;
 // Rejected pushes in a row after which a color is left where it is.
-const STALL_PUSHES = 25;
+const STALL_PUSHES = 60;
 
 // A unit vector drawn uniformly from the band between PUSH_ANGLE_MIN and PUSH_ANGLE_MAX off the unit `axis`.
 function withinCone(rnd, axis, cfg) {
