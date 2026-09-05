@@ -58,6 +58,7 @@ node data/identify.js --hex "#rrggbb ..."     # score one palette
 node data/identify.js --file palettes.txt     # score one palette per line
 node data/fit.js log.json                     # fit identify.js's constants to a calibrate.html log
 node data/fit_hue.js log.json [more.json]     # fit the position terms, over any probe logs pooled
+node data/fit_hue.js --relative log.json      # the same against cusp-relative lightness, the coordinate before the cusp rounds
 node data/fit_chroma.js chroma-log.json       # the chroma round's own question, see below
 node data/fit_names.js log.json               # fit the naming score to a calibrate-names.html log
 ```
@@ -152,7 +153,7 @@ the 71 marks were recorded on whichever ground came first.
 
 ### Where a pair sits in the gamut
 
-Three later rounds were judged on the light ground alone, which is the harder one at both ends of
+Five later rounds were judged on the light ground alone, which is the harder one at both ends of
 the range and makes every mark attributable to a ground known in advance. They are not poolable with
 the both-grounds log above, and they are what the `LIGHTNESS_EXPONENT` comes from.
 
@@ -160,25 +161,38 @@ the both-grounds log above, and they are what the `LIGHTNESS_EXPONENT` comes fro
 lightness, two of them below the cusp. `chroma-log.json`, 24 palettes from `calibrate-chroma.html`:
 chroma and hue probes at three chroma levels. `hue-log.json`, 36 palettes from `calibrate-hue.html`:
 hue probes over six sectors and two chroma levels, lightness drawn across the whole span the gamut
-allows at each hue, which is what decorrelates the three candidates.
+allows at each hue, which is what decorrelates the three candidates. `cusp-log.json` and
+`cusp-log-new.json`, 33 and 26 palettes from `calibrate-cusp.html`: hue probes at four hues crossed
+with absolute lightness bands shared by all four, which is what tells the lightness coordinate apart
+(below).
 
-Fitted together by `node data/fit_hue.js data/hue-log.json data/light-calibration-log.json`, 209
-probe pairs:
+Fitted together by `node data/fit_hue.js` over the four probe logs, 371 pairs, the ordered model
+over all three grades:
 
 | term | value | earns | zero excluded |
 |---|---|---|---|
-| relative lightness exponent | 0.40 | 16.1 log-likelihood units | yes, profile and bootstrap |
-| hue trough | amplitude 0.10 at 285 degrees | 4.3 units, 2 parameters | profile yes, bootstrap no |
-| chroma exponent | -0.05 | 0.1 units | no |
+| absolute lightness exponent | 0.40 | 34 log-likelihood units | yes, profile and bootstrap |
+| hue trough | amplitude 0.08 at 270 degrees | 2.8 units, 2 parameters | profile barely, bootstrap no |
+| chroma exponent | 0.00 | 0 units | no |
 
 Adopted: the lightness exponent alone, as a gain on the whole distance in `apart2` and
-`recallDistance`. The gain is 1 at the cusp, 1.24 at the top of the gamut and 0.49 at the bottom, so
-the fine threshold runs from 6.5 weighted deltaE near white to 16.5 near black.
+`recallDistance`, on the pair's mean absolute lightness. The gain is 1 at lightness 50, 1.32 at white
+and 0.40 at the floor of 5, so the fine threshold runs from 6 weighted deltaE near white to 20 at the
+floor.
 
-Not adopted: the hue term. It is marginal on its own, and it disappears entirely if absolute
-lightness is used as the coordinate instead of the cusp-relative one - the two correlate at 0.81
-over these rounds and relative wins by only 1.9 units, so the hue trough and the coordinate choice
-are partly the same claim. `calibrate-hue.html` rounds pool, so more of them would settle it.
+The coordinate is the finding of the cusp rounds. The gain was first carried on cusp-relative
+lightness, the coordinate of the range controls, and on the hue and lightness rounds that fit as well
+as absolute does: at one absolute lightness the cusp-relative coordinate makes a blue pair about a
+third easier than a yellow one, and a hue trough centred on blue cancels that at every lightness, so
+the two models predict the same verdicts wherever lightness tracks the cusp. `calibrate-cusp.html`
+crosses four hues the two order oppositely (red 15, yellow 100, cyan 195, blue 285) with absolute
+lightness bands shared by all four, at chroma 11, or 8 for cyan, and its second round holds every
+rung at the threshold. The four hues were marked alike; cusp-relative with its trough trails absolute
+by 6.3 units like for like and by 3.5 with two parameters more.
+
+Not adopted: the hue term. Under absolute lightness it is what is left of the trough - 8 per cent,
+two parameters for 2.8 units, the palette bootstrap includes no effect - and it is on record in the
+fit's output for a later round to promote.
 
 Not adopted, and worth knowing before refitting: the chroma round on its own reports a chroma slope
 of 0.6 that looks decisive. It is its hue and lightness composition. A chroma level reachable at

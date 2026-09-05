@@ -352,12 +352,11 @@ through the same ordered-probit link as the analytic distance, each over sigma a
 
 None came close, so the yardstick is now the analytic formula: pair swap chance from the polar weighted
 distance, a color's error the sum over its pairs, the same as the pages optimize. Baseline of step 18 on it
-at the adopted constants (floor / worst seed): default box 6, 8, 10 colors 98.3 / 98.1, 98.1 / 98.0,
-98.0 / 97.6; narrow box 98.4 / 98.1, 98.1 / 98.0, 97.7 / 96.7. The narrow box still binds at 10 colors, by
-0.3 points of floor. Scores move with the constants, so they compare only within one set of them: at sigma
-3.5 and wC 0.5 the same runs read 1 to 5 points lower, narrow 10 colors most of all. These boxes reach only
-to relative lightness 20, so the lightness exponent barely shows in them; it bites in a box that reaches
-the dark end.
+at the adopted constants (floor / worst seed): default box 6, 8, 10 colors 98.6 / 98.2, 98.2 / 98.0,
+98.1 / 98.0; narrow box 98.8 / 98.2, 98.2 / 98.1, 98.0 / 97.7. The narrow box still binds at 10 colors, by
+0.1 points of floor. Scores move with the constants, so they compare only within one set of them: at sigma
+3.5 and wC 0.5 the same runs read 1 to 5 points lower, narrow 10 colors most of all. These boxes stop at
+lightness 20, so the lightness gain barely shows in them; it bites in a box that reaches the dark end.
 
 Two refinements the verdicts suggested were tested on the analytic model and are not supported at this data
 volume: a hue distance scaled per 60-degree sector gains 2.4 log-likelihood units for six parameters, a
@@ -394,12 +393,34 @@ each hue and level allow. That brought the three predictors to r under 0.07 and 
 | hue trough at 285 degrees | amplitude 0.10 | 4.3 units for 2 parameters | no |
 | chroma exponent | -0.05 | 0.1 units | no |
 
-The hue term is held because it is marginal and because it vanishes under absolute lightness, which the
-data cannot rule out: the two lightness coordinates correlate at 0.81 and relative wins by 1.9 units.
-Adopted: `apart2` and `recallDistance` multiply the distance by the pair's standing in the gamut, which
-costs the generator 20 to 54 per cent more pair evaluations - the stricter metric lowers the floors it can
-reach, so the pushes stall later and the restarts run longer. The lookup itself is amortized: a palette
-evaluates 16 to 31 pairs for every relative lightness it computes, which is why the positions carry it.
+The hue term was held because it was marginal and because it vanished under absolute lightness, which
+these rounds could not rule out: the two lightness coordinates correlate at 0.81 and relative won by 1.9
+units. The gain went in on the cusp-relative coordinate, as `apart2` and `recallDistance` multiplying the
+distance by the pair's standing in the gamut, which cost the generator 20 to 54 per cent more pair
+evaluations - the stricter metric lowers the floors it can reach, so the pushes stall later and the
+restarts run longer.
+
+Two rounds of `data/calibrate-cusp.html` then chose the coordinate. The two models were degenerate by
+construction: at one absolute lightness the cusp-relative gain makes a blue pair a third easier than a
+yellow one, and a trough centred on blue cancels that at every lightness, so any design whose lightness
+tracks the cusp fits both alike. The page crosses four hues the two order oppositely - red and cyan share
+the trough's node and differ in cusp lightness, yellow and cyan share a cusp and sit at its peak and node,
+blue is its centre and the lowest cusp - with absolute lightness bands shared by all four; the second
+round put every rung at the threshold (6, 7, 8) after the first showed the rungs at 4.5 and past 9.5
+carried no information. Under the binary fit the two models sat 1.4 units apart on 300 pairs and 0.1 on
+371; the ordered probit over all three grades, ported from `data/fit.js` and given several starts, put
+absolute with no hue term 3.5 units ahead of cusp-relative with its trough, 6.3 like for like:
+
+| coordinate | hue term | lightness exponent | log-likelihood |
+|---|---|---|---|
+| cusp-relative | trough 0.16 at 285 degrees, 18 units | 0.40 | -221.3 |
+| absolute | none | 0.40 | -217.8 |
+| absolute | trough 0.08 at 270 degrees, 2.8 units | 0.40 | -215.0 |
+
+Adopted: the gain on the pair's mean absolute lightness, one at 50, in `apart2` and `recallDistance`,
+which reads the lightness off the position and needs no cusp lookup. The hue term stays out: 8 per cent,
+the bootstrap includes no effect. Blues and violets get about a third more room against yellows and
+greens at one lightness than the cusp-relative gain gave them.
 
 The ground is the effect the round could not measure. Dark colors that separate cleanly on a dark ground
 collapse on a light one, strongly enough to need no statistics; light colors lose a little on a light ground
@@ -536,6 +557,7 @@ finds the maximum within 0.03 chroma at every hue.
 - `experimental-clamp-refusal.html`: step 15, exact clamp refusal, the copy that became `index.html`.
 - `data/identify.js`, `data/fit.js`, `data/calibrate.html`: the metric and its calibration; see `data/README.md`.
 - `data/calibration-log.json`: the verdicts the constants are fitted to.
-- `data/calibrate-chroma.html`, `data/calibrate-hue.html`, `data/fit_hue.js`, `data/fit_chroma.js`: the position-term
-  rounds; their logs are `data/light-calibration-log.json`, `data/chroma-log.json`, `data/hue-log.json`.
+- `data/calibrate-chroma.html`, `data/calibrate-hue.html`, `data/calibrate-cusp.html`, `data/fit_hue.js`,
+  `data/fit_chroma.js`: the position-term rounds; their logs are `data/light-calibration-log.json`,
+  `data/chroma-log.json`, `data/hue-log.json`, `data/cusp-log.json`, `data/cusp-log-new.json`.
 - `data/calibrate-names.html`, `data/fit_names.js`, `data/naming-verdicts-16px.json`: the naming round.

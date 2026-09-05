@@ -892,25 +892,24 @@ function parseFixedColors(text) {
 const W_L = 0.35;
 const W_C = 0.6;
 // A dark pair needs more distance than the weights alone give it: the calibration puts the fine
-// threshold at 6.5 weighted deltaE near white and 16.5 near black, against 8 at the cusp. Measured
-// over three rounds on the light ground; see data/README.md. The gain is on the whole distance, not
-// on the lightness weight - lightness-stepped and hue-stepped pairs move together with lightness.
+// threshold at 6 weighted deltaE near white and 20 at the floor, against 8 at lightness 50. Measured
+// over five rounds on the light ground; see data/README.md. The gain is on the whole distance, not
+// on the lightness weight - lightness-stepped and hue-stepped pairs move together with lightness -
+// and on absolute lightness, not the cusp-relative coordinate of the range controls: a round built
+// to tell the two apart chose absolute.
 const LIGHTNESS_EXPONENT = 0.4;
+// The lightness at which the gain is one, so the Distinctness scale keeps its meaning there.
+const LIGHTNESS_REFERENCE = 50;
 // Without a floor the gain reaches zero at black, where every pair would read as confusable. The
-// calibration reaches down to 6, so anything under this is extrapolation either way.
+// calibration reaches down to 8, so anything under this is extrapolation either way.
 const LIGHTNESS_FLOOR = 5;
 
-// Where a position stands in its own hue's gamut. Callers keep this alongside the positions rather
-// than deriving it per pair: a palette evaluates sixteen to thirty pairs per position it makes.
-const relativeLightnessOf = p => relativeL(p[0], (Math.atan2(p[2], p[1]) * 180 / Math.PI + 360) % 360);
-const relativeLightnessesOf = pos => pos.map(relativeLightnessOf);
-
 // Weighted squared distance in deltaE (OKLab x100): lightness and radial chroma differences by
-// their weights, the tangential hue difference as is, the pair's standing in the gamut as a gain.
-function apart2(p, q, relLp, relLq) {
+// their weights, the tangential hue difference as is, the pair's mean lightness as a gain.
+function apart2(p, q) {
 	const dL = (p[0] - q[0]) * W_L, dC = Math.hypot(p[1], p[2]) - Math.hypot(q[1], q[2]);
 	const da = p[1] - q[1], db = p[2] - q[2];
-	const gain = (Math.max(LIGHTNESS_FLOOR, (relLp + relLq) / 2) / CUSP_ANCHOR) ** LIGHTNESS_EXPONENT;
+	const gain = (Math.max(LIGHTNESS_FLOOR, (p[0] + q[0]) / 2) / LIGHTNESS_REFERENCE) ** LIGHTNESS_EXPONENT;
 	return (dL * dL + (W_C * W_C - 1) * dC * dC + da * da + db * db) * gain * gain;
 }
 
@@ -966,17 +965,15 @@ const positionsOf = colors => colors.map(color => color.lab.map(v => v * 100));
 function dartStart(rnd, cfg) {
 	const colors = cfg.fixed.slice();
 	const pos = positionsOf(colors);
-	const relL = relativeLightnessesOf(pos);
 	const limit2 = cfg.limit * cfg.limit;
 	for (let i = 0; i < cfg.count; ++i) {
 		let pick = null, clearest = -1;
 		for (let n = 0; n < START_DRAWS && clearest < limit2; ++n) {
 			const draw = samplePoint(rnd, cfg);
 			const at = positionOf(draw);
-			const atRelL = relativeLightnessOf(at);
 			let nearest = Infinity;
 			for (let k = 0; k < pos.length; ++k)
-				nearest = Math.min(nearest, apart2(at, pos[k], atRelL, relL[k]));
+				nearest = Math.min(nearest, apart2(at, pos[k]));
 			if (nearest > clearest) {
 				pick = draw;
 				clearest = nearest;
@@ -985,7 +982,6 @@ function dartStart(rnd, cfg) {
 		const kept = positionOf(pick);
 		colors.push(colorAt(...pick));
 		pos.push(kept);
-		relL.push(relativeLightnessOf(kept));
 	}
 	return colors;
 }
@@ -1045,24 +1041,22 @@ function withinCone(rnd, axis, cfg) {
 function pushApart(rnd, colors, cfg) {
 	colors = colors.slice();
 	const pos = positionsOf(colors);
-	// Kept beside the positions and rewritten wherever one moves, since `apart2` reads it.
-	const relL = relativeLightnessesOf(pos);
 	const rejected = pos.map(() => 0);
 	const heading = pos.map(() => null);
 	// The chance color `i` standing at `at` is recalled as another color, summed over the others.
-	const errorAt = (i, at, atRelL) => {
+	const errorAt = (i, at) => {
 		let error = 0;
 		for (let j = 0; j < pos.length; ++j)
 			if (j !== i)
-				error += swapChance(Math.sqrt(apart2(at, pos[j], atRelL, relL[j])), cfg.sigma);
+				error += swapChance(Math.sqrt(apart2(at, pos[j])), cfg.sigma);
 		return error;
 	};
-	let best = colors.slice(), bestScore = identification(colors, cfg, pos, relL);
+	let best = colors.slice(), bestScore = identification(colors, cfg, pos);
 	for (let n = 0, proposed = true; n < MAX_PUSHES && proposed; ++n) {
 		proposed = false;
 		const shift = pos.map(() => [0, 0, 0]);
 		for (let i = 0; i < pos.length; ++i) {
-			if (colors[i].fixed || errorAt(i, pos[i], relL[i]) <= ERROR_LIMIT)
+			if (colors[i].fixed || errorAt(i, pos[i]) <= ERROR_LIMIT)
 				continue;
 			for (let j = 0; j < pos.length; ++j) {
 				if (j === i)
@@ -1071,7 +1065,7 @@ function pushApart(rnd, colors, cfg) {
 				const between = pos[i].map((v, k) => v - pos[j][k]);
 				const length = Math.hypot(...between);
 				const away = length > 1e-6 ? between.map(v => v / length) : [0, 1, 0];
-				const x = Math.sqrt(apart2(pos[i], pos[j], relL[i], relL[j])) / (2 * cfg.sigma);
+				const x = Math.sqrt(apart2(pos[i], pos[j])) / (2 * cfg.sigma);
 				const weight = Math.exp(-x * x / 2);
 				for (let k = 0; k < 3; ++k)
 					shift[i][k] += away[k] * weight;
@@ -1092,20 +1086,18 @@ function pushApart(rnd, colors, cfg) {
 			const target = pos[i].map((v, k) => v + heading[i][k] * PUSH_STEP);
 			const { lch, clamped } = pointInBox(target[0], target[1], target[2], cfg);
 			const at = positionOf(lch);
-			const atRelL = relativeLightnessOf(at);
 			const color = colorAt(...lch);
 			if ((clamped && !cfg.hull) || !cfg.included[color.cell]
-					|| errorAt(i, at, atRelL) > errorAt(i, pos[i], relL[i])) {
+					|| errorAt(i, at) > errorAt(i, pos[i])) {
 				++rejected[i];
 				heading[i] = null;
 				continue;
 			}
 			colors[i] = color;
 			pos[i] = at;
-			relL[i] = atRelL;
 			rejected[i] = 0;
 		}
-		const score = identification(colors, cfg, pos, relL);
+		const score = identification(colors, cfg, pos);
 		if (score.floor > bestScore.floor || (score.floor === bestScore.floor && score.apart > bestScore.apart)) {
 			best = colors.slice();
 			bestScore = score;
@@ -1121,7 +1113,7 @@ function pushApart(rnd, colors, cfg) {
 // attempts against each other. Pairs of two fixed colors are skipped: generation cannot move
 // either, so such a pair must neither rank an attempt nor be pointed at as the offender.
 // A caller stepping the colors passes the positions it already keeps for them.
-function identification(colors, cfg, pos = positionsOf(colors), relL = relativeLightnessesOf(pos)) {
+function identification(colors, cfg, pos = positionsOf(colors)) {
 	const error = colors.map(() => 0);
 	let pair = null, apart = Infinity, confused = -1;
 	for (let i = 0; i < colors.length; ++i)
@@ -1129,7 +1121,7 @@ function identification(colors, cfg, pos = positionsOf(colors), relL = relativeL
 			if (colors[i].fixed && colors[j].fixed)
 				continue;
 
-			const d = Math.sqrt(apart2(pos[i], pos[j], relL[i], relL[j]));
+			const d = Math.sqrt(apart2(pos[i], pos[j]));
 			const chance = swapChance(d, cfg.sigma);
 			error[i] += chance;
 			error[j] += chance;
@@ -2382,15 +2374,15 @@ function pairMesh(pair) {
 }
 
 // The recall metric's reach around a color, centred on the origin: a unit sphere's vertices walked
-// out along their directions until `apart2`, at the color's own gain, reads `radius` deltaE. The
+// out along their directions until `apart2` reads `radius` deltaE. The
 // metric grows monotonically along a ray, so each crossing brackets and bisects.
 function haloGeometry(color, radius) {
 	const geometry = new THREE.SphereGeometry(1, 24, 16);
-	const p = color.lab.map(v => v * 100), relL = relativeLightnessOf(p);
+	const p = color.lab.map(v => v * 100);
 	const target = radius * radius, vertices = geometry.attributes.position;
 	for (let i = 0; i < vertices.count; ++i) {
 		const dir = [vertices.getY(i), vertices.getX(i), vertices.getZ(i)]; // scene axes back to L, a, b
-		const reach = t => apart2(p, p.map((x, k) => x + t * dir[k]), relL, relL);
+		const reach = t => apart2(p, p.map((x, k) => x + t * dir[k]));
 		let below = 0, above = radius;
 		while (reach(above) < target)
 			above *= 2;

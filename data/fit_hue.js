@@ -5,14 +5,19 @@
 //
 // The model is a gain on the weighted distance, the form `apart2` would carry:
 //
-//     effective = distance * (1 - amplitude * cos(hue - centre)) * (relativeL / 50) ^ qL * (chroma / CHROMA_REF) ^ qC
+//     effective = distance * (1 - amplitude * cos(hue - centre)) * (lightness / 50) ^ qL * (chroma / CHROMA_REF) ^ qC
 //
-// with one threshold, softness and lapse shared. A gain above one means the pair reads further
+// over the three verdict grades as data/fit.js reads them - too close below a threshold, marginal up
+// to a second, fine above, one softness, a lapse - shared across the terms. A gain above one means the pair reads further
 // apart than the metric says, so that region needs less separation; below one, more. Only the
 // shape of the hue term is identifiable against the threshold, not its level, which is why it is
 // written as a trough about one rather than as a free gain per sector.
 //
-//     node data/fit_hue.js hue-log.json [more.json ...]
+//     node data/fit_hue.js [--relative] hue-log.json [more.json ...]
+//
+// --relative measures the lightness term against the cusp-relative coordinate instead of absolute L,
+// which the metric carried until data/calibrate-cusp.html told the two apart: on the hue rounds alone
+// they fit alike, a trough centred on blue standing in for the coordinate.
 
 "use strict";
 const fs = require("fs");
@@ -31,6 +36,8 @@ const AMPLITUDES = Array.from({ length: 25 }, (_, i) => i * 0.02);
 const CENTRES = Array.from({ length: 24 }, (_, i) => i * 15);
 const EXPONENTS = Array.from({ length: 33 }, (_, i) => -0.8 + i * 0.05);
 const THRESHOLDS = Array.from({ length: 41 }, (_, i) => 2 + i * 0.5);
+// Width of the marginal band above the threshold.
+const BANDS = Array.from({ length: 12 }, (_, i) => 0.5 + i * 0.5);
 const SOFTNESS = [1, 1.5, 2, 3, 4, 6];
 const LAPSES = [0.005, 0.02, 0.05, 0.1];
 const PASSES = 12;
@@ -48,7 +55,8 @@ function erfc(x) {
 const normalCdf = x => 0.5 * erfc(-x / Math.SQRT2);
 const hueOf = lab => (Math.atan2(lab[2], lab[1]) * 180 / Math.PI + 360) % 360;
 
-const logs = process.argv.slice(2).map(file => JSON.parse(fs.readFileSync(file, "utf8")));
+const ABSOLUTE = !process.argv.includes("--relative"), COORDINATE = ABSOLUTE ? "absolute" : "relative";
+const logs = process.argv.slice(2).filter(arg => arg !== "--relative").map(file => JSON.parse(fs.readFileSync(file, "utf8")));
 // Any log carrying probe pairs will do, not only calibrate-hue.html's: a probe that records no
 // sector gets one from its own hue, and the model is a gain on the distance whatever axis the pair
 // was stepped along. The lightness round's log pools in on those terms, which is most of the
@@ -69,18 +77,19 @@ for (const [index, session] of sessions.entries()) {
 	sizes.add(session.swatchPx);
 	for (const probe of session.probes) {
 		const a = labs[probe.a], b = labs[probe.b];
-		const hue = hueOf(a);
+		const hue = hueOf(a), verdict = grade.get(pairKey(probe.a, probe.b)) ?? 2;
 		probes.push({ session: index, sector: probe.sector ?? Math.floor(hue / (360 / SECTORS)), level: probe.level,
 			axis: probe.axis || "H", asked: probe.distance,
 			distance: weightedDistance(a, b, W_L, W_C),
-			relL: Math.max(LIGHTNESS_FLOOR, (rel[probe.a][0] + rel[probe.b][0]) / 2),
+			relL: Math.max(LIGHTNESS_FLOOR, ABSOLUTE ? (a[0] + b[0]) / 2 : (rel[probe.a][0] + rel[probe.b][0]) / 2),
 			chroma: Math.max(CHROMA_FLOOR, (Math.hypot(a[1], a[2]) + Math.hypot(b[1], b[2])) / 2),
-			hue, marked: (grade.get(pairKey(probe.a, probe.b)) ?? 2) < 2 });
+			hue, grade: verdict, marked: verdict < 2 });
 	}
 }
 
-console.log("%s palettes, %s probe pairs, %s marked; swatch %s px, ground %s",
-	sessions.length, probes.length, probes.filter(p => p.marked).length, [...sizes].join("/"), [...grounds].join("/"));
+console.log("%s palettes, %s probe pairs: %s too close, %s marginal; swatch %s px, ground %s; lightness coordinate %s",
+	sessions.length, probes.length, probes.filter(p => p.grade === 0).length, probes.filter(p => p.grade === 1).length,
+	[...sizes].join("/"), [...grounds].join("/"), ABSOLUTE ? "absolute" : "cusp-relative");
 if (sizes.size > 1 || grounds.size > 1)
 	console.log("warning: mixed swatch sizes or grounds fit one set of constants");
 const axes = [...new Set(probes.map(p => p.axis))].sort();
@@ -109,18 +118,24 @@ function correlation(f, g) {
 }
 const cool = p => p.sector >= 4 ? 1 : 0;
 console.log("\nhow far the predictors move together (near zero is what makes the fit separable):");
-console.log("  cool sector vs relative lightness  r = %s", correlation(cool, p => p.relL).toFixed(3));
+console.log("  cool sector vs %s lightness  r = %s", COORDINATE, correlation(cool, p => p.relL).toFixed(3));
 console.log("  cool sector vs chroma              r = %s", correlation(cool, p => p.chroma).toFixed(3));
-console.log("  relative lightness vs chroma       r = %s", correlation(p => p.relL, p => p.chroma).toFixed(3));
+console.log("  %s lightness vs chroma       r = %s", COORDINATE, correlation(p => p.relL, p => p.chroma).toFixed(3));
 
-const model = () => ({ amplitude: 0, centre: 0, qL: 0, qC: 0, threshold: 8, softness: 2, lapse: 0.02 });
+const model = () => ({ amplitude: 0, centre: 0, qL: 0, qC: 0, threshold: 7, band: 2, softness: 2, lapse: 0.02 });
 const hueGain = (m, hue) => 1 - m.amplitude * Math.cos((hue - m.centre) * Math.PI / 180);
 const gainOf = (m, p) => hueGain(m, p.hue) * (p.relL / LIGHTNESS_REF) ** m.qL * (p.chroma / CHROMA_REF) ** m.qC;
+// Chance of each grade at an effective distance: too close below the threshold, fine past the band
+// above it, marginal between, each boundary blurred by the softness.
+function gradeChances(m, d) {
+	const close = normalCdf((m.threshold - d) / m.softness), fine = normalCdf((d - m.threshold - m.band) / m.softness);
+	return [close, Math.max(0, 1 - close - fine), fine];
+}
 function logLikelihood(m, sample) {
 	let total = 0;
 	for (const p of sample) {
-		const chance = m.lapse / 2 + (1 - m.lapse) * normalCdf((m.threshold - p.distance * gainOf(m, p)) / m.softness);
-		total += Math.log(Math.max(1e-12, p.marked ? chance : 1 - chance));
+		const chance = gradeChances(m, p.distance * gainOf(m, p))[p.grade];
+		total += Math.log(Math.max(1e-12, (1 - m.lapse) * chance + m.lapse / GRADES.length));
 	}
 	return total;
 }
@@ -148,6 +163,7 @@ function fit(sample, pin = {}, start = model()) {
 	let last = -Infinity;
 	for (let pass = 0; pass < PASSES; ++pass) {
 		sweep("threshold", THRESHOLDS, v => m.threshold = v);
+		sweep("band", BANDS, v => m.band = v);
 		sweep("softness", SOFTNESS, v => m.softness = v);
 		sweep("lapse", LAPSES, v => m.lapse = v);
 		sweep("qL", EXPONENTS, v => m.qL = v);
@@ -165,16 +181,19 @@ function fit(sample, pin = {}, start = model()) {
 
 const pinnedFit = (sample, key, value) => fit(sample, { [key]: value }, best);
 
-const best = fit(probes);
+// Coordinate ascent settles in the nearest optimum, so the free fit is the best of several starts:
+// from the flat model, from the lightness effect alone, and from the effect with the blue trough.
+const STARTS = [model(), { ...model(), qL: 0.4 }, { ...model(), qL: 0.4, amplitude: 0.1, centre: 285 }];
+const best = STARTS.map(start => fit(probes, {}, start)).reduce((a, b) => b.ll > a.ll ? b : a);
 console.log("\nfitted gain on the distance (above one: reads further apart than the metric says):");
 console.log("  hue trough: amplitude %s, deepest at %s degrees", best.amplitude.toFixed(2), best.centre);
 for (let sector = 0; sector < SECTORS; ++sector)
 	console.log("    sector %s (%s-%s)  gain %s", sector, String(sector * 60).padStart(3), String(sector * 60 + 60).padStart(3),
 		hueGain(best, sector * 60 + 30).toFixed(2));
-console.log("  relative lightness exponent  %s", best.qL.toFixed(2));
+console.log("  %s lightness exponent  %s", COORDINATE, best.qL.toFixed(2));
 console.log("  chroma exponent              %s", best.qC.toFixed(2));
-console.log("  threshold %s, softness %s, lapse %s, log-likelihood %s",
-	best.threshold, best.softness, best.lapse, best.ll.toFixed(1));
+console.log("  too close below %s, fine above %s, softness %s, lapse %s, log-likelihood %s",
+	best.threshold, best.threshold + best.band, best.softness, best.lapse, best.ll.toFixed(1));
 
 // What each term earns: the same fit with that term held at no effect.
 console.log("\nwhat each term earns, refitting everything else without it:");

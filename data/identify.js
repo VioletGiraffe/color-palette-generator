@@ -17,9 +17,9 @@
 //     node data/identify.js --hex "#rrggbb ..."     one palette
 //     node data/identify.js --file palettes.txt     one palette per line, // comments
 //
-// The identification constants are measured with data/calibrate.html and data/fit.js, where a pair's
-// standing in the gamut counts for with data/calibrate-hue.html and data/fit_hue.js, and the naming ones
-// with data/calibrate-names.html and data/fit_names.js; see data/README.md.
+// The identification constants are measured with data/calibrate.html and data/fit.js, the lightness
+// gain with the light-ground rounds (data/calibrate-hue.html, data/calibrate-cusp.html) and data/fit_hue.js,
+// and the naming ones with data/calibrate-names.html and data/fit_names.js; see data/README.md.
 
 "use strict";
 const fs = require("fs");
@@ -32,13 +32,15 @@ const path = require("path");
 const SIGMA = 3;
 const W_L = 0.35;
 const W_C = 0.6;
-// A dark pair needs more distance than the weights alone give it, as a gain on the whole distance.
-// Fitted by data/fit_hue.js to data/light-calibration-log.json and data/hue-log.json, which the
-// page's `apart2` carries too. The gain is one at the cusp, 1.24 at the top of the gamut and 0.49
-// at the bottom, so the fine threshold runs from 6.5 weighted deltaE near white to 16.5 near black.
+// A dark pair needs more distance than the weights alone give it, as a gain on the whole distance
+// by the pair's mean lightness. Fitted by data/fit_hue.js to the light-ground rounds, which the
+// page's `apart2` carries too. The gain is one at lightness 50, 1.32 at white and 0.40 at the floor,
+// so the fine threshold runs from 6 weighted deltaE near white to 20 at the floor. Absolute
+// lightness, not the cusp-relative coordinate: data/calibrate-cusp.html told the two apart.
 const LIGHTNESS_EXPONENT = 0.4;
+const LIGHTNESS_REFERENCE = 50;
 // Without a floor the gain reaches zero at black, where every pair would read as confusable. The
-// calibration reaches down to 6, so anything under this is extrapolation either way.
+// calibration reaches down to 8, so anything under this is extrapolation either way.
 const LIGHTNESS_FLOOR = 5;
 const CALIBRATED_PX = 16;
 
@@ -259,10 +261,10 @@ function weightedDistance(p, q, wL, wC) {
 	return Math.sqrt(dL * dL + wC * wC * dC * dC + Math.max(0, chord2 - dC * dC));
 }
 
-// How far apart a pair reads, which is the weighted distance times the gain for where the pair
-// stands in its hues' gamuts. This is the metric the generator optimizes and this file scores.
-const recallDistance = (p, q, relLp, relLq, wL, wC) => weightedDistance(p, q, wL, wC)
-	* (Math.max(LIGHTNESS_FLOOR, (relLp + relLq) / 2) / CUSP_ANCHOR) ** LIGHTNESS_EXPONENT;
+// How far apart a pair reads: the weighted distance times the gain for the pair's lightness. This
+// is the metric the generator optimizes and this file scores.
+const recallDistance = (p, q, wL, wC) => weightedDistance(p, q, wL, wC)
+	* (Math.max(LIGHTNESS_FLOOR, (p[0] + q[0]) / 2) / LIGHTNESS_REFERENCE) ** LIGHTNESS_EXPONENT;
 
 // Chance a recall of one color of a pair lands nearer the other: noise of width sigma along the
 // pair's line, past the midpoint.
@@ -273,13 +275,11 @@ const swapChance = (distance, sigma) => 0.5 * erfc(distance / (2 * sigma) / Math
 function confusionMatrix(labs, sigma, wL, wC) {
 	const n = labs.length;
 	const matrix = Array.from({ length: n }, () => new Float64Array(n));
-	// Once per color rather than once per pair: the cusp table is the costly part of the gain.
-	const relL = labs.map(lab => relativePosition(lab)[0]);
 	for (let i = 0; i < n; ++i) {
 		let error = 0;
 		for (let j = 0; j < n; ++j)
 			if (j !== i)
-				error += matrix[i][j] = swapChance(recallDistance(labs[i], labs[j], relL[i], relL[j], wL, wC), sigma);
+				error += matrix[i][j] = swapChance(recallDistance(labs[i], labs[j], wL, wC), sigma);
 		matrix[i][i] = Math.max(0, 1 - error);
 	}
 	return matrix;
