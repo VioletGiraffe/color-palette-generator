@@ -399,7 +399,7 @@
 <div class="panel" id="gamut">
 	<h2>3D gamut</h2>
 	<div class="plane" id="gamut-3d"></div>
-	<div class="hint">The sRGB gamut in OKLab, lightness up. Solid body: what the selected ranges allow. Cones: fixed colors. Amber line: hardest pair. Halos reach half the Distinctness width, so two meeting mark a pair one noise width apart. Drag to rotate, double-click to reset.</div>
+	<div class="hint">The sRGB gamut in OKLab, lightness up. Solid body: what the selected ranges allow. Cones: fixed colors. Amber line: hardest pair. Halos reach half the distance the generator keeps colors apart at this Distinctness, so two meeting mark a pair right at its limit; they stand tall since lightness counts for less, and grow toward black. Drag to rotate, double-click to reset.</div>
 </div>
 
 <div class="panel" id="side">
@@ -2381,14 +2381,37 @@ function pairMesh(pair) {
 	return mesh;
 }
 
-// Half the Distinctness distance around every color, so two zones meet exactly where the pair
-// sits `scale` deltaE apart. Annotations like the pair line: depth testing off, drawn between
-// the shell and the marker ghosts.
+// The recall metric's reach around a color, centred on the origin: a unit sphere's vertices walked
+// out along their directions until `apart2`, at the color's own gain, reads `radius` deltaE. The
+// metric grows monotonically along a ray, so each crossing brackets and bisects.
+function haloGeometry(color, radius) {
+	const geometry = new THREE.SphereGeometry(1, 24, 16);
+	const p = color.lab.map(v => v * 100), relL = relativeLightnessOf(p);
+	const target = radius * radius, vertices = geometry.attributes.position;
+	for (let i = 0; i < vertices.count; ++i) {
+		const dir = [vertices.getY(i), vertices.getX(i), vertices.getZ(i)]; // scene axes back to L, a, b
+		const reach = t => apart2(p, p.map((x, k) => x + t * dir[k]), relL, relL);
+		let below = 0, above = radius;
+		while (reach(above) < target)
+			above *= 2;
+		for (let n = 0; n < 20; ++n) {
+			const mid = (below + above) / 2;
+			if (reach(mid) < target) below = mid; else above = mid;
+		}
+		const reachInScene = above / 100;
+		vertices.setXYZ(i, vertices.getX(i) * reachInScene, vertices.getY(i) * reachInScene, vertices.getZ(i) * reachInScene);
+	}
+	return geometry;
+}
+
+// Half the generator's limit distance around every color, so two zones meet where the pair sits
+// at the limit. Annotations like the pair line: depth testing off, drawn between the shell and the
+// marker ghosts.
 function zoneMeshes(colors, radius) {
 	return colors.map(color => {
-		const zone = new THREE.Mesh(new THREE.SphereGeometry(radius, 24, 16),
+		const zone = new THREE.Mesh(haloGeometry(color, radius),
 			new THREE.MeshBasicMaterial({
-				color: color.hex, transparent: true, opacity: 0.16, depthTest: false, depthWrite: false }));
+				color: color.hex, transparent: true, opacity: 0.3, depthTest: false, depthWrite: false }));
 		zone.position.set(...toScene(color.lab));
 		zone.renderOrder = 1;
 		return zone;
@@ -2406,8 +2429,7 @@ window.update3D = (cfg, colors, pair) => {
 	if (line)
 		pairGroup.add(line);
 	clearGroup(zoneGroup);
-	// The scene is in OKLab units, the slider in deltaE, a hundred times larger.
-	const radius = cfg.scale / 200;
+	const radius = limitDistance(cfg.scale) / 2;
 	if (radius > 0 && colors.length)
 		zoneGroup.add(...zoneMeshes(colors, radius));
 };
