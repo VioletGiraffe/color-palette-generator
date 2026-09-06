@@ -1852,32 +1852,36 @@ function redrawLastResult() {
 	render(lastResult, lastCfg);
 }
 
-let passScheduled = false, generatePending = false;
+// A control marks the result stale and nothing more; the timer below does the passes. A palette
+// costs up to ~200ms at the top of the ranges, so a pass per event, or even per frame, leaves a
+// dragged slider no time to follow the cursor. Between passes it does.
+// The interval sits just above one pass, where the thumb tracks and the palette still keeps up.
+// A pass arms the next tick only when it finishes, so one longer than the interval cannot queue
+// the tick behind it. Load and the Generate button call `run` directly and wait for none of this.
+const PASS_INTERVAL = 150;
+let passTimer = 0, passPending = false, generatePending = false;
 
-// At most one pass outstanding, fired on the next animation frame: a drag emits events far
-// faster than the ~200ms a palette costs at the top of the ranges, and the frame boundary lets
-// the browser paint between passes.
-// A generate asked for in the same frame as a redraw wins: it ends in one.
-// A hidden tab gets no frames, so there a timer stands in: the work must not strand until the
-// tab is shown.
+// A generate asked for before the tick wins over a redraw: it ends in one.
+function passTick() {
+	if (!passPending) {
+		passTimer = 0;
+		return;
+	}
+	const generating = generatePending;
+	passPending = generatePending = false;
+	if (generating)
+		run();
+	else
+		redrawLastResult();
+	passTimer = setTimeout(passTick, PASS_INTERVAL);
+}
+
 function schedulePass(full) {
 	generatePending ||= full;
-	if (passScheduled)
-		return;
-	passScheduled = true;
-	const fire = () => {
-		passScheduled = false;
-		const generating = generatePending;
-		generatePending = false;
-		if (generating)
-			run();
-		else
-			redrawLastResult();
-	};
-	if (document.hidden)
-		setTimeout(fire, 0);
-	else
-		requestAnimationFrame(fire);
+	passPending = true;
+	// Zero is never a timer id, so it marks the idle timer a tick with nothing to do left behind.
+	if (!passTimer)
+		passTimer = setTimeout(passTick, PASS_INTERVAL);
 }
 
 function scheduleRun() { schedulePass(true); }
