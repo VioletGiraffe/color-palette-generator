@@ -357,15 +357,10 @@
 	</div>
 
 	<div class="plane" id="skin-plane"><canvas id="skin-canvas"></canvas></div>
-	<div class="hint">Hue across, lightness up, each point at the most vivid chroma the ranges allow: the outside of the selected region. Hatching is outside the hue or lightness range, or where the chroma minimum leaves nothing. Dots are the generated colors, triangles the fixed ones.</div>
+	<div class="hint">Hue across, lightness up, each point at the most vivid chroma the ranges allow: the outside of the selected region. Lightness here is plain black to white, so the band the range allows rises and falls with each hue's peak. Hatching is outside the hue or lightness range, or where the chroma minimum leaves nothing. Dots are the generated colors, triangles the fixed ones.</div>
 
 	<div class="plane" id="hs-plane"><canvas id="hs-canvas"></canvas></div>
-	<div class="bar" style="margin-top: 8px">
-		<label for="hs-l" style="font-size: 12px; color: var(--ink-dim)">Chart lightness</label>
-		<input type="range" id="hs-l" min="0" max="100" step="0.5" value="50" style="flex: 1">
-		<span style="font-size: 12px; color: var(--ink-dim)" id="hs-l-value"></span>
-	</div>
-	<div class="hint">Hue across, chroma up, at the chart lightness. Blank where sRGB has no such color; hatching is outside the selected ranges. Dots are the generated colors, triangles the fixed ones.</div>
+	<div class="hint">Hue across, chroma up. Each hue is drawn at the lightness within the range that makes it most vivid, so the top edge is the most chroma the ranges allow at that hue. Blank above it: no lightness in the range reaches that far. Hatching is outside the hue or chroma range. Dots are the generated colors, triangles the fixed ones.</div>
 
 	<hr>
 
@@ -1265,18 +1260,20 @@ function drawMarker(ctx, x, y, color) {
 	ctx.stroke();
 }
 
-// Hue across, chroma up to CHROMA_MAX, at one lightness; pixels sRGB cannot show are left transparent.
+// Hue across, chroma up to CHROMA_MAX, at one cusp-relative lightness, so every column is drawn at
+// its own absolute lightness; pixels sRGB cannot show are left transparent.
+// The lightness bound is not hatched: the caller picks a lightness the range allows, so every pixel
+// is already inside it.
 // The mask is per-pixel because a wrapped hue range is two segments, which overlay bands would
 // have to cross, doubling the hatch where they met.
-function hcField(w, h, lightness, cfg) {
+function hcField(w, h, relative, cfg) {
 	const image = new ImageData(w, h);
 	const data = image.data;
 
 	for (let x = 0; x < w; ++x) {
 		const hue = x / w * 360;
 		const inHue = hueInRange(hue, cfg.hMin, cfg.hMax);
-		// The one lightness stands in a different place in every hue's range, so this varies by column.
-		const inL = withinLightness(lightness, hue, cfg);
+		const lightness = absoluteL(relative, hue);
 
 		for (let y = 0; y < h; ++y) {
 			const C = CHROMA_MAX * (1 - y / (h - 1));
@@ -1286,7 +1283,7 @@ function hcField(w, h, lightness, cfg) {
 			let r = rgb[0] * 255, g = rgb[1] * 255, b = rgb[2] * 255;
 
 			// Same hatch as the CSS masks: 5px of black at 70%, then 5px of white at 32%.
-			if (!inL || !inHue || C < cfg.cMin || C > cfg.cMax) {
+			if (!inHue || C < cfg.cMin || C > cfg.cMax) {
 				if ((x + y) % 10 < 5) {
 					r *= .3; g *= .3; b *= .3;
 				} else {
@@ -1399,9 +1396,10 @@ function drawHSPlane(cfg, colors) {
 	const canvas = sizedCanvas("hs-canvas");
 	if (canvas.width === 0)
 		return;
-	const level = +$("hs-l").value;
-	$("hs-l-value").textContent = Math.round(level);
-	hsDraw = { canvas, colors, image: hcField(canvas.width, canvas.height, level, cfg),
+	// The most vivid lightness the range allows: the cusp where the range covers it, its nearer edge
+	// otherwise. Chroma over lightness has a single peak, so this column reaches the furthest of any.
+	const relative = Math.min(cfg.lMax, Math.max(cfg.lMin, CUSP_ANCHOR));
+	hsDraw = { canvas, colors, image: hcField(canvas.width, canvas.height, relative, cfg),
 		place: (color, c) => ({ x: color.lch[2] / 360 * c.width, y: (1 - color.lch[1] / CHROMA_MAX) * (c.height - 1) }) };
 	paintChart(hsDraw);
 }
@@ -1751,7 +1749,6 @@ function applyStateString(text) {
 	// Assigning a select's value fires no change event, so the backdrop is applied by hand.
 	applyBackdrop(currentBackdrop());
 	applyNameTable(nameTableFrom(parsed));
-	recentreChartL();
 	run();
 	return true;
 }
@@ -1859,28 +1856,6 @@ function scheduleRedraw() { schedulePass(false); }
 
 for (const id of [...STATE_IDS, "fixed-colors", "push-min", "push-max"])
 	$(id).addEventListener("input", () => { refreshLabels(); scheduleRun(); });
-
-// The chart is a slice at one absolute lightness, so the range's middle is read at the middle of
-// the hue range: no single absolute lightness is the middle of the range at every hue.
-const recentreChartL = () => {
-	const cfg = readConfig();
-	const middle = (cfg.hMin + hueSpan(cfg.hMin, cfg.hMax) / 2) % 360;
-	$("hs-l").value = absoluteL((cfg.lMin + cfg.lMax) / 2, middle);
-};
-for (const id of ["l-min", "l-max"])
-	$(id).addEventListener("input", recentreChartL);
-
-// The chart lightness is a view control: it redraws its chart from what is already generated, at most once a frame.
-function redrawOnInput(id, redraw) {
-	let scheduled = false;
-	$(id).addEventListener("input", () => {
-		if (scheduled)
-			return;
-		scheduled = true;
-		requestAnimationFrame(() => { scheduled = false; redraw(); });
-	});
-}
-redrawOnInput("hs-l", () => drawHSPlane(readConfig(), palette));
 
 // Sorting is settled in render, so the palette itself is unchanged.
 $("sort").addEventListener("change", scheduleRedraw);
