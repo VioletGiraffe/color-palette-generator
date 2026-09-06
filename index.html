@@ -307,15 +307,18 @@
 		<div class="plane" id="range-plane"><canvas id="range-canvas"></canvas></div>
 		<div class="hint" style="margin: 0 0 12px">Hue across, lightness up, each point at the most vivid chroma the ranges allow: the same chart as under the palette.</div>
 
-		<div class="range-pair" style="grid-template-columns: auto 1fr 1fr; gap: 8px 10px; align-items: center; margin-bottom: 0">
-			<span>Chroma</span>
-			<label class="end"><span class="edge">min</span><input type="number" id="c-min" min="0" max="32.5" step="0.1" value="5"></label>
-			<label class="end"><span class="edge">max</span><input type="number" id="c-max" min="0" max="32.5" step="0.1" value="32.5"></label>
-			<span>Lightness</span>
-			<label class="end"><span class="edge">min</span><input type="number" id="l-min" min="0" max="100" step="0.5" value="20"></label>
-			<label class="end"><span class="edge">max</span><input type="number" id="l-max" min="0" max="100" step="0.5" value="60"></label>
+		<div class="range-pair">
+			<div class="caption"><span>Chroma</span><span class="value" id="c-value"></span></div>
+			<label class="end"><span class="edge">min</span><input type="range" id="c-min" min="0" max="100" value="20"></label>
+			<label class="end"><input type="range" id="c-max" min="0" max="100" value="100"><span class="edge">max</span></label>
 		</div>
-		<div class="hint" style="margin: 8px 0 0">Lightness is relative to each hue's own peak: 50 is the most vivid sRGB reaches at that hue, 0 black and 100 white. Yellow peaks near absolute L 97 and blue near 45, so an absolute range would clip the one and wash out the other.</div>
+
+		<div class="range-pair" style="margin-bottom: 0">
+			<div class="caption"><span>Lightness</span><span class="value" id="l-value"></span></div>
+			<label class="end"><span class="edge">min</span><input type="range" id="l-min" min="0" max="100" value="20"></label>
+			<label class="end"><input type="range" id="l-max" min="0" max="100" value="60"><span class="edge">max</span></label>
+		</div>
+		<div class="hint" style="margin: 8px 0 0">Both are relative to each hue's own peak. Lightness: 50 is the most vivid sRGB reaches at that hue, 0 black and 100 white. Yellow peaks near absolute L 97 and blue near 45, so an absolute range would clip the one and wash out the other. Chroma: 100 is all the hue has, so one setting asks the same vividness everywhere - teal peaks at absolute 14.5 and magenta at 32.2, and an absolute range would drop teal while barely touching magenta.</div>
 	</div>
 
 	<hr>
@@ -360,7 +363,7 @@
 	<div class="hint">Hue across, lightness up, each point at the most vivid chroma the ranges allow: the outside of the selected region. Lightness here is plain black to white, so the band the range allows rises and falls with each hue's peak. Hatching is outside the hue or lightness range, or where the chroma minimum leaves nothing. Dots are the generated colors, triangles the fixed ones.</div>
 
 	<div class="plane" id="hc-plane"><canvas id="hc-canvas"></canvas></div>
-	<div class="hint">Hue across, chroma up. Each hue is drawn at the lightness within the range that makes it most vivid, so the top edge is the most chroma the ranges allow at that hue. Blank above it: no lightness in the range reaches that far. Hatching is outside the hue or chroma range. Dots are the generated colors, triangles the fixed ones.</div>
+	<div class="hint">Hue across, chroma up. Each hue is drawn at the lightness within the range that makes it most vivid, so the top edge is the most chroma the ranges allow at that hue. Blank above it: no lightness in the range reaches that far. Hatching is outside the hue or chroma range; chroma here is absolute, so the band the range allows rises and falls with each hue's peak. Dots are the generated colors, triangles the fixed ones.</div>
 
 	<hr>
 
@@ -634,14 +637,16 @@ function cuspTable() {
 	if (!cuspSamples) {
 		const hues = Array.from({ length: Math.round(360 / CUSP_STEP) }, (_, n) => n * CUSP_STEP)
 			.concat(CUSP_CORNER_HUES).sort((a, b) => a - b);
-		cuspSamples = { hues, light: hues.map(searchCuspLightness) };
+		const light = hues.map(searchCuspLightness);
+		cuspSamples = { hues, light, chroma: hues.map((h, n) => gamutChroma(light[n], h)) };
 	}
 	return cuspSamples;
 }
 
-// The cusp lightness at any hue, straight between the samples either side of it.
-function cuspLightness(h) {
-	const { hues, light } = cuspTable();
+// One cusp sample at any hue, straight between the samples either side of it.
+function cuspValue(h, key) {
+	const table = cuspTable();
+	const hues = table.hues, samples = table[key];
 	const hue = ((h % 360) + 360) % 360;
 	// The first sample is hue 0, so the search never lands before it and `before` stays in range.
 	let lo = 0, hi = hues.length;
@@ -656,8 +661,11 @@ function cuspLightness(h) {
 	const before = lo - 1, after = lo % hues.length;
 	const start = hues[before], end = hues[after] + (after === 0 ? 360 : 0);
 	const within = end > start ? (hue - start) / (end - start) : 0;
-	return light[before] * (1 - within) + light[after] * within;
+	return samples[before] * (1 - within) + samples[after] * within;
 }
+
+const cuspLightness = h => cuspValue(h, "light");
+const cuspChroma = h => cuspValue(h, "chroma");
 
 // The lightness range is stated relative to the hue's cusp, not in absolute OKLCh lightness: the
 // cusp sits at CUSP_ANCHOR at every hue, 0 is black and 100 is white. A range therefore selects the
@@ -687,6 +695,15 @@ const withinLightness = (L, h, cfg) => {
 	const relative = relativeL(L, h);
 	return relative >= cfg.lMin && relative <= cfg.lMax;
 };
+
+// The chroma range is stated relative to the hue's cusp too, where 100 is the most chroma sRGB
+// shows at that hue and 0 is neutral. Cusp chroma runs from 14.5 at teal to 32.2 at magenta, so an
+// absolute range asks for the whole gamut at the first hue and its top half at the second, and a
+// floor above 14.5 drops teal entirely.
+// A fraction of the cusp, not of the reach at the point's own lightness as data/identify.js takes
+// it: only the cusp makes one number mean the same vividness at every hue.
+const absoluteC = (relative, h) => relative / 100 * cuspChroma(h);
+const relativeC = (C, h) => C / cuspChroma(h) * 100;
 
 // ---------- color naming ----------
 
@@ -799,18 +816,18 @@ const usableLch = (L, C, h, cfg) => showsLch(L, C, h) && cfg.included[cellOf(okl
 // the sector's outer arc is not thinned, and unusable draws rejected. A box usable almost nowhere -
 // high chroma at an extreme lightness - accepts rarely, so the tries are capped and the last draw
 // stands, its chroma pulled into the gamut.
-// The hue is drawn first: the lightness bounds are relative to its cusp, and drawing evenly between
-// them in absolute lightness is what keeps the draw uniform over the volume.
+// The hue is drawn first: both the lightness and the chroma bounds are relative to its cusp, and
+// drawing evenly between them in absolute units is what keeps the draw uniform over the volume.
 const UNIFORM_TRIES = 256;
 
 function sampleLch(rnd, cfg) {
 	const span = hueSpan(cfg.hMin, cfg.hMax);
-	const c2Min = cfg.cMin * cfg.cMin, c2Max = cfg.cMax * cfg.cMax;
 	let L = 0, C = 0, h = 0;
 	for (let n = 0; n < UNIFORM_TRIES; ++n) {
 		h = (cfg.hMin + rnd() * span) % 360;
 		const low = absoluteL(cfg.lMin, h), high = absoluteL(cfg.lMax, h);
 		L = low + rnd() * (high - low);
+		const c2Min = absoluteC(cfg.cMin, h) ** 2, c2Max = absoluteC(cfg.cMax, h) ** 2;
 		C = Math.sqrt(c2Min + rnd() * (c2Max - c2Min));
 		if (usableLch(L, C, h, cfg))
 			return [L, C, h];
@@ -820,11 +837,11 @@ function sampleLch(rnd, cfg) {
 
 // The box on a grid: the centres of its usable cells, and the fraction of all cells they are. A box
 // below SPARSE_FRACTION is sampled from its cells (see sampleLch); at zero it is empty.
-// A centre carries its lightness relative to the cusp, the coordinate the range is stated in, so a
-// cell is the same size at every hue and a jitter within one cannot leave the range.
+// A centre carries its lightness and chroma relative to the cusp, the coordinates the ranges are
+// stated in, so a cell is the same size at every hue and a jitter within one cannot leave the range.
 const CELL_STEPS = { L: 25, C: 25, h: 90 };
 const SPARSE_FRACTION = 1 / 32;
-const absoluteLch = cell => [absoluteL(cell[0], cell[2]), cell[1], cell[2]];
+const absoluteLch = cell => [absoluteL(cell[0], cell[2]), absoluteC(cell[1], cell[2]), cell[2]];
 function boxCells(cfg) {
 	const span = hueSpan(cfg.hMin, cfg.hMax);
 	const step = [(cfg.lMax - cfg.lMin) / CELL_STEPS.L, (cfg.cMax - cfg.cMin) / CELL_STEPS.C, span / CELL_STEPS.h];
@@ -940,11 +957,15 @@ function pointInBox(L, a, b, cfg) {
 	// compares equal to itself; the round trip through absoluteL need not land on the same float.
 	const boundedRelative = Math.min(cfg.lMax, Math.max(cfg.lMin, relative));
 	const boxL = absoluteL(boundedRelative, boxH);
-	const rangeC = Math.min(cfg.cMax, Math.max(cfg.cMin, chroma));
+	// Chroma is bounded in its own relative coordinate, for the same reason as the lightness above.
+	const relativeChroma = relativeC(chroma, boxH);
+	const boundedChroma = Math.min(cfg.cMax, Math.max(cfg.cMin, relativeChroma));
+	const rangeC = absoluteC(boundedChroma, boxH);
 	// The bisection only when the box point is outside sRGB: most pushes are not.
 	const boxC = showsLch(boxL, rangeC, boxH) ? rangeC : gamutChroma(boxL, boxH);
 	return { lch: [boxL, boxC, boxH],
-		clamped: boundedRelative !== relative || boxH !== hue || boxC !== chroma };
+		clamped: boundedRelative !== relative || boundedChroma !== relativeChroma
+			|| boxH !== hue || boxC !== rangeC };
 }
 
 // Uniform draws the start spends on one color at most.
@@ -1182,8 +1203,8 @@ const ordered = (a, b) => a <= b ? [a, b] : [b, a];
 const bounded = id => Math.min(+$(id).max, Math.max(+$(id).min, +$(id).value));
 
 function readConfig() {
-	const [cMin, cMax] = ordered(bounded("c-min"), bounded("c-max"));
-	const [lMin, lMax] = ordered(bounded("l-min"), bounded("l-max"));
+	const [cMin, cMax] = ordered(+$("c-min").value, +$("c-max").value);
+	const [lMin, lMax] = ordered(+$("l-min").value, +$("l-max").value);
 	const [pushMin, pushMax] = ordered(+$("push-min").value, +$("push-max").value);
 	return {
 		count: bounded("count"),
@@ -1275,6 +1296,7 @@ function hcField(w, h, relative, cfg) {
 		const hue = x / w * 360;
 		const inHue = hueInRange(hue, cfg.hMin, cfg.hMax);
 		const lightness = absoluteL(relative, hue);
+		const cLow = absoluteC(cfg.cMin, hue), cHigh = absoluteC(cfg.cMax, hue);
 
 		for (let y = 0; y < h; ++y) {
 			const C = CHROMA_MAX * (1 - y / (h - 1));
@@ -1284,7 +1306,7 @@ function hcField(w, h, relative, cfg) {
 			let r = rgb[0] * 255, g = rgb[1] * 255, b = rgb[2] * 255;
 
 			// Same hatch as the CSS masks: 5px of black at 70%, then 5px of white at 32%.
-			if (!inHue || C < cfg.cMin || C > cfg.cMax) {
+			if (!inHue || C < cLow || C > cHigh) {
 				if ((x + y) % 10 < 5) {
 					r *= .3; g *= .3; b *= .3;
 				} else {
@@ -1329,13 +1351,14 @@ function hlField(canvas, cfg) {
 	for (let x = 0; x < w; ++x) {
 		const hue = x / w * 360;
 		const inHue = hueInRange(hue, cfg.hMin, cfg.hMax);
+		const cLow = absoluteC(cfg.cMin, hue), cHigh = absoluteC(cfg.cMax, hue);
 		for (let y = 0; y < h; ++y) {
 			const L = 100 * (1 - y / (h - 1)), reach = gamutReach[y * w + x];
 			if (reach === 0)
 				continue;
-			const rgb = oklabToRgb(...labOfLch(L, Math.min(reach, cfg.cMax), hue)).map(v => Math.min(1, Math.max(0, v)));
+			const rgb = oklabToRgb(...labOfLch(L, Math.min(reach, cHigh), hue)).map(v => Math.min(1, Math.max(0, v)));
 			let r = rgb[0] * 255, g = rgb[1] * 255, b = rgb[2] * 255;
-			if (!inHue || !withinLightness(L, hue, cfg) || reach < cfg.cMin) {
+			if (!inHue || !withinLightness(L, hue, cfg) || reach < cLow) {
 				if ((x + y) % 10 < 5) {
 					r *= .3; g *= .3; b *= .3;
 				} else {
@@ -1434,6 +1457,10 @@ function refreshLabels() {
 	$("strict-value").textContent = cfg.scale.toFixed(1);
 	$("push-value").textContent = cfg.pushMin + "–" + cfg.pushMax + "°";
 	$("h-value").textContent = cfg.hMin + "–" + cfg.hMax + "°" + (cfg.hMin > cfg.hMax ? " (wraps)" : "");
+	// Chroma carries its unit, lightness does not: chroma is a plain fraction of the hue's peak,
+	// while lightness is piecewise with 50 pinned to the cusp and so is a landmark, not a percentage.
+	$("c-value").textContent = cfg.cMin + "–" + cfg.cMax + "%";
+	$("l-value").textContent = cfg.lMin + "–" + cfg.lMax;
 	$("fixed-preview").innerHTML = cfg.fixed.map(color => '<span style="background:' + color.hex + '"></span>').join("");
 }
 
@@ -1674,7 +1701,7 @@ function applyNameTable(table) {
 
 // The string is the version tag, these fields in order, then the sort flag, the backdrop, the
 // custom backdrop color, the export format and the comma-joined fixed colors.
-const STATE_VERSION = "v3";
+const STATE_VERSION = "v4";
 const STATE_SEPARATOR = "|";
 const STATE_IDS = ["count", "strict", "h-min", "h-max", "c-min", "c-max", "l-min", "l-max", "seed"];
 
@@ -2285,17 +2312,17 @@ function regionMeshes(cfg) {
 	const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
 	const span = hueSpan(cfg.hMin, cfg.hMax);
 	const hue = t => (cfg.hMin + t * span) % 360;
-	const chroma = t => cfg.cMin + t * (cfg.cMax - cfg.cMin);
-	// The lightness bounds follow each hue's cusp, so the two lightness faces are curved, not flat.
+	// Both bounds follow each hue's cusp, so the lightness and chroma faces are curved, not flat.
+	const chroma = (t, h) => absoluteC(cfg.cMin + t * (cfg.cMax - cfg.cMin), h);
 	const light = (t, h) => absoluteL(cfg.lMin + t * (cfg.lMax - cfg.lMin), h);
 	const shown = (L, C, h) => colorAt(L, Math.min(C, gamutChroma(L, h)), h).rgb;
 
 	const sheets = [];
 	for (const t of [0, 1]) {
 		if (span < 360)
-			sheets.push(sheet(16, 16, (u, v) => shown(light(v, hue(t)), chroma(u), hue(t))));
-		sheets.push(sheet(64, 16, (u, v) => shown(light(v, hue(u)), chroma(t), hue(u))));
-		sheets.push(sheet(64, 16, (u, v) => shown(light(t, hue(u)), chroma(v), hue(u))));
+			sheets.push(sheet(16, 16, (u, v) => shown(light(v, hue(t)), chroma(u, hue(t)), hue(t))));
+		sheets.push(sheet(64, 16, (u, v) => shown(light(v, hue(u)), chroma(t, hue(u)), hue(u))));
+		sheets.push(sheet(64, 16, (u, v) => shown(light(t, hue(u)), chroma(v, hue(u)), hue(u))));
 	}
 	return sheets.map(geometry => new THREE.Mesh(geometry, material));
 }

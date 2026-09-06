@@ -508,6 +508,42 @@ Three places needed the coordinate handled rather than substituted:
 Default 20 to 60, `STATE_VERSION` v3. In the hue-lightness charts the hatched bands now follow the cusp ridge
 instead of running level.
 
+## Chroma relative to the cusp
+
+The chroma range stayed absolute when the lightness one moved, and cusp chroma varies as widely as cusp
+lightness: 14.5 at teal against 32.2 at magenta, 2.22x. One absolute floor therefore asks a different
+vividness of every hue. A floor of 20 leaves 43% of hues with nothing to draw from at all, so asking for
+vivid colors deleted teal, cyan and the yellow-orange stretch from the circle instead of making them vivid.
+
+The range is now a fraction of the hue's cusp chroma: 100 all the hue has, 0 neutral, linear between, exact
+inverses to the float. A floor of 95 - the top twentieth of every hue's chroma - still fills all twelve
+30-degree hue bins.
+
+Relative to the cusp, not to the reach at the point's own lightness, which is what `data/identify.js` means
+by relative chroma. The second makes every setting reachable at every lightness, but 90 to 100 then selects
+the gamut's whole shell, near-black colors included. Below the cusp the two agree exactly - the lower hull
+runs straight from black to the cusp, so reach is proportional to lightness and the ratio's hue spread is
+1.00x at every relative lightness up to 50 - and they separate above it, reaching 1.83x at relative
+lightness 90.
+
+The same three places as the lightness coordinate needed handling, for the same reasons: the uniform draw,
+the sparse-box grid, and `pointInBox`, which now decides whether the chroma moved in the relative coordinate
+as it already did for lightness. `cuspChroma` is interpolated from the cusp table rather than solved per
+call: `boxCells` asks 56250 times a generation and the analytic solve cost 110 ms of that, against 13 ms for
+the interpolation, whose worst error against a fresh search is 0.20 chroma.
+
+Chroma stays absolute on the hue-chroma chart's axis, as lightness does on the other, so the selected band
+curves with each hue's peak rather than running level.
+
+Both range controls went back to sliders with this. They had been number boxes because the value that mattered
+was a different number at every hue - the absolute chroma or lightness that just clipped the brightest yellow -
+and a slider could not be aimed at it. Relative to the cusp that value is the same number everywhere, so the
+landmarks are round: 50 the cusp, 100 the hue's peak.
+
+Default 20 to 100, `STATE_VERSION` v4: v3 strings no longer parse, their chroma fields having meant absolute
+chroma. The benchmark boxes in `data/identify.js` are restated in the new coordinate, and scores from them
+do not compare with runs before it.
+
 ## Gamut boundary by cubic roots
 
 Anchoring the range on the cusp made the cusp's accuracy matter, and checking it turned up a defect under it.

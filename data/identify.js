@@ -231,10 +231,13 @@ function cuspLightness(h) {
 	return light[before] * (1 - within) + light[after] * within;
 }
 
-// Where a color stands in its own hue's gamut, as the page states its ranges: lightness against the
-// cusp, which sits at CUSP_ANCHOR at every hue with 0 black and 100 white, and chroma as a fraction
-// of the reach at that lightness and hue. Both are coordinates of the gamut's shape, not perceptual
-// quantities - the metric itself stays in absolute OKLab.
+// Where a color stands in its own hue's gamut: lightness against the cusp, which sits at
+// CUSP_ANCHOR at every hue with 0 black and 100 white, and chroma as a fraction of the reach at
+// that lightness and hue. Both are coordinates of the gamut's shape, not perceptual quantities -
+// the metric itself stays in absolute OKLab.
+// The lightness here is the coordinate the page's control uses; the chroma is not. The control
+// takes a fraction of the hue's cusp chroma, so that one number means one vividness at every hue,
+// where this predictor asks how close a pair sits to the boundary at its own lightness.
 const CUSP_ANCHOR = 50;
 function relativePosition(lab) {
 	const h = hueOfLab(lab), cusp = cuspLightness(h), reach = gamutChroma(lab[0], h);
@@ -389,13 +392,15 @@ function nameCollision(hexes, page) {
 }
 
 // Fixed seeds over fixed range boxes, so two versions of the page compare run for run. The boxes
-// are OKLCh ranges (lightness and chroma x100, hue in degrees), as the page's controls are.
+// are OKLCh ranges as the page's controls state them: lightness and chroma both relative to the
+// hue's cusp, hue in degrees. Pages before the relative chroma control read cMin and cMax as
+// absolute chroma x100 and cannot be compared with these numbers.
 function benchmarkPage(pagePath) {
 	const page = loadPage(pagePath);
 	const generate = page.generate;
 	const boxes = [
-		{ name: "default", hMin: 0, hMax: 360, cMin: 5, cMax: 32.5, lMin: 20, lMax: 80 },
-		{ name: "narrow", hMin: 0, hMax: 360, cMin: 8, cMax: 32.5, lMin: 35, lMax: 65 },
+		{ name: "default", hMin: 0, hMax: 360, cMin: 20, cMax: 100, lMin: 20, lMax: 80 },
+		{ name: "narrow", hMin: 0, hMax: 360, cMin: 35, cMax: 100, lMin: 35, lMax: 65 },
 	];
 	const counts = [6, 8, 10];
 	const seeds = Array.from({ length: 20 }, (_, i) => i + 1);
