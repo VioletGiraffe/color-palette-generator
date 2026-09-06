@@ -148,7 +148,7 @@
 
 	#range-plane { height: 110px; margin: 2px 0 4px; }
 
-	#skin-plane, #hs-plane { height: 120px; margin: 16px 0 0; }
+	#hl-plane, #hc-plane { height: 120px; margin: 16px 0 0; }
 
 	#gamut-3d { height: 460px; }
 
@@ -356,10 +356,10 @@
 		<div id="tiles"></div>
 	</div>
 
-	<div class="plane" id="skin-plane"><canvas id="skin-canvas"></canvas></div>
+	<div class="plane" id="hl-plane"><canvas id="hl-canvas"></canvas></div>
 	<div class="hint">Hue across, lightness up, each point at the most vivid chroma the ranges allow: the outside of the selected region. Lightness here is plain black to white, so the band the range allows rises and falls with each hue's peak. Hatching is outside the hue or lightness range, or where the chroma minimum leaves nothing. Dots are the generated colors, triangles the fixed ones.</div>
 
-	<div class="plane" id="hs-plane"><canvas id="hs-canvas"></canvas></div>
+	<div class="plane" id="hc-plane"><canvas id="hc-canvas"></canvas></div>
 	<div class="hint">Hue across, chroma up. Each hue is drawn at the lightness within the range that makes it most vivid, so the top edge is the most chroma the ranges allow at that hue. Blank above it: no lightness in the range reaches that far. Hatching is outside the hue or chroma range. Dots are the generated colors, triangles the fixed ones.</div>
 
 	<hr>
@@ -1172,7 +1172,8 @@ let palette = [];
 let lastResult = null, lastCfg = null;
 // Each chart's canvas, kept field image and drawn marker positions, so a highlight change
 // repaints markers and hovering hit-tests them without recomputing the field.
-let hsDraw = null, skinDraw = null;
+// hc and hl name the axes, hue-chroma and hue-lightness. Not the highlight below.
+let hcDraw = null, hlDraw = null;
 // The color hovered in any view, highlighted in all of them.
 let highlightedColor = null;
 
@@ -1321,7 +1322,7 @@ function gamutTable(canvas) {
 // Hue across, lightness up, each pixel at the box's chroma cap for that hue and lightness: the
 // most vivid color the ranges allow there, the outside of the selected region. Hatched outside
 // the hue and lightness ranges and where the gamut stays below the chroma minimum.
-function skinField(canvas, cfg) {
+function hlField(canvas, cfg) {
 	const w = canvas.width, h = canvas.height, gamutReach = gamutTable(canvas);
 	const image = new ImageData(w, h);
 	const data = image.data;
@@ -1392,32 +1393,33 @@ function sizedCanvas(id) {
 	return canvas;
 }
 
-function drawHSPlane(cfg, colors) {
-	const canvas = sizedCanvas("hs-canvas");
+function drawHCPlane(cfg, colors) {
+	const canvas = sizedCanvas("hc-canvas");
 	if (canvas.width === 0)
 		return;
 	// The most vivid lightness the range allows: the cusp where the range covers it, its nearer edge
-	// otherwise. Chroma over lightness has a single peak, so this column reaches the furthest of any.
+	// otherwise. Chroma over lightness peaks at the cusp, so nothing else in the range reaches further.
+	// Not exactly single-peaked near black, but no range picks up more than 0.006 chroma there.
 	const relative = Math.min(cfg.lMax, Math.max(cfg.lMin, CUSP_ANCHOR));
-	hsDraw = { canvas, colors, image: hcField(canvas.width, canvas.height, relative, cfg),
+	hcDraw = { canvas, colors, image: hcField(canvas.width, canvas.height, relative, cfg),
 		place: (color, c) => ({ x: color.lch[2] / 360 * c.width, y: (1 - color.lch[1] / CHROMA_MAX) * (c.height - 1) }) };
-	paintChart(hsDraw);
+	paintChart(hcDraw);
 }
 
-function drawSkinPlane(cfg, colors) {
-	const canvas = sizedCanvas("skin-canvas");
+function drawHLPlane(cfg, colors) {
+	const canvas = sizedCanvas("hl-canvas");
 	if (canvas.width === 0)
 		return;
-	skinDraw = { canvas, colors, image: skinField(canvas, cfg),
+	hlDraw = { canvas, colors, image: hlField(canvas, cfg),
 		place: (color, c) => ({ x: color.lch[2] / 360 * c.width, y: (1 - color.lch[0] / 100) * (c.height - 1) }) };
-	paintChart(skinDraw);
+	paintChart(hlDraw);
 }
 
 function drawRangePlane(cfg) {
 	const canvas = sizedCanvas("range-canvas");
 	if (canvas.width === 0)
 		return;
-	canvas.getContext("2d").putImageData(skinField(canvas, cfg), 0, 0);
+	canvas.getContext("2d").putImageData(hlField(canvas, cfg), 0, 0);
 }
 
 function refreshBars(cfg) {
@@ -1485,8 +1487,8 @@ function render(result, cfg) {
 		'<div class="' + marks(c).trim() + '" data-index="' + i + '" style="background:' + c.hex + '" title="'
 			+ c.hex.toUpperCase() + " · " + cellLabel(c) + (c.fixed ? " (fixed)" : "") + '"></div>').join("");
 
-	drawSkinPlane(cfg, palette);
-	drawHSPlane(cfg, palette);
+	drawHLPlane(cfg, palette);
+	drawHCPlane(cfg, palette);
 	if (window.update3D)
 		window.update3D(cfg, palette, worstPair);
 	refreshExport();
@@ -1930,7 +1932,7 @@ function setHighlight(color) {
 	const index = color ? palette.indexOf(color) : -1;
 	for (const box of ["swatches", "tiles"])
 		[...$(box).children].forEach((el, i) => el.classList.toggle("hilite", i === index));
-	for (const draw of [hsDraw, skinDraw])
+	for (const draw of [hcDraw, hlDraw])
 		if (draw)
 			paintChart(draw);
 	if (window.highlight3D)
@@ -1970,8 +1972,8 @@ function hoverMarks(id, drawOf) {
 	});
 	canvas.addEventListener("mouseleave", () => setHighlight(null));
 }
-hoverMarks("hs-canvas", () => hsDraw);
-hoverMarks("skin-canvas", () => skinDraw);
+hoverMarks("hc-canvas", () => hcDraw);
+hoverMarks("hl-canvas", () => hlDraw);
 
 $("copy").addEventListener("click", e => copy($("export").value, e.currentTarget, "Copied"));
 

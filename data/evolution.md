@@ -505,8 +505,8 @@ Three places needed the coordinate handled rather than substituted:
   the relative coordinate: the round trip through the absolute one need not land on the same float, and
   comparing absolutes would mark almost every push clamped and reject it.
 
-Default 20 to 60, `STATE_VERSION` v3. In the charts the hatched bands now follow the cusp ridge instead of
-running level.
+Default 20 to 60, `STATE_VERSION` v3. In the hue-lightness charts the hatched bands now follow the cusp ridge
+instead of running level.
 
 ## Gamut boundary by cubic roots
 
@@ -545,10 +545,37 @@ near black - at L 3 hue 260 the red channel crosses zero at chroma 1.2237 while 
 and chroma over lightness is no longer everywhere single-peaked, though the golden-section cusp search still
 finds the maximum within 0.03 chroma at every hue.
 
+## The hue-chroma chart
+
+Hue across, chroma up, under the palette. Its third coordinate was a lightness slider reading absolute OKLCh
+L, against range controls stated cusp-relative: one slider position then stood inside the range at some hues
+and outside at others, and hatching the outside hues drew a wedge with vertical sides into the middle of the
+chart - hues 258 to 312 at L 81, opening at the sRGB blue primary, whose cusp at 45.2 is the darkest on the
+ridge. The dots compounded it, being placed by hue and chroma alone: at any one lightness most of them float
+over ground the slice calls empty.
+
+The slider is gone. Every column is drawn at `clamp(CUSP_ANCHOR, lMin, lMax)`: the cusp where the range
+covers it, the range's nearer edge otherwise.
+
+- The top edge is the most chroma the ranges allow at that hue, over the whole range rather than one slice of
+  it. The lightnesses reaching a given chroma run in an interval around the cusp, so the union over a band is
+  what its cusp-nearest point reaches alone; searching the band draws the same picture.
+- Every generated color sits at or under the top edge, its own lightness being in the range. A circle above
+  the silhouette is a generator fault; a triangle above it is a fixed color the ranges exclude.
+
+The lightness bound is not hatched. It holds for every pixel at once, so it could only hatch all or nothing,
+and when it fired it hid the hue and chroma hatching under it. Hatching is the hue and chroma ranges alone,
+both of which vary across the chart.
+
+Chroma over lightness is not single-peaked, as the cubic-root section notes: at hue 201 it rises 2.98 above
+its running low near L 0. That never decides the pick - over every hue and six ranges the cusp-nearest
+lightness came within 0.006 chroma of the best its band holds, two per cent of a pixel row.
+
 ## Files
 
-- `index.html`: step 18 with the calibrated constants, the skin chart, the plane hue scrub and the empty-box
-  handling, the analytic gamut boundary and the cusp-relative lightness range. The shipped page.
+- `index.html`: step 18 with the calibrated constants, the hue-lightness and hue-chroma charts, the plane
+  hue scrub and the empty-box handling, the analytic gamut boundary and the cusp-relative lightness range.
+  The shipped page.
 - `experimental-gradient.html`: step 2, the soft-max descent. The score ceiling.
 - `experimental-gradient-restricted-push.html`: step 4, dart start with a straight push.
 - `experimental-wholeset-start.html`: step 9, whole-set start.
