@@ -1,9 +1,9 @@
 # Generation evolution
 
-What was tried for the generator in `experimental.html`, in order, with the numbers each step produced.
-The original page steered generation by color names; this file covers the rework that replaced names with a
-recall model, the metric built to judge it, and the rework's promotion to `index.html`. Paths are relative to
-the repo root.
+What was tried for the generator, in order, with the numbers each step produced. The original page steered
+generation by color names; this file covers the rework that replaced names with a recall model, the metric
+built to judge it, and the rework's promotion to `index.html`. Paths are relative to the repo root, and the
+snapshots the steps name by filename alone are in `data/past-experiments/`.
 
 ## The yardstick
 
@@ -40,7 +40,7 @@ All at sigma 6, 20 seeds. Reference points: `index.html` scores 86.7; the pre-re
 | 3. straight push-apart | farthest-point start; only pairs above 2% swap chance step 1 dE along their line; 10 dE budget per color; no-worse rule | 88.0 | default n=10 drops to 74.2 |
 | 4. dart start | first uniform draw under the 2% limit, farthest of 1500 as fallback; then step 3's push | 88.5 | saved as `experimental-gradient-restricted-push.html` |
 | 5. cone push | step direction uniform within 120 deg of the away-axis, per-color stall after 25 rejections | 89.1 | flat from 60 deg up; straight is 88.5 |
-| 6. angle band | forbid directions within a minimum angle of the axis; sliders for both angles | 89.1 | free up to 40 deg, costs from 60 (88.7), 80 deg gives 86.8 |
+| 6. angle band | forbid directions within a minimum angle of the axis; sliders for both angles | 89.1 | free up to 40 deg, costs from 60 (88.7), 80 deg gives 86.8; saved as `push-with-angle-randomization.html` |
 | 7. crowd filter, best snapshot | no-worse rule replaced by "dropped if too close to another and closer than before"; return the best-floor state seen | 88.4 | fewer wall colors at n=10 (62% to 44%) |
 | 8. persistent heading | one direction per color, kept while accepted, redrawn on rejection | 88.6 | in full boxes 80% of steps are rejected, so it rarely persists |
 | 9. whole-set start | dart start replaced by whole uniform sets: the first with a floor at the bar, else the best of 2000; step 8's push | 87.6 | bar 0.85; loses 5 points at default n=10, clips more (63% vs 46% at 9 colors); reverted, saved as `experimental-wholeset-start.html` |
@@ -52,7 +52,7 @@ All at sigma 6, 20 seeds. Reference points: `index.html` scores 86.7; the pre-re
 | 15. clamp refusal | the wall margin replaced: a push is dropped only when the box or gamut had to pull its target back; a target inside the box is accepted wherever it lands | 92.2 | 9 colors 92.6, 46 ms against 71; colors settle within a step of the walls: 25 to 33% within half a unit at 10 colors, 27% with a 00 or FF channel; saved as `experimental-clamp-refusal.html` |
 | 16. clamp slack | a push is dropped only when the clamp pulled its target back by more than 0.3 dE; a slighter protrusion is clamped and kept | 92.4 | 9 colors 92.5; the walls fill again: saturation max 61 to 85% at 10 colors, 79% of colors with a 00 or FF channel at 9; not adopted |
 | 17. reachable floor, adaptive restarts | step 15 adopted as `index.html`; one wall-using attempt from its own seed gives the floor the box allows; restarts continue up to 16 while the best is under 90% or more than 2 points short of it; the status line shows the readout | 92.4 | default n=10 87.2 to 88.4, worst seed 81.7 to 87.3; 197 ms against 66 in the full default box, unchanged elsewhere |
-| 18. OKLCh box | the HSL ranges replaced by OKLab lightness, absolute chroma (0 to 33) and OKLCh hue; uniform draws by rejection, gamut mapping by chroma reduction, planes and 3D faces linear in OKLCh | 90.5 (new boxes) | not comparable with the rows above: the boxes changed shape; see the OKLCh baseline below |
+| 18. OKLCh box | the HSL ranges replaced by OKLab lightness, absolute chroma (0 to 33) and OKLCh hue; uniform draws by rejection, gamut mapping by chroma reduction, planes and 3D faces linear in OKLCh | 90.5 (new boxes) | not comparable with the rows above: the boxes changed shape; see the OKLCh baseline below; saved as `experimental-oklch.html` |
 
 Why steps 1 and 2 were abandoned despite the score: a maximin over a box has its optimum on the hull, so
 every seed converged to the same corners (one box always produced `#FF99FF`) and a third of hex values
@@ -576,12 +576,19 @@ lightness came within 0.006 chroma of the best its band holds, two per cent of a
 - `index.html`: step 18 with the calibrated constants, the hue-lightness and hue-chroma charts, the plane
   hue scrub and the empty-box handling, the analytic gamut boundary and the cusp-relative lightness range.
   The shipped page.
-- `experimental-gradient.html`: step 2, the soft-max descent. The score ceiling.
-- `experimental-gradient-restricted-push.html`: step 4, dart start with a straight push.
-- `experimental-wholeset-start.html`: step 9, whole-set start.
-- `experimental-error-filter.html`: step 10, own-error filter with the gamut margin.
-- `experimental-error-trigger.html`: step 14, error trigger with the wall margin.
-- `experimental-clamp-refusal.html`: step 15, exact clamp refusal, the copy that became `index.html`.
+- `data/past-experiments/`: a working page per step kept, each titled by its step. They run standalone, and
+  their scores were measured on the metric of their own day: every page below step 18 predates both the OKLCh
+  box and the calibration, so none of them can be compared with `index.html` or with each other across that
+  line. What they are good for is the mechanism, in working code, if a step is ever revisited.
+  - `experimental-gradient.html`: step 2, the soft-max descent. The score ceiling.
+  - `experimental-gradient-restricted-push.html`: step 4, dart start with a straight push.
+  - `push-with-angle-randomization.html`: step 6, the cone push under both angle sliders.
+  - `experimental-wholeset-start.html`: step 9, whole-set start.
+  - `experimental-error-filter.html`: step 10, own-error filter with the gamut margin.
+  - `experimental-error-trigger.html`: step 14, error trigger with the wall margin.
+  - `experimental-clamp-refusal.html`: step 15, exact clamp refusal, the copy that became `index.html`.
+  - `experimental-oklch.html`: step 18, the OKLCh box before the calibration. The line the scores above
+    stop crossing.
 - `data/identify.js`, `data/fit.js`, `data/calibrate.html`: the metric and its calibration; see `data/README.md`.
 - `data/calibration-log.json`: the verdicts the constants are fitted to.
 - `data/calibrate-chroma.html`, `data/calibrate-hue.html`, `data/calibrate-cusp.html`, `data/fit_hue.js`,

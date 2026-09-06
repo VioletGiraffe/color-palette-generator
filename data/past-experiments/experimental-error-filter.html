@@ -1,0 +1,2394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Palette generator - step 10, own-error filter</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='2' y='2' width='13' height='13' rx='3' fill='%233d6df0'/><rect x='17' y='2' width='13' height='13' rx='3' fill='%23f0a33d'/><rect x='2' y='17' width='13' height='13' rx='3' fill='%23d9469b'/><rect x='17' y='17' width='13' height='13' rx='3' fill='%232fae66'/></svg>">
+<style>
+	/* Both palettes key off data-theme, which the script below sets before the first paint. A
+	   prefers-color-scheme query cannot be overridden by the selector without a second copy of
+	   the dark palette. */
+	:root {
+		color-scheme: light;
+		--bg: #f4f4f6;
+		--panel: #ffffff;
+		--ink: #1a1a1e;
+		--ink-dim: #6a6a76;
+		--line: #d8d8e0;
+		--accent: #3d6df0;
+		--warn: #b45309;
+		--danger: #d92020;
+		--swatch-hover: var(--accent);
+	}
+	:root[data-theme="dark"] {
+		color-scheme: dark;
+		--bg: #0a0a0c;
+		--panel: #131317;
+		--ink: #ececf0;
+		--ink-dim: #9a9aa6;
+		--line: #35353f;
+		--accent: #6f95ff;
+		--warn: #e0a33a;
+		--danger: #ff6b6b;
+	}
+
+	* { box-sizing: border-box; }
+
+	body {
+		margin: 0;
+		padding: 0 20px 20px;
+		background: var(--bg);
+		color: var(--ink);
+		font: 14px/1.45 system-ui, "Segoe UI", sans-serif;
+	}
+
+	h1 { font-size: 18px; margin: 0 0 16px; font-weight: 600; }
+	h2 { font-size: 13px; margin: 0 0 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-dim); }
+
+	#layout {
+		display: grid;
+		gap: 20px;
+		align-items: start;
+		grid-template-columns: 300px minmax(380px, 1fr) 360px;
+		grid-template-rows: auto 1fr;
+		grid-template-areas: "controls output gamut" "controls output side";
+	}
+
+	/* Below three columns, the short panels pair under the tall ones - State under Controls,
+	   the gamut under Output - so neither column carries all the height. */
+	@media (max-width: 1140px) {
+		#layout {
+			grid-template-columns: 300px minmax(0, 1fr);
+			grid-template-rows: auto 1fr;
+			grid-template-areas: "controls output" "side gamut";
+		}
+	}
+
+	@media (max-width: 780px) {
+		#layout {
+			grid-template-columns: 100%;
+			grid-template-rows: auto;
+			grid-template-areas: "controls" "output" "gamut" "side";
+		}
+	}
+
+	/* Compact mode for short viewports: standalone captions go, spacing tightens. The PALETTE
+	   and EXPORT captions stay - they share a row with controls and hiding them frees nothing. */
+	@media (max-height: 850px) {
+		.group > h2, #gamut > h2 { display: none; }
+		.group { margin-bottom: 8px; }
+		hr { margin: 5px 0; }
+	}
+
+	.panel {
+		background: var(--panel);
+		border: 1px solid var(--line);
+		border-radius: 8px;
+		padding: 16px;
+	}
+
+	#controls { grid-area: controls; }
+	#output { grid-area: output; }
+	#side { grid-area: side; }
+	#gamut { grid-area: gamut; }
+
+	.group { margin-bottom: 12px; }
+	.group:last-child { margin-bottom: 0; }
+
+	label.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+	label.row > span:first-child { white-space: nowrap; }
+
+	.value { font-variant-numeric: tabular-nums; color: var(--ink-dim); }
+
+	input[type=range] { width: 100%; accent-color: var(--accent); }
+	input[type=number] { width: 68px; }
+	input[type=color] { width: 34px; height: 28px; padding: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 5px; cursor: pointer; }
+
+	input[type=number], input[type=text], select, button, textarea {
+		font: inherit;
+		color: var(--ink);
+		background: var(--bg);
+		border: 1px solid var(--line);
+		border-radius: 5px;
+		padding: 4px 7px;
+	}
+
+	button { cursor: pointer; }
+	button:hover { border-color: var(--accent); }
+	button.primary { background: var(--accent); color: #fff; border-color: transparent; font-weight: 600; padding: 7px 14px; }
+
+	.range-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin-bottom: 12px; }
+	.range-pair .caption { grid-column: 1 / -1; display: flex; justify-content: space-between; }
+	.range-pair .edge { font-size: 12px; color: var(--ink-dim); }
+
+	.range-bar {
+		grid-column: 1 / -1;
+		position: relative;
+		height: 16px;
+		margin: 2px 0 4px;
+		border: 1px solid var(--line);
+		border-radius: 4px;
+		overflow: hidden;
+	}
+
+	.range-bar canvas { display: block; width: 100%; height: 100%; }
+
+	.plane {
+		position: relative;
+		border: 1px solid var(--line);
+		border-radius: 4px;
+		overflow: hidden;
+	}
+
+	.plane canvas { display: block; width: 100%; height: 100%; }
+
+	#sl-plane { height: 75px; margin: 2px 0 4px; }
+
+	#hs-plane { height: 120px; margin: 16px 0 0; }
+
+	#gamut-3d { height: 460px; }
+
+	/* Hatched, not a flat scrim: the plane runs to black and to white, and a scrim of either
+	   tone is invisible against its own corner. */
+	.muted {
+		position: absolute;
+		background: repeating-linear-gradient(45deg, rgba(0, 0, 0, .7) 0 5px, rgba(255, 255, 255, .32) 5px 10px);
+	}
+
+	.range-bar .muted { top: 0; bottom: 0; }
+
+	#status { margin: 14px 0 12px; font-size: 13px; min-height: 20px; }
+
+	#palette-area { border-radius: 6px; }
+
+	#swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+
+	/* Square, unrounded and tightly spaced: the point is judging the colors against each other,
+	   so anything between them competes with what is being judged. Fixed-width tracks, so the
+	   block stays compact rather than stretching the tiles across the panel. */
+	#tiles { display: grid; grid-template-columns: repeat(var(--cols, 1), 24px); gap: 4px; margin-top: 12px; }
+	/* Thinner and fainter than the same marks on the swatches: against a 24px tile, the outlines in
+	   the block below read as a frame competing with the color rather than a mark on it.
+	   --mark is the marker's color, set by whichever of those rules applies. */
+	#tiles div { aspect-ratio: 1; outline-width: 1px; outline-color: color-mix(in srgb, var(--mark) 60%, transparent); }
+
+	.swatch { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; cursor: pointer; background: none; padding: 0; text-align: left; display: block; width: 100%; }
+	.swatch:hover { border-color: var(--swatch-hover); }
+	.swatch .chip { height: 64px; }
+	.swatch .meta { padding: 5px 7px; font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1.35; color: var(--ink); }
+	.swatch .meta .hex { font-weight: 600; letter-spacing: .02em; }
+	.swatch .meta .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.swatch .meta .coords { color: var(--ink-dim); }
+
+	/* Outline rather than a border: it is drawn outside the box, so it neither shifts the grid
+	   nor covers any of the color being judged.
+	   The later rule wins: .fixed and .off-name come before .clash, so a color that is also the
+	   closest pair shows the amber, and .hilite last, so a hovered color shows over all of them. */
+	.fixed { --mark: var(--ink-dim); outline: 2px dashed var(--mark); outline-offset: 1px; }
+	.off-name { --mark: var(--warn); outline: 2px dotted var(--mark); outline-offset: 1px; }
+	.clash { --mark: var(--warn); outline: 2px solid var(--mark); outline-offset: 1px; }
+	.hilite { --mark: var(--accent); outline: 2px solid var(--mark); outline-offset: 1px; }
+
+	/* A name chip carries the chip height of a palette swatch, so a name's territory reads at the
+	   size the colors themselves do. */
+	#name-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+	.name-group { display: flex; gap: 4px; }
+	/* Boxed only once it holds more than one name, which is when the box means something. */
+	.name-group.merged { padding: 4px; border: 2px solid var(--accent); border-radius: 8px; }
+	.name-chip { position: relative; width: 104px; border: 1px solid var(--line); border-radius: 6px;
+		overflow: hidden; cursor: grab; background: none; touch-action: none; user-select: none; }
+	/* Its own dark plate, so the glyph carries over whatever territory is behind it. */
+	.name-chip .split { position: absolute; top: 3px; right: 3px; width: 18px; height: 18px; padding: 0;
+		font-size: 13px; line-height: 1; border-radius: 4px; cursor: pointer;
+		color: #fff; background: rgba(0, 0, 0, .55); border: 1px solid rgba(255, 255, 255, .4); }
+	.name-chip .split:hover { background: var(--accent); border-color: var(--accent); }
+	.name-chip:hover { border-color: var(--swatch-hover); }
+	.name-chip canvas { display: block; width: 100%; height: 64px; }
+	.name-chip .meta { padding: 4px 6px; font-size: 11px; line-height: 1.3; color: var(--ink); }
+	.name-chip .meta div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.name-chip .meta .level { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+	.name-chip.off { border-style: dashed; }
+	/* The territory keeps its true colors: the line is what marks the name as dropped, and a color
+	   is still worth seeing while deciding whether to drop it. */
+	.name-chip.off .meta { position: relative; color: var(--ink-dim); }
+	/* Ruled across the chip rather than set on the text: a line-through reaches only as far as the
+	   name is long, and the short names are the ones hardest to spot. Inset by less than .meta's
+	   6px gutter, so it overshoots the name at either end whatever the name's length.
+	   Vertically it is .meta's top padding plus half a line, which centres it on the name. */
+	.name-chip.off .meta::after {
+		content: "";
+		position: absolute;
+		left: 4px;
+		right: 4px;
+		top: calc(4px + 0.65em - 1.5px);
+		height: 3px;
+		background: var(--danger);
+	}
+	.name-chip.dragging { opacity: .35; }
+	.name-chip.target { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+
+	/* The copy that follows the cursor: placed in viewport coordinates, and deaf to pointer events,
+	   or it would mask the chip it is dropped on. */
+	.name-chip.ghost { position: fixed; z-index: 50; pointer-events: none; background: var(--panel);
+		transform: rotate(-3deg); box-shadow: 0 10px 24px rgba(0, 0, 0, .5); }
+
+	/* Every element, not just the chip: the pointer spends the drag over other things. */
+	body.dragging-name, body.dragging-name * { cursor: grabbing !important; }
+
+	#fixed-colors { width: 100%; height: 56px; resize: vertical; font: 11px/1.5 ui-monospace, Consolas, monospace; }
+	#fixed-preview { display: flex; height: 18px; margin-top: 6px; border-radius: 4px; overflow: hidden; }
+	#fixed-preview:empty { display: none; }
+	#fixed-preview span { flex: 1; }
+
+	.bar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+
+	#export { width: 100%; height: 150px; margin-top: 8px; resize: vertical; font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre; }
+	/* Smaller than the export text: the string is copied, not read. */
+	#state { width: 100%; font: 11px/1.5 ui-monospace, Consolas, monospace; }
+	/* Wide enough for the ten digits a load-time seed always has, spinner included. */
+	#seed { width: 120px; }
+
+	#pin-paste { width: 100%; height: 64px; resize: vertical; font: 11px/1.5 ui-monospace, Consolas, monospace; }
+	#pin-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+	#pin-list:empty { display: none; }
+	.pin { display: flex; flex-wrap: wrap; gap: 4px; }
+	.pin-name { flex: 1; min-width: 0; }
+	.pin-drop { padding: 2px 8px; line-height: 1; }
+	/* The strip is the restore control: the largest target in the row, and it shows what it restores. */
+	.pin-strip { flex: 0 0 100%; display: flex; height: 18px; padding: 0; overflow: hidden; }
+	.pin-strip span { flex: 1; }
+
+	.hint { font-size: 12px; color: var(--ink-dim); margin-top: 6px; }
+
+	hr { border: none; border-top: 1px solid var(--line); margin: 8px 0; }
+</style>
+<script>
+	// Runs here, before the body: setting the attribute after load would flash the light theme.
+	document.documentElement.dataset.theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+</script>
+</head>
+<body>
+
+<div id="layout">
+
+<div class="panel" id="controls">
+
+	<div class="group">
+		<label class="row"><span>Colors</span><span class="value" id="count-value">8</span></label>
+		<input type="range" id="count" min="1" max="40" value="8">
+
+		<label class="row" style="margin-top:12px"><span>Distinctness</span><span class="value" id="strict-value">6</span></label>
+		<input type="range" id="strict" min="1" max="50" step="0.5" value="6">
+		<div class="hint">Width of the memory noise the colors are spread against, in ΔE. Low pushes only the closest pairs apart; high trades that for an even spread.</div>
+
+		<div class="range-pair" style="margin-top:12px; margin-bottom:0">
+			<div class="caption"><span>Push angle</span><span class="value" id="push-value"></span></div>
+			<div class="edge">min</div><div class="edge">max</div>
+			<input type="range" id="push-min" min="0" max="180" step="5" value="15">
+			<input type="range" id="push-max" min="0" max="180" step="5" value="120">
+		</div>
+		<div class="hint">A too-close color steps off in a random direction this far from straight away from its neighbors.</div>
+	</div>
+
+	<hr>
+
+	<div class="group">
+		<div class="bar" style="justify-content:space-between; margin-bottom:0">
+			<label class="row" style="margin:0"><span>Seed</span><input type="number" id="seed" value="1" min="0" step="1"></label>
+			<label class="row" style="margin:0"><span>Sort by hue</span><input type="checkbox" id="sort" checked></label>
+		</div>
+		<button class="primary" id="generate" style="width:100%; margin-top:10px">Generate</button>
+	</div>
+
+	<hr>
+
+	<div class="group">
+		<h2>HSL range</h2>
+
+		<div class="range-pair">
+			<div class="caption"><span>Hue</span><span class="value" id="h-value"></span></div>
+			<div class="range-bar" id="hue-bar"><canvas id="hue-canvas"></canvas><div class="muted" id="hue-muted-a"></div><div class="muted" id="hue-muted-b"></div></div>
+			<div class="edge">min</div><div class="edge">max</div>
+			<input type="range" id="h-min" min="0" max="360" value="0">
+			<input type="range" id="h-max" min="0" max="360" value="360">
+			<div class="hint" style="grid-column: 1 / -1; margin: 0">Hue wraps when min &gt; max (e.g. 300 &rarr; 60 covers magenta through yellow).</div>
+		</div>
+
+		<div class="plane" id="sl-plane">
+			<canvas id="sl-canvas"></canvas>
+			<div class="muted" id="sl-mask-left"></div>
+			<div class="muted" id="sl-mask-right"></div>
+			<div class="muted" id="sl-mask-top"></div>
+			<div class="muted" id="sl-mask-bottom"></div>
+		</div>
+		<div class="hint" style="margin: 0 0 12px">Saturation across, lightness up, at the range-start hue.</div>
+
+		<div class="range-pair">
+			<div class="caption"><span>Saturation</span><span class="value" id="s-value"></span></div>
+			<div class="edge">min</div><div class="edge">max</div>
+			<input type="range" id="s-min" min="0" max="100" value="21">
+			<input type="range" id="s-max" min="0" max="100" value="100">
+		</div>
+
+		<div class="range-pair" style="margin-bottom:0">
+			<div class="caption"><span>Lightness</span><span class="value" id="l-value"></span></div>
+			<div class="edge">min</div><div class="edge">max</div>
+			<input type="range" id="l-min" min="0" max="100" value="15">
+			<input type="range" id="l-max" min="0" max="100" value="68">
+		</div>
+	</div>
+
+	<hr>
+
+	<div class="group">
+		<h2>Fixed colors</h2>
+		<textarea id="fixed-colors" spellcheck="false" placeholder="#1a73e8&#10;#e8710a"></textarea>
+		<div id="fixed-preview"></div>
+		<div class="hint">Six-digit hex, any separator. New colors are kept distinct from these. They do not count towards Colors and are not exported.</div>
+	</div>
+
+</div>
+
+<div class="panel" id="output">
+
+	<div class="bar">
+		<h2 style="margin:0; flex:1">Palette</h2>
+		<span style="font-size:12px; color:var(--ink-dim)">Backdrop</span>
+		<select id="backdrop">
+			<option value="panel" selected>Panel</option>
+			<option value="#ffffff">White</option>
+			<option value="#000000">Black</option>
+			<option value="#808080">Mid grey</option>
+			<option value="custom">Custom</option>
+		</select>
+		<input type="color" id="backdrop-color" value="#3c6ea5" title="Custom backdrop">
+		<span style="font-size:12px; color:var(--ink-dim)">Theme</span>
+		<select id="theme">
+			<option value="auto" selected>Auto</option>
+			<option value="light">Light</option>
+			<option value="dark">Dark</option>
+		</select>
+	</div>
+
+	<div id="status"></div>
+	<div id="palette-area">
+		<div id="swatches"></div>
+		<div id="tiles"></div>
+	</div>
+
+	<div class="plane" id="hs-plane"><canvas id="hs-canvas"></canvas></div>
+	<div class="bar" style="margin-top: 8px">
+		<span style="font-size: 12px; color: var(--ink-dim)">Chart lightness</span>
+		<input type="range" id="hs-l" min="0" max="100" step="0.5" value="50" style="flex: 1">
+		<span style="font-size: 12px; color: var(--ink-dim)" id="hs-l-value"></span>
+	</div>
+	<div class="hint">Hue across, saturation up, at the chart lightness. Both axes are spaced by perceived change (OKLab arc length): the saturation axis exactly, per column; the hue axis as the average over saturations, since one shared axis cannot be exact for every row. Dots are the generated colors, triangles the fixed ones; hatching is outside the selected ranges.</div>
+
+	<hr>
+
+	<div class="bar">
+		<h2 style="margin:0; flex:1">Names</h2>
+		<span style="font-size:12px; color:var(--ink-dim)" id="names-summary"></span>
+		<button id="names-toggle">Hide</button>
+	</div>
+	<div id="names-body">
+		<div id="name-chips"></div>
+		<div class="hint" id="names-hint">Every name the generator can reach, each drawn at the lightness where it covers the most ground - eleven of them, white and black among them, cover nothing at all at mid lightness. Click a name to stop the generator using it; fixed colors are exempt. Drag one name onto another to merge them: merged names generate as a single name, so two colors sharing one have to sit further apart, while each swatch keeps its own label. Drag a name out of its box to split it off.</div>
+	</div>
+
+	<hr>
+
+	<div class="bar">
+		<h2 style="margin:0; flex:1">Export</h2>
+		<select id="format">
+			<option value="hex">Hex list</option>
+			<option value="css">CSS custom properties</option>
+			<option value="json">JSON array</option>
+			<option value="python">Python list</option>
+		</select>
+		<button id="copy">Copy</button>
+	</div>
+	<textarea id="export" readonly spellcheck="false"></textarea>
+	<div class="hint">Click any swatch to copy its hex.</div>
+
+</div>
+
+<div class="panel" id="gamut">
+	<h2>3D gamut</h2>
+	<div class="plane" id="gamut-3d"></div>
+	<div class="hint">The sRGB gamut in OKLab, lightness up. Solid body: what the selected ranges allow. Cones: fixed colors. Amber line: hardest pair. Halos reach half the Distinctness width, so two meeting mark a pair one noise width apart. Drag to rotate, double-click to reset.</div>
+</div>
+
+<div class="panel" id="side">
+
+	<div class="group">
+		<h2>State</h2>
+		<input type="text" id="state" spellcheck="false">
+		<div class="bar" style="margin-top:8px">
+			<button id="state-copy">Copy</button>
+			<button id="state-apply">Apply</button>
+		</div>
+		<div class="hint">Every setting, in one string. Paste one back and apply it to restore the exact palette.</div>
+	</div>
+
+	<hr>
+
+	<div class="group">
+		<h2>Pinned</h2>
+		<div class="bar">
+			<button id="pin-add">Pin</button>
+			<button id="pin-copy" hidden>Copy all</button>
+			<button id="pin-load">Load</button>
+		</div>
+		<textarea id="pin-paste" spellcheck="false" hidden placeholder="Paste copied lines, then press Load again"></textarea>
+		<div id="pin-list"></div>
+		<div class="hint">This session only, nothing is saved. Copy the list out to keep it, and paste it back with Load.</div>
+	</div>
+
+</div>
+
+</div>
+
+<script>
+"use strict";
+
+// ---------- color math ----------
+
+function hsl2rgb(h, s, l) {
+	const c = (1 - Math.abs(2 * l - 1)) * s;
+	const m = l - c / 2;
+	const hp = ((h % 360) + 360) % 360 / 60;
+	const x = c * (1 - Math.abs(hp % 2 - 1));
+	const seg = [[c, x, 0], [x, c, 0], [0, c, x], [0, x, c], [x, 0, c], [c, 0, x]][Math.floor(hp) % 6];
+	return [seg[0] + m, seg[1] + m, seg[2] + m];
+}
+
+// Inverse of hsl2rgb: hue in degrees, saturation and lightness as fractions.
+function rgb2hsl(rgb) {
+	const [r, g, b] = rgb;
+	const max = Math.max(r, g, b), min = Math.min(r, g, b);
+	const l = (max + min) / 2;
+	const c = max - min;
+
+	// Grey has no hue, and the saturation below divides by zero at both ends of lightness.
+	if (c === 0)
+		return [0, 0, l];
+
+	const sixth = max === r ? ((g - b) / c % 6 + 6) % 6
+		: max === g ? (b - r) / c + 2
+		: (r - g) / c + 4;
+	return [sixth * 60, c / (1 - Math.abs(2 * l - 1)), l];
+}
+
+function srgbToLinear(u) {
+	return u <= 0.04045 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4);
+}
+
+function parseHex(hex) {
+	const n = parseInt(hex.slice(1), 16);
+	return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255];
+}
+
+function relativeLuminance(rgb) {
+	return 0.2126 * srgbToLinear(rgb[0]) + 0.7152 * srgbToLinear(rgb[1]) + 0.0722 * srgbToLinear(rgb[2]);
+}
+
+// True where black marks out-contrast white: 0.179 is the luminance at which the two are equal.
+function isLightColor(rgb) {
+	return relativeLuminance(rgb) >= 0.179;
+}
+
+// Bjorn Ottosson's OKLab, from linear sRGB.
+function rgbToOklab(rgb) {
+	const r = srgbToLinear(rgb[0]), g = srgbToLinear(rgb[1]), b = srgbToLinear(rgb[2]);
+	const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+	const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+	const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+	return [
+		0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+		1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+		0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+	];
+}
+
+// Inverse of rgbToOklab. Components outside [0, 1] mean the color is outside the sRGB gamut.
+function oklabToRgb(L, a, b) {
+	const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+	const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+	const s = (L - 0.0894841775 * a - 1.2914855480 * b) ** 3;
+	const lin = [
+		 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+		-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+		-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s];
+	return lin.map(u => u <= 0.0031308 ? u * 12.92 : 1.055 * u ** (1 / 2.4) - 0.055);
+}
+
+// Scaled x100 so the useful range reads like CIE delta-E rather than 0.01 steps.
+function distance(a, b) {
+	const dl = a[0] - b[0], da = a[1] - b[1], db = a[2] - b[2];
+	return Math.sqrt(dl * dl + da * da + db * db) * 100;
+}
+
+function toHex(rgb) {
+	return "#" + rgb.map(v => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, "0")).join("");
+}
+
+// ---------- color naming ----------
+
+// A palette color is looked at alone rather than beside the others, so recognising it is a matter
+// of the name it carries, not of its distance from the rest.
+// generate places colors by confusability: name overlap between cells, fading with OKLab distance.
+//
+// Which name a color carries, and whether people agree on it, from the c3 model of the XKCD color
+// survey - Heer and Stone, "Color Naming Models for Color Selection, Image Editing and Palette
+// Design", CHI 2012. Model data from https://github.com/StanfordHCI/c3, BSD licensed:
+//   Copyright (c) 2011, Stanford University. All rights reserved.
+// The survey binned sRGB into CIE Lab cubes 5 units on a side and tallied the words people gave to
+// each. 36 words earn a cell of their own; every other word is folded into the one its votes
+// co-occur with most, so synonyms count for the region they share instead of splitting it.
+// A bin belongs to the word with the highest vote share weighted by the word's rarity: unweighted,
+// generic words win everywhere as everyone's fallback and confine specific words to slivers of
+// their real regions. Weighted, purple owns 689 bins, orange 226, salmon 131.
+//
+// The tables below are generated: data/build_cells.py prints them, and --check reports whether the
+// ones here still match the model. Edits made by hand are lost at the next run.
+const CELL_NAMES = ["purple", "blue", "pink", "brown", "lavender", "green", "light green", "olive", "light blue", "grey", "magenta", "dark green", "navy blue", "maroon", "teal", "orange", "dark purple", "tan", "red", "turquoise", "grey blue", "black", "peach", "mustard", "lime green", "salmon", "yellow", "mauve", "yellow green", "light pink", "brick red", "pale yellow", "white", "burnt orange", "off white", "beige"];
+
+// Bins form a regular grid, so a color's bin is arithmetic rather than a search.
+const GRID_STEP = 5, GRID_L0 = 0, GRID_A0 = -85, GRID_B0 = -110;
+const GRID_NL = 21, GRID_NA = 38, GRID_NB = 42;
+// No sRGB color reaches these bins, three quarters of the grid.
+const OUTSIDE_GAMUT = 36;
+// Set on a bin where people split their votes between names, or where the winning word barely beat
+// the runner-up: the color has a name, but not one a viewer would land on twice running.
+const UNSURE = 64;
+
+// Run-length encoded, a (symbol, run length) byte pair per run, in L then a then b order.
+const CELL_GRID_RLE = "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AQRAAQAKJBsBA0EBAAUkIAEEAAIk/yT/JBJFAiQlCwRLASQjCwZLASQhDgELCCQfDgNLBAsFJBwOBUsCCwFLAgsCRwEHASQbTgEOBE4BSwVHAQcDJBpBAQ4BTgEOAU4CSQFLAkcBBwYkGAEDVAEUAVQCCQQHByQXAQNBARQCVAEJBUcBQwFHAgcDJBYBBBQBVAEUAQkFSQEDByQVAQRUARQCVAEJBQMIJBQBBRQBVAEUAUkBCQQDCSQTAQVBAVQBQAEAAUABUAFJAVsBAwokEgEFQQEABUABWwEbAVsBAwkkEQEFQAEABkABWwEbAVsCAwgkEAEFQAEACFsBGwFbAh4CQwEDBSQPAQUAClsBGwFNAQ0BTQFeAh4BXgJDAiQOAQUAC1sBTQENA14BHgNeAmECJAwBBQAMWwFNAg0CTQFeAR4BXgRhASQLAQVAAQALQAEKAU0DDQFNAhIBUgRhASQLAQRAAQALSgEKA0oBTQNSARIGJAoBBEABAAtKAgoFTQFSARIHJAoBA0EBAApAAUoCCgcSCCQKAQMACkABCgFKAQoIUgESByQKAQIACkABCgFKAQoBJBoBAUEBAAckIgADJP8kvwUBJCVFAgUDJCNLBEUBBQIkIQ4BCwRLAkUCJB8OAwsGSwFFASQdDgROAQsGSwFHASQcDgVLAQsDSwFHAgcBRwEkGk4BDgYLAksBRwIHBSQYAQJOA1QBFAEJAUkBRwEHCCQXAQMUA1QBCQQHCCQWAQNUARQCVAEJBkMBRwIHBCQUAQRBARQBVAEUAQkGAwgkEwEFFANJAQkFAwkkEgEFQQEUAVQBFAEJBQMKJBEBBlQCQAEAAUABCQFJAVsCAwokEAEGQAEABVsBGwJbAUMBAwkkDwEGQAEABkABGwJbAgMJJA4BBgAIQAEbAlsCXgEeAV4BAwRDASEBJA0BBgAJQAEbBF4BHgFeAR4CXgFhASEBYQEkDQEFAApAARsBWwJNAl4CHgJeAWECIQEkDAEFAAtAAVsBQgNNAV4CHgJeAmECIQEkCwEEAAxKAUIBAgNCARIDUgJeAWECIQEkCwEDAAtAAQoBSgJCAQICQgESCFIBJAsBAgALSgEKAUoBCgFKA0ICUgESCCQLAQEAC0oBCgVKBFIBEggkCwAKQAFKAgoGSgQSCCQLAAlAAQoBSgEKB0oEUgESByQLAAhAAQoBSgEKBCQbAAdAAST/JLcFBCQjBQckIU4BBQgkHw4BTgJFBAUEJB0OA04CSwJFBAUCJBsOBU4BSwVHAgcCJBoOB0sCRwEHBEcCJBlBAQ4BTgEOBAcCRwIHBiQXAQNBAVQECQJHAQcIJBYBBBQBVAEUAVQBCQRHAQcIJBQBBBQDVAEJBkcEBwNHASQTAQRBARQCVAEJBkkBAwZDARcBJBIBBRQBVAEUAUkBCQVJAQMIQwEkEQEFVAEUAVQCCQVDAQMKJBABBkQFCQFJAVsCAwskDgEGQQFEAQQBRANAAVsBGwQDCWEBJA4BBUEBBAFEBUABWwEbAVsEQwEDBUMBYQEhASQNAQVEA0AGWwEbAVsBGwJbAR4CXgFDAQMBYQEhAmEBJAwBBUQCQAYAAlsBGwJbAx4BXgQhAWECIQEkDQEDRAJAAwAGWwJCAQICQgFZAV4CHgFeAWECIQFhASQMAQNEAUACAAhAAUIBAgUZAV4BHgJeAWEBIQFhAU8BJA0BAUEBQAIACUIBAgZZAlIBEgFSAmEBTwEPASQNQQEAC0IBAgdZAhIFTwEPAiQMAApAAQoBSgFCAgIFQgESCA8BJAwACUoBCgFKBEICAgNCAVIBEggkDAAISgIKA0oEQgRSARIIJAwAB0oCCgVKCBIIJAwABUABCgFKAQoGSggSCCQMAARAAQoBSgEKB0oBJBsAA0ABCgFKAQoBJP8kYwUEJCMFByQhBQkkH04BDgEFCSQdDgQFCSQbDgROAgUHRQIkGg4FTgIFAkUCRwEHBCQYQQEOAU4BDgROAUcCBwNHBSQXAQJOAQ4DTgJHBAcHJBYBA0EBFAFUARQBVAEJAkcBBwkkFAEFFAFUARQBVAEJBEkBBwgkEwEFFAFUARQBVAEJBkcFBwFHAVcBJBIBBVQBFAJUAQkGSQFRAkMCAwFDAVcBFwEkEQEGFAFUARQBSQEJBlEBQwFRAUMCAwJXAhcBJA8BBkEBFAFUAgkFSQFDAVEBQwQDA1cCJA4BBkQCBAFEBEkBWwIbAUMFAwRDAWEBJA0BBgQCRAYbAVsEQwQDA2EBIQIkDQEFRAkbAVsBGwNDAgMDQwEhAWEBIQFhASQNAQNBAUQFBARbAhsBWwJCAVkBXgEeAV4BYQMhAWEBTwEkDQECQQFEAgQIWwJCAQICQgEZAVkBXgJhASECYQFPAQ8BJA0BAkQBBAZEA0IBAgVCARkBWQEZAV4CYQFPAg8CJA0BAQQFRAVCAQIGQgEZAVkBGQFZAg8FJA1EB0AEQgECBxkBWQMZAQ8FJA1AAkQDQAIAAkABQgECCFkBGQFZARkBWQESAU8BDwMkDQABQAQAA0ABQgECCVkBGQJZAVIBEgJPAQ8DJAwAB0ABSgFCAgIJWQJSARIFUgEPASQMAAZKAQoBSgNCAwIGQgFSARIIJAwABEABSgIKAUoGQgdSARIIJAwAA0ABSgIKBEoLUgESCCQMAAJAAQoBSgEKCEoECgJKASQWAAIKAUoBCgkkHkoCCgQk/yQPBQQkIwUHJCEFCSQeDgIFCiQcDgQFCiQbDgUFCiQZTgEOBgUHRQMkGE4CDgROAkUDRwMHBCQWQQEBAU4BDgVOAQcFRwYkFUECAQFBAQ4BTgJUAkcDBwkkFEgBQQIBAUEBFAFUARQBVAFJAQkBSQEHCiQTSAFBBBQBVAEUAVQBCQUHB0cBVwEkEUgGFAFUARQBVAEJBlECEQFRAlcCFwIkEEEDSAQUAlQBCQZJAREDUQNXARcCJBBBAkgCCAIUAVQBFAFJAQkFSQERBFEDVwEXAiQPAQFBAUgCCAFIAkQBVAFEAUkBCQRJAREFUQRXARcBJA8BAUEBSAMEB0QBWwNRAhEDUQRhAVcCJA4BAUEBSAJEAQQHWwIbA1EHYQFPAg8BJA5BAUgBRAEECVsBGwJbAUIBGQFWAVEDTwMPAyQOQQEECkQBWwFCAQICQgEZAVkCVgFPAg8FJA4ECUQCAgVZARkBWQEZAk8BDwYkDkQBBAREAQQBRAMCBkIBGQFZARkCWQEPBiQOBAFECAIHQgEZAVkBGQJZAQ8GJA4EAkQEBAFEAQIIQgEZAVkBGQNPAQ8FJA4EBkIBAgoZBFkCDwUkDkQBBANEAUIBAgtZARkBWQIZAVkBTwEPBCQOQAFEA0IBAgxCARkBWQEZAVkBEgNPAQ8CJA5AA0IDAgxZARkBWQESByQOAAJKA0IHAgNCBCQXAAFKDiQbCgFKAQoDSgIKAUoDJB9KAQoIJCEKBiQlCgEkvwUCJCQFBiQhBQkkHw4BRQEFCSQdDgJOAUUBBQokG04BDgJOAUUBBQokGU4CDgRFAQUKJBdTAk4BDgUFB0UEJBZTARMBUwFOAQ4DTgJFA0cDBwUkFUgCUwFOAg4DTgEHB0cF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JCNCAgIDJCUCAiT/JOIYAVgCGAEkIkUDWAEYAlgBGAEkH0YBBgFGAUUDWAEYAlgBGAEkHUYDBgJGAUUCWAEYAVgCGAEkGxMCRgQGAUYCRQFYARgBWAEYAiQZEwRGAQYCRgIGAkYBGAJYARgCJBcTBVMBBgVGAxgBWAEYAyQWEwYGB0YBBgEYAVgBGAMkFBMHUwEGB0YCGAFYAlwCJBMTCAYIRgJcBSQTEwdTAQYIRgFcARwBXAEcAlwBJBNTAUgEUwIGCVwDHAJcAVoBJBMIBwYIXAVaARoCJBMIBwYGRgFfA1oBGgUkEwgHRgIGAUYBIwFjASMBYwFfAhoGJBMIBUgBSQNjAiMCYwJfAVoBGgYkEwgEYAFJBGMCIwFjAlEBEQFaARoGJBMIA2ADSQJjAiMBYwFRAhECWgQaAyQTCAJgBV0BYwJWARYDVgJRAVcDWgIaASQTBANEAR0BXQEdAlYBFgZWARYBTwFXBCQUBAMdBVYBFgckGgQCHQZWAhYBJB8EAV0BHQYkIl0BHQNdAiQkHQJdASQnXQEk/yT/JDUYAlgBGAIkIkYBRQFYARgCWAEYAiQfRgIGAkYBWAEYAlgBGAIkHVMBBgFGAwYBRgFYARgCWAEYAiQbEwJGAQYDRgQYAVgBGAMkGRMERgEGBUYCGAFYARgDJBcTBVMBBgdGARgBWAEYBCQUEwcGCEYBWAIYAVgDJBMTB1MBBglYAlwCHAIkExMHBglGAVwGJBMTA1MEBgkcAVwBHAJcAVoBGgEkE0gGBgkcAVwDWgEaAyQTCAYGB0YBHwFfAR8BWgEaBSQTCAYGBUYBHwFfAR8DWgEaBSQTCAZgAWIBIgNiAV8CHwJfAVoBGgUkEwgESAEgAWABYgRjAV8CHwJfARoGJBMIAyABYAEgAmIDYwEjAWMBXwMaByQTCAIgBGABYgFjAiMBYwJRAloBGgUkFQgBIAFgASACYAFdAWMBVgckG0QBYAJdBFYBFgMkHwQBXQMdA1YBJCJdAh0DJCUdAyT/JP8k/yTXWAEYAVgEJBpTAQYJXAMcAVwCJBUTBQYJRgFcBiQVEwFTBAYIRgEcA1wBWgEaAiQVSAIIAUgBBghGAV8CXAEaBiQUCAQGBx8BXwEfAl8BGgYkFAgEBgNGAWICHwFfAR8DXwEaBiQUCARgAWIBIgJiAl8CHwNfARoGJBQIAmABIAFgAWIBIgFiA18CHwNaARoEJBYIASABYAEgAWABIgFiBF8CHwIkHCABYAEgAmIFYwEkIGABIAJgAWICVgEkI2ABXQEdAiQmXQIk/yT/JP8k/yT/JCcfAloBJBxgAiICYgJfAR8BXwEfBCQbSAEgAWACIgRiAR8BXwEkHyADYAEiAyQjIANiASIBJCUgAiT/JP8k/yQ0";
+
+// Name overlap between cells as a byte each, the full square matrix row-major: how much people
+// share words for the two cells' colors.
+const CELL_OVERLAP_B64 = "/ygpA78AAQASFHQAP08IAOYCAgkpDQQAAAcAtQAdBAANAAEBKP8CADoACAG2DAcCsgVcABkAAG7DCQAAAAAADAACAAAoAAIAKQL/AlIAAAABBtAABSUAAhsNHwADAV0AALAAdQDrGgAiAhEQAwAC/wMEBDUAIwIMAVECEA6WBwEEMhtLAw0BPwUDxQQGnAgdvzpSA/8AAgIzKHMBPDkRAJ0GBRhGChMAACMAtABjBwA4AAkJAAAABAD/1sUEEADHAQB8AAAKADIQDQAb5AAJALUAACILACocAQgABALW/6YUFQCYBgCBAAAMAFAdCgIZ0gAMAbMBAC0eAEolAAEANQLFpv8ELACzAQxgAwI5ACQXFwpCqQIODaICICgYGzI3ErYBADMEFAT/FQEFbgFbAAgBAKeqBgAAAwAABAMDAAFgAAoDFAwGIygQFSwV/woZEg4cAhs1AQx/HwkMDQQBOwwZFAaqEERRdAfQAnMAAAABCv8AEk4AAV8JIwAJBT4AAH4AkACqGAAYAgwLAAIADAHHmLMFGQD/BAJyAAINACgULwAYowAHAoIBBBgMAx0YP7IFATwBBgFuEhIE/xBGAEYBAESZMQAAAQAAIAADAAAaAAIBTwUlUTkAAAwBDk4CEP8ACWIofQAHHQ4TADoAewAVogAEPQEGCFwAAhF8gWBbHAByRgD/AAQGAMF+EQAMZgAEAVABAA8gABgQAAACEAAAAAMAAgEAAAkA/wApJAAAAlVnADcQBQQCMwsBvgcM5hkbDp0AAAIIG18CRmIEAP8HAwMhKgEDAAIAqwAQDwAMBgIDAgANlgYKDDkBNQkNASgGKQf/BgINGH54CR8aNRQVc00jdX7EAgAfBwUAAAAAASMAAH0AJAMG/wAAARMJAG0BHwAShgACNQECCW4AARgyUCSnDAAoRADBAAMCAP97BgAEKQACACEAAAc2AA8GKcMDBEYQHReqfwkUmQd+ACENAHv/FQECDQABIQoMAAJ2AB0eDQkBMgoNChcGHwUvMR0RAioYAQYV/wMMCgIAFQgCHwINFwYJBABdGxMAAgoACT4AAA4AVQF+EwABA/8+AJ8NMQVlLi4ZRV5/AAAASwAbGUIADAAYABMMZwN4CQQCDD7/HBOyEmECQaQEcTxQAAAAAwDk0qkDDQCjAQBmAAAJACkNCgAc/wASANMAACoLACwbBwCwDSMAAAIABH4AADoANwIfbQAAAp8TAP8CUwCeVwQVMxQYAAAAAQAJDA4AAQAHAAAEEAAaAQIBAA2yEgL/AGsAAeABBy8ntQx1P7QAAQ0EO5ACIHsBBas1HwAhFTESAFMA/wFuUAMsJhMcAAAABQC1s6IDDACCAABQBAAUACEKCAVh0wBrAf8AAXsLAjopHQLrA2MAAQIDGaoBAxUBAhAVEgAMAmUCAJ4AbgD/EwRBASUhBAAaxQcAACAAFBgEAKIAMw9zhgAAHy5BAFcBUAET/wIDrQUTAAAABAAiLSgBBgAYAAAPCwBNAAcCAi6kKgTgA3sEAv8OBn1zDSgiBjgLHhhgqhgMGgQgAQwjAjZ2DRkECxUBLAtBAw7/AYNQAAACnAAAABsAEAIDAD0AvgZ1NQAAF0VxADMHJgIBrQYB/wgYAQIRCAkqSjIKRAwdAgEYBwJ+AQ8dBl48LBQvEzolBX2DCP/UAQAQHQkcJTcDUQsYAQYQDAPEAgYeCX9QGxgnHCkhE3NQGNT/";
+const CELL_OVERLAP = (() => {
+	const bytes = atob(CELL_OVERLAP_B64), m = new Uint8Array(bytes.length);
+	for (let i = 0; i < m.length; ++i)
+		m[i] = bytes.charCodeAt(i);
+	return m;
+})();
+
+const CELL_GRID = (() => {
+	const runs = atob(CELL_GRID_RLE), grid = new Uint8Array(GRID_NL * GRID_NA * GRID_NB);
+	let at = 0;
+	for (let i = 0; i < runs.length; i += 2)
+		for (let n = runs.charCodeAt(i + 1); n > 0; --n)
+			grid[at++] = runs.charCodeAt(i);
+	return grid;
+})();
+
+// CIE Lab under D65, the space the survey binned. Distances are still measured in OKLab; this
+// exists only to find a color's bin.
+function rgbToLab(rgb) {
+	const r = srgbToLinear(rgb[0]), g = srgbToLinear(rgb[1]), b = srgbToLinear(rgb[2]);
+	const f = t => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+	const x = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047);
+	const y = f(0.2126 * r + 0.7152 * g + 0.0722 * b);
+	const z = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
+	return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+}
+
+const gridIndex = (value, origin, count) =>
+	Math.min(count - 1, Math.max(0, Math.round((value - origin) / GRID_STEP)));
+
+const gridAt = (li, ai, bi) => CELL_GRID[(li * GRID_NA + ai) * GRID_NB + bi];
+
+// The color's cell, and whether the survey settled on that name.
+// Rounding reaches a bin outside the gamut only at its edge, where a neighbour along one axis holds
+// the same name; the six of them are searched in turn rather than widening to a shell.
+function cellOf(rgb) {
+	const lab = rgbToLab(rgb);
+	const li = gridIndex(lab[0], GRID_L0, GRID_NL);
+	const ai = gridIndex(lab[1], GRID_A0, GRID_NA);
+	const bi = gridIndex(lab[2], GRID_B0, GRID_NB);
+	let symbol = gridAt(li, ai, bi);
+
+	for (let n = 0; symbol === OUTSIDE_GAMUT && n < 6; ++n) {
+		const step = n % 2 ? 1 : -1;
+		symbol = gridAt(
+			Math.min(GRID_NL - 1, Math.max(0, li + (n < 2 ? step : 0))),
+			Math.min(GRID_NA - 1, Math.max(0, ai + (n >= 2 && n < 4 ? step : 0))),
+			Math.min(GRID_NB - 1, Math.max(0, bi + (n >= 4 ? step : 0))));
+	}
+
+	return { cell: symbol & ~UNSURE, confident: (symbol & UNSURE) === 0 };
+}
+
+const cellName = cell => CELL_NAMES[cell];
+
+// Cell-indexed tables run one slot past the names: a color the grid places outside the survey's
+// gamut carries OUTSIDE_GAMUT, which must read as an ordinary included, ungrouped name.
+const NAME_SLOTS = CELL_NAMES.length + 1;
+
+// ---------- generation ----------
+
+function mulberry32(seed) {
+	let a = seed >>> 0;
+	return function () {
+		a = (a + 0x6D2B79F5) >>> 0;
+		let t = Math.imul(a ^ (a >>> 15), 1 | a);
+		t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+	};
+}
+
+// The name tables when none are chosen: every name usable, none merged.
+const ALL_INCLUDED = Array.from({ length: NAME_SLOTS }, () => true);
+const NO_GROUPS = Array.from({ length: NAME_SLOTS }, (_, cell) => cell);
+
+// Drawing evenly across the HSL box does not draw evenly across OKLab, the space every distance
+// here is measured in: over a default box the candidates per unit of perceived difference vary
+// about 17x, thickest around green and thinnest around blue, which alone differ by 5.6x. The table
+// below records how much OKLab volume each part of the box stands for, and a draw is kept in
+// proportion to it.
+// The grid is coarse deliberately. What survives is a spread of 1.1x against that 17x, and the
+// cells it gets worst - those collapsing towards black or white - are the ones it rejects almost
+// entirely anyway.
+const DENSITY_GRID = [24, 12, 12];
+const DENSITY_STEP = 1e-4;
+
+// OKLab volume per unit of HSL at one point: the determinant of the map's Jacobian, by central
+// differences. Steps past the 0 and 1 ends of saturation and lightness stay continuous through
+// hsl2rgb and rgbToOklab, so edge nodes need no case of their own.
+function oklabVolume(h, s, l) {
+	const slope = (dh, ds, dl) => {
+		const ahead = rgbToOklab(hsl2rgb(h + dh, s + ds, l + dl));
+		const behind = rgbToOklab(hsl2rgb(h - dh, s - ds, l - dl));
+		return ahead.map((value, i) => (value - behind[i]) / (2 * DENSITY_STEP));
+	};
+	const x = slope(DENSITY_STEP, 0, 0), y = slope(0, DENSITY_STEP, 0), z = slope(0, 0, DENSITY_STEP);
+	return Math.abs(x[0] * (y[1] * z[2] - y[2] * z[1])
+		- y[0] * (x[1] * z[2] - x[2] * z[1])
+		+ z[0] * (x[1] * y[2] - x[2] * y[1]));
+}
+
+// Built once per generate, read for every candidate: a few milliseconds against the hundreds of
+// thousands of draws a run makes.
+function buildDensity(cfg) {
+	const [nh, ns, nl] = DENSITY_GRID;
+	const density = {
+		table: new Float64Array((nh + 1) * (ns + 1) * (nl + 1)),
+		peak: 0,
+		// A hue range with min > max wraps through 0.
+		h0: cfg.hMin, hSpan: cfg.hMin <= cfg.hMax ? cfg.hMax - cfg.hMin : 360 - cfg.hMin + cfg.hMax,
+		s0: cfg.sMin / 100, sSpan: (cfg.sMax - cfg.sMin) / 100,
+		l0: cfg.lMin / 100, lSpan: (cfg.lMax - cfg.lMin) / 100
+	};
+
+	for (let i = 0; i <= nh; ++i)
+		for (let j = 0; j <= ns; ++j)
+			for (let k = 0; k <= nl; ++k) {
+				const volume = oklabVolume((density.h0 + density.hSpan * i / nh) % 360,
+					density.s0 + density.sSpan * j / ns, density.l0 + density.lSpan * k / nl);
+				density.table[(i * (ns + 1) + j) * (nl + 1) + k] = volume;
+				density.peak = Math.max(density.peak, volume);
+			}
+	return density;
+}
+
+// The point's position in grid cells along one axis, held inside the last cell so both nodes it
+// interpolates between exist. A collapsed range spans no cells and sits at its single node.
+const densityAxis = (offset, span, divisions) =>
+	span > 0 ? Math.min(divisions - 1e-9, Math.max(0, offset / span * divisions)) : 0;
+
+// Trilinear between the eight nodes around the point.
+function densityAt(density, h, s, l) {
+	const [nh, ns, nl] = DENSITY_GRID;
+	const u = densityAxis((h - density.h0 + 360) % 360, density.hSpan, nh);
+	const v = densityAxis(s - density.s0, density.sSpan, ns);
+	const w = densityAxis(l - density.l0, density.lSpan, nl);
+	const i = Math.floor(u), j = Math.floor(v), k = Math.floor(w);
+	const fu = u - i, fv = v - j, fw = w - k;
+	const at = (di, dj, dk) => density.table[((i + di) * (ns + 1) + j + dj) * (nl + 1) + k + dk];
+
+	return at(0, 0, 0) * (1 - fu) * (1 - fv) * (1 - fw) + at(1, 0, 0) * fu * (1 - fv) * (1 - fw)
+		+ at(0, 1, 0) * (1 - fu) * fv * (1 - fw) + at(1, 1, 0) * fu * fv * (1 - fw)
+		+ at(0, 0, 1) * (1 - fu) * (1 - fv) * fw + at(1, 0, 1) * fu * (1 - fv) * fw
+		+ at(0, 1, 1) * (1 - fu) * fv * fw + at(1, 1, 1) * fu * fv * fw;
+}
+
+// A box that is nearly all degenerate - a lightness range pressed against black - accepts rarely,
+// so the tries are capped and the last draw stands. Such a box takes 6 tries on average and was
+// measured to reach 60, so the cap is set well clear of it rather than just above.
+const UNIFORM_TRIES = 256;
+
+function sampleColor(rnd, cfg) {
+	const density = cfg.density;
+	let h = 0, s = 0, l = 0;
+	for (let n = 0; n < UNIFORM_TRIES; ++n) {
+		h = (density.h0 + rnd() * density.hSpan) % 360;
+		s = density.s0 + rnd() * density.sSpan;
+		l = density.l0 + rnd() * density.lSpan;
+		if (rnd() * density.peak <= densityAt(density, h, s, l))
+			break;
+	}
+	return colorAt(h, s, l);
+}
+
+// The record every stage shares, from HSL fractions.
+function colorAt(h, s, l) {
+	const rgb = hsl2rgb(h, s, l);
+	return { h, s, l, rgb, lab: rgbToOklab(rgb), hex: toHex(rgb), ...cellOf(rgb) };
+}
+
+// Same record shape as a sampled color, so everything downstream reads a fixed color the same way.
+function colorFromHex(hex) {
+	const rgb = parseHex(hex);
+	const [h, s, l] = rgb2hsl(rgb);
+	return { h, s, l, rgb, lab: rgbToOklab(rgb), hex, fixed: true, ...cellOf(rgb) };
+}
+
+// Every six-digit hex token in the text, whatever separates them, without repeats. Tokens are split
+// out and matched whole, so an eight-digit RGBA value is dropped rather than read as its first six.
+function parseFixedColors(text) {
+	const tokens = text.split(/[^#0-9a-f]+/i).filter(token => /^#?[0-9a-f]{6}$/i.test(token));
+	return [...new Set(tokens.map(token => "#" + token.replace("#", "").toLowerCase()))].map(colorFromHex);
+}
+
+// Identification model, as in data/identify.js: recall is the color plus Gaussian memory noise, the
+// viewer answers with the nearest entry. A lightness or chroma difference counts W_L or W_C times
+// its size against a hue difference. The noise width is the Distinctness slider.
+const W_L = 1;
+const W_C = 0.7;
+
+// Weighted squared distance in deltaE (OKLab x100): lightness and radial chroma differences by
+// their weights, the tangential hue difference as is.
+function apart2(p, q) {
+	const dL = (p[0] - q[0]) * W_L, dC = Math.hypot(p[1], p[2]) - Math.hypot(q[1], q[2]);
+	const da = p[1] - q[1], db = p[2] - q[2];
+	return dL * dL + (W_C * W_C - 1) * dC * dC + da * da + db * db;
+}
+
+// Abramowitz-Stegun 7.1.26, within 1.5e-7.
+function erfc(x) {
+	const t = 1 / (1 + 0.3275911 * Math.abs(x));
+	const poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+	const tail = poly * Math.exp(-x * x);
+	return x >= 0 ? tail : 2 - tail;
+}
+
+// The chance noise of width `sigma` carries a recall past the midpoint to a color `d` away.
+const swapChance = (d, sigma) => 0.5 * erfc(d / (2 * sigma) / Math.SQRT2);
+
+// Nearest hue inside the range, which wraps when min > max.
+function clampHue(h, hMin, hMax) {
+	const inside = hMin <= hMax ? h >= hMin && h <= hMax : h >= hMin || h <= hMax;
+	if (inside)
+		return h;
+	const turn = a => Math.min(Math.abs(a - h), 360 - Math.abs(a - h));
+	return turn(hMin) <= turn(hMax) ? hMin : hMax;
+}
+
+// The color at an OKLab point (deltaE units), moved into the sRGB gamut and the range box.
+function colorInBox(L, a, b, cfg) {
+	const rgb = oklabToRgb(L / 100, a / 100, b / 100).map(v => Math.min(1, Math.max(0, v)));
+	const [h, s, l] = rgb2hsl(rgb);
+	return colorAt(clampHue(h, cfg.hMin, cfg.hMax), Math.min(cfg.sMax, Math.max(cfg.sMin, s * 100)) / 100,
+		Math.min(cfg.lMax, Math.max(cfg.lMin, l * 100)) / 100);
+}
+
+// Uniform draws the start spends on one color at most.
+const START_DRAWS = 1500;
+const RESTARTS = 4;
+const positionsOf = colors => colors.map(color => color.lab.map(v => v * 100));
+
+// The fixed colors, then for each color the first uniform draw not too close to any chosen so far.
+// When none of the draws qualifies, the farthest of them: the box is too full for the limit, and
+// the draws are then spread as well as draws can be.
+function dartStart(rnd, cfg) {
+	const colors = cfg.fixed.slice();
+	const pos = positionsOf(colors);
+	for (let i = 0; i < cfg.count; ++i) {
+		let pick = null, clearest = -1;
+		for (let n = 0; n < START_DRAWS && clearest < Infinity; ++n) {
+			const draw = sampleColor(rnd, cfg);
+			const at = draw.lab.map(v => v * 100);
+			let nearest = Infinity;
+			for (const p of pos)
+				nearest = Math.min(nearest, apart2(at, p));
+			if (nearest > clearest) {
+				pick = draw;
+				clearest = nearest;
+			}
+			if (!tooClose(nearest, cfg))
+				break;
+		}
+		colors.push(pick);
+		pos.push(pick.lab.map(v => v * 100));
+	}
+	return colors;
+}
+
+// A pair is too close while its swap chance exceeds this.
+const SWAP_LIMIT = 0.02;
+const tooClose = (d2, cfg) => swapChance(Math.sqrt(d2), cfg.sigma) > SWAP_LIMIT;
+// Each push moves a color this far in deltaE.
+const PUSH_STEP = 1;
+// How far a color may end up from where it was drawn, in deltaE. Past that it stays, too close or
+// not: pushing on would walk it to the box's hull, the same corner every seed finds.
+const PUSH_BUDGET = 10;
+const MAX_PUSHES = 1000;
+// A push goes in a random direction between `cfg.pushMin` and `cfg.pushMax` degrees off straight
+// away from the too-close neighbors: straight away runs into box walls and cancels between
+// neighbors on opposite sides, a sideways step slides past both. These are the angles for callers
+// that set none.
+const PUSH_ANGLE_MIN = 15, PUSH_ANGLE_MAX = 120;
+// Rejected pushes in a row after which a color is left where it is.
+const STALL_PUSHES = 25;
+
+// A unit vector drawn uniformly from the band between PUSH_ANGLE_MIN and PUSH_ANGLE_MAX off the unit `axis`.
+function withinCone(rnd, axis, cfg) {
+	const nearest = Math.cos(cfg.pushMin * Math.PI / 180), farthest = Math.cos(cfg.pushMax * Math.PI / 180);
+	const cosine = nearest - rnd() * (nearest - farthest);
+	const sine = Math.sqrt(1 - cosine * cosine), turn = 2 * Math.PI * rnd();
+	// An orthonormal pair across the axis, from whichever coordinate axis is least aligned with it.
+	const pivot = Math.abs(axis[0]) < 0.6 ? [1, 0, 0] : [0, 1, 0];
+	const u = [pivot[1] * axis[2] - pivot[2] * axis[1], pivot[2] * axis[0] - pivot[0] * axis[2], pivot[0] * axis[1] - pivot[1] * axis[0]];
+	const uLength = Math.hypot(...u);
+	for (let k = 0; k < 3; ++k)
+		u[k] /= uLength;
+	const v = [axis[1] * u[2] - axis[2] * u[1], axis[2] * u[0] - axis[0] * u[2], axis[0] * u[1] - axis[1] * u[0]];
+	return axis.map((a, k) => a * cosine + (u[k] * Math.cos(turn) + v[k] * Math.sin(turn)) * sine);
+}
+
+// Pushes the colors of every too-close pair apart, a step at a time, until no pair is too close or
+// every color still too close has stalled. Nothing else moves. A color steps along a heading drawn
+// within the band off straight away from its too-close neighbors; the heading lasts while the
+// color keeps being pushed and its steps keep being accepted, and is redrawn otherwise. A push is
+// dropped when it raises the color's own chance of being misidentified, or lands on the sRGB gamut
+// surface: the pushes otherwise walk colors onto it and leave them there.
+// Returns the state with the highest floor seen, the start included.
+function pushApart(rnd, colors, cfg) {
+	colors = colors.slice();
+	const origin = positionsOf(colors);
+	const pos = positionsOf(colors);
+	const rejected = pos.map(() => 0);
+	const heading = pos.map(() => null);
+	// The chance color `i` at `at` is recalled as another color, summed over the others.
+	const errorAt = (i, at) => {
+		let error = 0;
+		for (let j = 0; j < pos.length; ++j)
+			if (j !== i)
+				error += swapChance(Math.sqrt(apart2(at, pos[j])), cfg.sigma);
+		return error;
+	};
+	const onGamutEdge = color => color.rgb.some(v => v < 0.5 / 255 || v > 254.5 / 255);
+	let best = colors.slice(), bestFloor = identification(colors, cfg).floor;
+	for (let n = 0, proposed = true; n < MAX_PUSHES && proposed; ++n) {
+		proposed = false;
+		const shift = pos.map(() => [0, 0, 0]);
+		for (let i = 0; i < pos.length; ++i)
+			for (let j = i + 1; j < pos.length; ++j) {
+				if ((colors[i].fixed && colors[j].fixed) || !tooClose(apart2(pos[i], pos[j]), cfg))
+					continue;
+
+				// Coincident colors have no line; they part along a.
+				const between = pos[i].map((v, k) => v - pos[j][k]);
+				const length = Math.hypot(...between);
+				const away = length > 1e-6 ? between.map(v => v / length) : [0, 1, 0];
+				for (let k = 0; k < 3; ++k) {
+					shift[i][k] += away[k];
+					shift[j][k] -= away[k];
+				}
+			}
+
+		for (let i = 0; i < pos.length; ++i) {
+			const length = Math.hypot(...shift[i]);
+			if (colors[i].fixed || rejected[i] >= STALL_PUSHES)
+				continue;
+			if (length === 0) {
+				heading[i] = null;
+				continue;
+			}
+
+			proposed = true;
+			heading[i] ??= withinCone(rnd, shift[i].map(v => v / length), cfg);
+			const target = pos[i].map((v, k) => v + heading[i][k] * PUSH_STEP);
+			const pushed = colorInBox(target[0], target[1], target[2], cfg);
+			const at = pushed.lab.map(v => v * 100);
+			if (Math.hypot(...at.map((v, k) => v - origin[i][k])) > PUSH_BUDGET || Math.hypot(...at.map((v, k) => v - pos[i][k])) < 1e-6
+				|| errorAt(i, at) > errorAt(i, pos[i]) || onGamutEdge(pushed)) {
+				++rejected[i];
+				heading[i] = null;
+				continue;
+			}
+			colors[i] = pushed;
+			pos[i] = at;
+			rejected[i] = 0;
+		}
+		const floor = identification(colors, cfg).floor;
+		if (floor > bestFloor) {
+			best = colors.slice();
+			bestFloor = floor;
+		}
+	}
+	return best;
+}
+
+// Pairs of two fixed colors are skipped throughout: generation cannot move either, so such a pair
+// must neither rank an attempt nor be pointed at as the offender.
+function minimumGap(colors) {
+	let gap = Infinity;
+	for (let i = 0; i < colors.length; ++i)
+		for (let j = i + 1; j < colors.length; ++j)
+			if (!colors[i].fixed || !colors[j].fixed)
+				gap = Math.min(gap, distance(colors[i].lab, colors[j].lab));
+	return gap;
+}
+
+// The chance each generated color is misidentified, summed over the others; the floor is the worst
+// color's chance of being identified. The pair is the one likeliest swapped, `apart` its weighted
+// deltaE and `confused` that chance. Null pair below two colors, where no pair exists.
+function identification(colors, cfg) {
+	const pos = positionsOf(colors);
+	const error = colors.map(() => 0);
+	let pair = null, apart = Infinity, confused = -1;
+	for (let i = 0; i < colors.length; ++i)
+		for (let j = i + 1; j < colors.length; ++j) {
+			if (colors[i].fixed && colors[j].fixed)
+				continue;
+
+			const d = Math.sqrt(apart2(pos[i], pos[j]));
+			const chance = swapChance(d, cfg.sigma);
+			error[i] += chance;
+			error[j] += chance;
+			if (chance > confused) {
+				confused = chance;
+				pair = [colors[i], colors[j]];
+				apart = d;
+			}
+		}
+	let floor = 1;
+	colors.forEach((color, i) => {
+		if (!color.fixed)
+			floor = Math.min(floor, Math.max(0, 1 - error[i]));
+	});
+	return { floor, pair, apart, confused };
+}
+
+// Callers that set no name tables report names as though none were merged.
+function generate(cfg) {
+	const settings = { ...cfg, groupOf: cfg.groupOf || NO_GROUPS, sigma: Math.max(cfg.scale, 1), density: buildDensity(cfg),
+		pushMin: cfg.pushMin ?? PUSH_ANGLE_MIN, pushMax: cfg.pushMax ?? PUSH_ANGLE_MAX };
+	let best = null;
+	for (let n = 0; n < RESTARTS; ++n) {
+		const rnd = mulberry32(settings.seed + n * 7919);
+		const colors = pushApart(rnd, dartStart(rnd, settings), settings);
+		const attempt = { colors, ...identification(colors, settings), gap: minimumGap(colors),
+			named: new Set(colors.map(color => settings.groupOf[color.cell])).size };
+		if (!best || attempt.floor > best.floor || (attempt.floor === best.floor && attempt.gap > best.gap))
+			best = attempt;
+	}
+	return best;
+}
+
+// ---------- ui ----------
+
+const $ = id => document.getElementById(id);
+let palette = [];
+// The last result's hardest pair: read by the 3D module when it loads, after the first render.
+let lastWorstPair = null;
+// The chart's canvas, kept field image, hue arc and drawn marker positions, so a highlight
+// change repaints markers and hovering hit-tests them without recomputing the field.
+let hsDraw = null;
+// The color hovered in any view, highlighted in all of them.
+let highlightedColor = null;
+
+const ordered = (a, b) => a <= b ? [a, b] : [b, a];
+
+function readConfig() {
+	const [sMin, sMax] = ordered(+$("s-min").value, +$("s-max").value);
+	const [lMin, lMax] = ordered(+$("l-min").value, +$("l-max").value);
+	const [pushMin, pushMax] = ordered(+$("push-min").value, +$("push-max").value);
+	return {
+		count: +$("count").value,
+		scale: +$("strict").value,
+		pushMin, pushMax,
+		hMin: +$("h-min").value, hMax: +$("h-max").value,
+		sMin, sMax, lMin, lMax,
+		seed: +$("seed").value | 0,
+		fixed: parseFixedColors($("fixed-colors").value),
+		included: nameIncluded, groupOf: nameGroup
+	};
+}
+
+let drawnBarWidth = 0;
+
+function drawHueBar() {
+	const canvas = $("hue-canvas");
+	const w = canvas.clientWidth, h = canvas.clientHeight;
+	if (w === drawnBarWidth || w === 0)
+		return;
+
+	canvas.width = w;
+	canvas.height = h;
+
+	const hueAt = invertArc(HUE_BAR_ARC, w, (w - 1) / w);
+	const ctx = canvas.getContext("2d");
+	for (let x = 0; x < w; ++x) {
+		ctx.fillStyle = toHex(hsl2rgb(hueAt[x] * 360, 1, 0.5));
+		ctx.fillRect(x, 0, 1, h);
+	}
+	drawnBarWidth = w;
+}
+
+// Masks the hues outside the range: two segments when the range sits in the middle, and the
+// single segment between max and min when it wraps. Edges follow the bar's remapped axis.
+function maskHueBar(min, max) {
+	const segments = min <= max ? [[0, min], [max, 360]] : [[max, min], [360, 360]];
+
+	segments.forEach((seg, i) => {
+		const el = $(i === 0 ? "hue-muted-a" : "hue-muted-b");
+		const left = arcFraction(HUE_BAR_ARC, seg[0] / 360) * 100;
+		el.style.left = left + "%";
+		el.style.width = (arcFraction(HUE_BAR_ARC, seg[1] / 360) * 100 - left) + "%";
+	});
+}
+
+let drawnHue = -1, drawnWidth = 0, drawnHeight = 0;
+// The plane's shared axes, kept for the masks: each is the mean arc over the other dimension.
+let slSArc = null, slLArc = null;
+
+// The plane depends only on hue, so moving an S or L slider redraws nothing.
+function drawSLPlane(hue) {
+	const canvas = $("sl-canvas");
+	const w = canvas.clientWidth, h = canvas.clientHeight;
+	if (hue === drawnHue && w === drawnWidth && h === drawnHeight)
+		return;
+
+	canvas.width = w;
+	canvas.height = h;
+
+	slSArc = arcMean(2 * w, (t, l) => hsl2rgb(hue, t, l));
+	slLArc = arcMean(2 * h, (t, s) => hsl2rgb(hue, s, t));
+	const sAt = invertArc(slSArc, w, 1);
+	const lAt = invertArc(slLArc, h, 1);
+
+	const ctx = canvas.getContext("2d");
+	const image = ctx.createImageData(w, h);
+	const data = image.data;
+
+	let i = 0;
+	for (let y = 0; y < h; ++y) {
+		const l = lAt[h - 1 - y];
+		for (let x = 0; x < w; ++x) {
+			const rgb = hsl2rgb(hue, sAt[x], l);
+			data[i++] = rgb[0] * 255;
+			data[i++] = rgb[1] * 255;
+			data[i++] = rgb[2] * 255;
+			data[i++] = 255;
+		}
+	}
+
+	ctx.putImageData(image, 0, 0);
+	drawnHue = hue;
+	drawnWidth = w;
+	drawnHeight = h;
+}
+
+// Four masks around the selected rectangle rather than a frame: overlapping hatches would
+// double their darkness at the corners. Lightness runs upward, so y is measured from the top.
+// One shared axis per dimension keeps the in-range region a rectangle the masks can follow.
+function maskPlane(cfg) {
+	const box = (id, left, width, top, height) => {
+		const style = $(id).style;
+		style.left = left + "%";
+		style.width = width + "%";
+		style.top = top + "%";
+		style.height = height + "%";
+	};
+	const sMin = arcFraction(slSArc, cfg.sMin / 100) * 100;
+	const sMax = arcFraction(slSArc, cfg.sMax / 100) * 100;
+	const lMin = arcFraction(slLArc, cfg.lMin / 100) * 100;
+	const lMax = arcFraction(slLArc, cfg.lMax / 100) * 100;
+	const span = sMax - sMin;
+
+	box("sl-mask-left", 0, sMin, 0, 100);
+	box("sl-mask-right", sMax, 100 - sMax, 0, 100);
+	box("sl-mask-top", sMin, span, 0, 100 - lMax);
+	box("sl-mask-bottom", sMin, span, 100 - lMin, lMin);
+}
+
+const DOT_RADIUS = 4;
+// Larger than the dot: a triangle inscribed in the same circle covers under half the area and reads
+// as the smaller mark.
+const TRIANGLE_RADIUS = 5.5;
+// The furthest a marker of either shape reaches from its centre, which is what decides an edge wrap.
+const MARKER_REACH = Math.max(DOT_RADIUS, TRIANGLE_RADIUS);
+
+// Fixed colors are triangles, generated ones circles.
+function drawMarker(ctx, x, y, color) {
+	ctx.beginPath();
+	if (color.fixed) {
+		// Vertices at -90, 30 and 150 degrees: apex up, flat base.
+		const halfWidth = TRIANGLE_RADIUS * Math.sqrt(3) / 2, drop = TRIANGLE_RADIUS / 2;
+		ctx.moveTo(x, y - TRIANGLE_RADIUS);
+		ctx.lineTo(x + halfWidth, y + drop);
+		ctx.lineTo(x - halfWidth, y + drop);
+		ctx.closePath();
+	} else {
+		ctx.arc(x, y, DOT_RADIUS, 0, Math.PI * 2);
+	}
+	ctx.fillStyle = color.hex;
+	ctx.fill();
+	ctx.lineWidth = 1.5;
+	ctx.strokeStyle = isLightColor(color.rgb) ? "#000000" : "#ffffff";
+	ctx.stroke();
+}
+
+// Cumulative OKLab arc length along a color ramp, in `n` steps of `colorAt`. Plot axes follow arc
+// position, so equal distances on screen cover equal perceived change: in plain HSL units green
+// sprawls across the hue axis and red-to-yellow is squeezed.
+function arcAlong(n, colorAt) {
+	const cumulative = new Float64Array(n + 1);
+	let prev = rgbToOklab(colorAt(0));
+	for (let k = 1; k <= n; ++k) {
+		const lab = rgbToOklab(colorAt(k / n));
+		cumulative[k] = cumulative[k - 1] + distance(prev, lab);
+		prev = lab;
+	}
+	return cumulative;
+}
+
+// Cumulative arc length of the ramp `colorAt(t, row)` averaged over evenly spread row samples:
+// one shared axis serves every row of a plane, and the row-mean is its least-distorting spacing.
+const DENSITY_ROWS = 12;
+function arcMean(n, colorAt) {
+	const cumulative = new Float64Array(n + 1);
+	for (let row = 0; row < DENSITY_ROWS; ++row) {
+		const at = (row + 0.5) / DENSITY_ROWS;
+		let prev = rgbToOklab(colorAt(0, at));
+		for (let k = 1; k <= n; ++k) {
+			const lab = rgbToOklab(colorAt(k / n, at));
+			cumulative[k] += distance(prev, lab);
+			prev = lab;
+		}
+	}
+	// Each entry so far is one step's summed length; the axis needs the running total.
+	for (let k = 1; k <= n; ++k)
+		cumulative[k] += cumulative[k - 1];
+	return cumulative;
+}
+
+// Hue axis averaged over saturations: the S=1 edge alone would over-weight the top row,
+// inflating hues that are wide only when fully saturated.
+function hueArcMean(n, lightness) {
+	return arcMean(n, (t, s) => hsl2rgb(t * 360, s, lightness));
+}
+
+// The hue bar's fixed axis, at the chart's default lightness: the bar shows pure hues, but its
+// spacing matches the big chart.
+const HUE_BAR_ARC = hueArcMean(1440, 0.5);
+
+// Axis position of ramp fraction `t`: how far along the arc it sits, 0 to 1.
+// An identity when the arc has no length: every hue at lightness 0 or 1 is the same black or white.
+function arcFraction(arc, t) {
+	const total = arc[arc.length - 1];
+	if (!total)
+		return t;
+	const scaled = Math.min(t, 1) * (arc.length - 1);
+	const k = Math.min(arc.length - 2, Math.floor(scaled));
+	return (arc[k] + (scaled - k) * (arc[k + 1] - arc[k])) / total;
+}
+
+// The inverse of arcFraction for `steps` evenly spaced axis positions: the ramp fraction drawn at
+// each. Both walk the same direction, so the cursor never rewinds.
+// `last` is the axis position of the final step: 1 where the axis ends at the ramp's extreme,
+// below 1 for the cyclic hue axis, whose final pixel stops short of wrapping back to the start.
+function invertArc(arc, steps, last) {
+	const out = new Float64Array(steps);
+	const total = arc[arc.length - 1];
+	for (let r = 0, k = 0; r < steps; ++r) {
+		const along = r / (steps - 1) * last;
+		const length = along * total;
+		while (k + 2 < arc.length && arc[k + 1] < length)
+			++k;
+		out[r] = total ? (k + (length - arc[k]) / (arc[k + 1] - arc[k])) / (arc.length - 1) : along;
+	}
+	return out;
+}
+
+// The mask is per-pixel because a wrapped hue range is two segments, which overlay bands would
+// have to cross, doubling the hatch where they met.
+function hsFieldAndArc(w, h, lightness, cfg) {
+	const image = new ImageData(w, h);
+	const data = image.data;
+	const inL = lightness * 100 >= cfg.lMin && lightness * 100 <= cfg.lMax;
+
+	// The hue arc is sampled finer than the pixel grid, the saturation arcs once per pixel row:
+	// the remap's resolution is set by the canvas, not by a fixed table.
+	const hueArc = hueArcMean(4 * w, lightness);
+	const hueAt = invertArc(hueArc, w, (w - 1) / w);
+
+	for (let x = 0; x < w; ++x) {
+		const hue = hueAt[x] * 360;
+		const inHue = cfg.hMin <= cfg.hMax
+			? hue >= cfg.hMin && hue <= cfg.hMax
+			: hue >= cfg.hMin || hue <= cfg.hMax;
+		// Saturation is remapped per column: how fast it changes depends on the hue.
+		const sAt = invertArc(arcAlong(h - 1, t => hsl2rgb(hue, t, lightness)), h, 1);
+
+		for (let y = 0; y < h; ++y) {
+			const s = sAt[h - 1 - y];
+			const inSaturation = s * 100 >= cfg.sMin && s * 100 <= cfg.sMax;
+			const rgb = hsl2rgb(hue, s, lightness);
+			let r = rgb[0] * 255, g = rgb[1] * 255, b = rgb[2] * 255;
+
+			// Same hatch as the CSS masks: 5px of black at 70%, then 5px of white at 32%.
+			if (!inL || !inHue || !inSaturation) {
+				if ((x + y) % 10 < 5) {
+					r *= .3; g *= .3; b *= .3;
+				} else {
+					r = r * .68 + 81.6; g = g * .68 + 81.6; b = b * .68 + 81.6;
+				}
+			}
+
+			const at = (y * w + x) * 4;
+			data[at] = r;
+			data[at + 1] = g;
+			data[at + 2] = b;
+			data[at + 3] = 255;
+		}
+	}
+
+	return { image, hueArc };
+}
+
+// Markers over the kept field: a highlight change repaints without recomputing the field.
+// The hue axis is cyclic, so a marker within reach of either edge is repeated at the other;
+// the copy is recorded too, so hovering finds it at both.
+function paintHS(draw) {
+	const { canvas, image, hueArc, lightness, colors } = draw;
+	const w = canvas.width, h = canvas.height;
+	const ctx = canvas.getContext("2d");
+	ctx.putImageData(image, 0, 0);
+
+	draw.marks = [];
+	for (const color of colors) {
+		const x = arcFraction(hueArc, color.h / 360) * w;
+		const sArc = arcAlong(h - 1, t => hsl2rgb(color.h, t, lightness));
+		const y = (1 - arcFraction(sArc, color.s)) * (h - 1);
+		draw.marks.push({ x, y, color });
+		if (x < MARKER_REACH)
+			draw.marks.push({ x: x + w, y, color });
+		else if (x > w - MARKER_REACH)
+			draw.marks.push({ x: x - w, y, color });
+	}
+
+	for (const { x, y, color } of draw.marks) {
+		drawMarker(ctx, x, y, color);
+		if (color === highlightedColor) {
+			ctx.beginPath();
+			ctx.arc(x, y, (color.fixed ? TRIANGLE_RADIUS : DOT_RADIUS) + 4, 0, Math.PI * 2);
+			ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue("--accent").trim();
+			ctx.lineWidth = 2;
+			ctx.stroke();
+		}
+	}
+}
+
+function drawHSPlane(cfg, colors) {
+	const canvas = $("hs-canvas");
+	canvas.width = canvas.clientWidth;
+	canvas.height = canvas.clientHeight;
+	const level = +$("hs-l").value;
+	$("hs-l-value").textContent = Math.round(level) + "%";
+	hsDraw = { canvas, lightness: level / 100, colors,
+		...hsFieldAndArc(canvas.width, canvas.height, level / 100, cfg) };
+	paintHS(hsDraw);
+}
+
+function refreshBars(cfg) {
+	drawHueBar();
+	maskHueBar(cfg.hMin, cfg.hMax);
+	drawSLPlane(cfg.hMin);
+	maskPlane(cfg);
+}
+
+function refreshLabels() {
+	const cfg = readConfig();
+	refreshBars(cfg);
+	$("count-value").textContent = cfg.count;
+	$("strict-value").textContent = cfg.scale.toFixed(1);
+	$("push-value").textContent = cfg.pushMin + "–" + cfg.pushMax + "°";
+	$("h-value").textContent = cfg.hMin + "–" + cfg.hMax + "°" + (cfg.hMin > cfg.hMax ? " (wraps)" : "");
+	$("s-value").textContent = cfg.sMin + "–" + cfg.sMax + "%";
+	$("l-value").textContent = cfg.lMin + "–" + cfg.lMax + "%";
+	$("fixed-preview").innerHTML = cfg.fixed.map(color => '<span style="background:' + color.hex + '"></span>').join("");
+}
+
+const displayName = cell => cellName(cell).replace(/^./, first => first.toUpperCase());
+
+// A tilde marks a color the survey never settled a name for. It records how the color is named, not
+// a fault in the color: those colors are as usable as any other, and some cells hold little else.
+const cellLabel = color => (color.confident ? "" : "~ ") + displayName(color.cell);
+
+const UNSURE_TITLE = ' title="people gave this color no one name"';
+
+// Ordered from the range start, so a wrapped hue range stays contiguous.
+function sortedByHue(colors, hMin) {
+	const offset = c => (c.h - hMin + 360) % 360;
+	return colors.slice().sort((a, b) => offset(a) - offset(b));
+}
+
+function render(result, cfg) {
+	palette = $("sort").checked ? sortedByHue(result.colors, cfg.hMin) : result.colors;
+	lastWorstPair = result.pair;
+	// Every view is rebuilt below without a highlight; the hovered object may not even survive.
+	highlightedColor = null;
+
+	const status = $("status");
+	// A null pair means no measurable one at all: one color and nothing fixed to place it against.
+	const repeated = result.colors.length - result.named;
+	status.textContent = (result.pair ? "Hardest pair to tell apart (outlined): weighted ΔE " + result.apart.toFixed(1)
+			+ ", swapped " + (result.confused * 100).toFixed(1) + "% · worst color identified " + (result.floor * 100).toFixed(0) + "% · " : "")
+		+ result.named + " distinct color name" + (result.named === 1 ? "" : "s")
+		+ (repeated ? ", " + repeated + " repeating one of them" : "");
+
+	const clashing = new Set(result.pair || []);
+	const marks = c => (c.fixed ? " fixed" : "") + (!c.fixed && !cfg.included[c.cell] ? " off-name" : "")
+		+ (clashing.has(c) ? " clash" : "");
+
+	$("swatches").innerHTML = palette.map((c, i) =>
+		'<button class="swatch' + marks(c) + '" data-hex="' + c.hex + '" data-index="' + i + '">'
+			+ '<div class="chip" style="background:' + c.hex + '"></div>'
+			+ '<div class="meta"><div class="hex">' + c.hex.toUpperCase() + '</div>'
+			+ '<div class="name"' + (c.confident ? "" : UNSURE_TITLE) + '>' + cellLabel(c) + '</div>'
+			+ '<div class="coords">' + (c.fixed ? "fixed · " : "") + "hsl " + Math.round(c.h) + ", " + Math.round(c.s * 100) + "%, " + Math.round(c.l * 100) + "%</div></div>"
+		+ "</button>").join("");
+
+	// Columns from the square root, so the block's bounding box is the nearest thing to a square.
+	$("tiles").style.setProperty("--cols", Math.ceil(Math.sqrt(palette.length)));
+	$("tiles").innerHTML = palette.map((c, i) =>
+		'<div class="' + marks(c).trim() + '" data-index="' + i + '" style="background:' + c.hex + '" title="'
+			+ c.hex.toUpperCase() + " · " + cellLabel(c) + (c.fixed ? " (fixed)" : "") + '"></div>').join("");
+
+	drawHSPlane(cfg, palette);
+	if (window.update3D)
+		window.update3D(cfg, palette, result.pair);
+	refreshExport();
+}
+
+// Fixed colors are excluded: the export is the set that was generated, which the caller does not have.
+function refreshExport() {
+	const hexes = palette.filter(c => !c.fixed).map(c => c.hex.toUpperCase());
+	const format = $("format").value;
+	let text;
+	if (format === "hex")
+		text = hexes.join("\n");
+	else if (format === "css")
+		text = ":root {\n" + hexes.map((h, i) => "\t--color-" + (i + 1) + ": " + h + ";").join("\n") + "\n}";
+	else if (format === "json")
+		text = JSON.stringify(hexes, null, "\t");
+	else
+		text = "COLORS = [\n" + hexes.map(h => '\t"' + h + '",').join("\n") + "\n]";
+	$("export").value = text;
+}
+
+// ---------- name controls ----------
+
+// Which cells generation may place a color in, and which cells it scores as one name. readConfig
+// hands both to the generator, which only reads them.
+const nameIncluded = ALL_INCLUDED.slice();
+const nameGroup = NO_GROUPS.slice();
+
+const ALL_CELLS = CELL_NAMES.map((_, cell) => cell);
+
+// A group is named by its lowest member, so its leader is the cell naming itself.
+const groupLeaders = () => ALL_CELLS.filter(cell => nameGroup[cell] === cell);
+const groupMembers = leader => ALL_CELLS.filter(cell => nameGroup[cell] === leader);
+const inGroup = cell => groupMembers(nameGroup[cell]).length > 1;
+
+function mergeGroups(a, b) {
+	const [leader, absorbed] = ordered(nameGroup[a], nameGroup[b]);
+	for (const cell of ALL_CELLS)
+		if (nameGroup[cell] === absorbed)
+			nameGroup[cell] = leader;
+}
+
+// Whatever the cell led passes to the next lowest member, which must be read off before it leaves.
+function detachCell(cell) {
+	const led = nameGroup[cell] === cell ? groupMembers(cell).filter(member => member !== cell) : [];
+	nameGroup[cell] = cell;
+	for (const member of led)
+		nameGroup[member] = led[0];
+}
+
+// How much of the hue/saturation plane each name owns, at every lightness a chip may be drawn at.
+const CENSUS_LEVELS = Array.from({ length: 19 }, (_, n) => (n + 1) * 5);
+const CENSUS_HUES = 90, CENSUS_SATS = 26;
+
+const CENSUS = CENSUS_LEVELS.map(level => {
+	const counts = new Int32Array(NAME_SLOTS);
+	for (let hi = 0; hi < CENSUS_HUES; ++hi)
+		for (let si = 0; si < CENSUS_SATS; ++si)
+			++counts[cellOf(hsl2rgb(hi * 360 / CENSUS_HUES, si / (CENSUS_SATS - 1), level / 100)).cell];
+	return counts;
+});
+
+// The plane where the name covers the most ground. Eleven names - white and black among them - own
+// nothing at mid lightness, so chips drawn at one fixed lightness would be blank for a third of
+// them. Chips are honest about the plane they show rather than comparable across names.
+const CELL_PEAK = ALL_CELLS.map(cell => {
+	let at = 0;
+	for (let n = 1; n < CENSUS_LEVELS.length; ++n)
+		if (CENSUS[n][cell] > CENSUS[at][cell])
+			at = n;
+	return CENSUS_LEVELS[at];
+});
+
+const CHIP_WIDTH = 104, CHIP_HEIGHT = 64;
+
+// The name's territory in its own plane: its colors as they are, the rest ghosted so the panel
+// shows through in either theme. Axes are spaced by perceived change, as the palette's chart is.
+function paintTerritory(canvas, cell) {
+	const w = canvas.width, h = canvas.height, lightness = CELL_PEAK[cell] / 100;
+	const image = new ImageData(w, h);
+	const data = image.data;
+	const hueAt = invertArc(hueArcMean(4 * w, lightness), w, (w - 1) / w);
+
+	for (let x = 0; x < w; ++x) {
+		const hue = hueAt[x] * 360;
+		const sAt = invertArc(arcAlong(h - 1, t => hsl2rgb(hue, t, lightness)), h, 1);
+		for (let y = 0; y < h; ++y) {
+			const rgb = hsl2rgb(hue, sAt[h - 1 - y], lightness);
+			const at = (y * w + x) * 4;
+			data[at] = rgb[0] * 255;
+			data[at + 1] = rgb[1] * 255;
+			data[at + 2] = rgb[2] * 255;
+			data[at + 3] = cellOf(rgb).cell === cell ? 255 : 26;
+		}
+	}
+	canvas.getContext("2d").putImageData(image, 0, 0);
+}
+
+// Territories never change, so each is painted once and its canvas re-parented as chips rebuild.
+const territoryCanvases = new Map();
+
+function territoryCanvas(cell) {
+	let canvas = territoryCanvases.get(cell);
+	if (!canvas) {
+		canvas = document.createElement("canvas");
+		canvas.width = CHIP_WIDTH;
+		canvas.height = CHIP_HEIGHT;
+		paintTerritory(canvas, cell);
+		territoryCanvases.set(cell, canvas);
+	}
+	return canvas;
+}
+
+function nameChip(cell) {
+	const chip = document.createElement("div");
+	chip.className = "name-chip" + (nameIncluded[cell] ? "" : " off");
+	chip.dataset.cell = cell;
+	chip.title = cellName(cell) + (nameIncluded[cell] ? "" : " - excluded");
+
+	const meta = document.createElement("div");
+	meta.className = "meta";
+	const name = document.createElement("div");
+	name.className = "name";
+	name.textContent = displayName(cell);
+	const level = document.createElement("div");
+	level.className = "level";
+	level.textContent = "L " + CELL_PEAK[cell] + "%";
+	meta.append(name, level);
+
+	chip.append(territoryCanvas(cell), meta);
+
+	// Only where there is a group to leave, so the button never asks to undo nothing.
+	if (inGroup(cell)) {
+		const split = document.createElement("button");
+		split.className = "split";
+		split.textContent = "×";
+		split.title = "Split " + displayName(cell) + " off from the group";
+		chip.append(split);
+	}
+	return chip;
+}
+
+function renderNames() {
+	const groups = groupLeaders().map(groupMembers);
+	$("name-chips").replaceChildren(...groups.map(members => {
+		const box = document.createElement("div");
+		box.className = "name-group" + (members.length > 1 ? " merged" : "");
+		box.append(...members.map(nameChip));
+		return box;
+	}));
+
+	const excluded = ALL_CELLS.filter(cell => !nameIncluded[cell]).length;
+	const merged = groups.filter(members => members.length > 1).length;
+	$("names-summary").textContent = (CELL_NAMES.length - excluded) + " of " + CELL_NAMES.length + " in use"
+		+ (merged ? ", " + merged + " merged" : "");
+}
+
+const DRAG_THRESHOLD = 4;
+// Restored whenever a drag ends: during one, the caption says what releasing here would do.
+const NAMES_HINT = $("names-hint").textContent;
+let nameDrag = null;
+
+// The chip under a point in viewport coordinates, null where the point is over none.
+const chipAt = (x, y) => {
+	const under = document.elementFromPoint(x, y);
+	return under ? under.closest(".name-chip") : null;
+};
+
+const clearDragMarks = () => {
+	for (const chip of $("name-chips").querySelectorAll(".name-chip"))
+		chip.classList.remove("dragging", "target");
+};
+
+// The copy that rides the cursor. cloneNode leaves a canvas blank, so the territory is drawn
+// across; the split button goes, having nothing to act on in a copy.
+function liftedGhost(chip) {
+	const ghost = chip.cloneNode(true);
+	ghost.classList.add("ghost");
+	const split = ghost.querySelector(".split");
+	if (split)
+		split.remove();
+	ghost.querySelector("canvas").getContext("2d").drawImage(chip.querySelector("canvas"), 0, 0);
+	document.body.append(ghost);
+	return ghost;
+}
+
+// What releasing at the pointer would do, for the caption.
+function dragHint(over) {
+	if (over && over !== nameDrag.chip)
+		return "Release to merge " + displayName(nameDrag.cell) + " with " + displayName(+over.dataset.cell);
+	if (inGroup(nameDrag.cell))
+		return "Release on empty space to split " + displayName(nameDrag.cell) + " off";
+	return "Drop " + displayName(nameDrag.cell) + " on another name to merge the two";
+}
+
+function endNameDrag() {
+	if (nameDrag && nameDrag.ghost)
+		nameDrag.ghost.remove();
+	nameDrag = null;
+	document.body.classList.remove("dragging-name");
+	$("names-hint").textContent = NAMES_HINT;
+	clearDragMarks();
+}
+
+$("name-chips").addEventListener("pointerdown", event => {
+	const chip = event.target.closest(".name-chip");
+	if (!chip || event.button || event.target.closest(".split"))
+		return;
+	const box = chip.getBoundingClientRect();
+	nameDrag = { cell: +chip.dataset.cell, chip, moved: false, ghost: null,
+		x: event.clientX, y: event.clientY,
+		grabX: event.clientX - box.left, grabY: event.clientY - box.top };
+	event.preventDefault();
+});
+
+// The split button starts no drag, so its click stands on its own.
+$("name-chips").addEventListener("click", event => {
+	const split = event.target.closest(".split");
+	if (!split)
+		return;
+	detachCell(+split.closest(".name-chip").dataset.cell);
+	renderNames();
+	scheduleRun();
+});
+
+// A chip holds a canvas and text, either of which a browser will otherwise pick up as a native
+// drag: that swallows the pointer stream and the gesture never reaches the handlers below.
+$("name-chips").addEventListener("dragstart", event => event.preventDefault());
+
+// Watched on the document rather than the strip, and without pointer capture: the pointer leaves
+// the chip it started on by definition, and a drag released outside the strip still ends here.
+document.addEventListener("pointermove", event => {
+	if (!nameDrag)
+		return;
+	if (!nameDrag.moved && Math.hypot(event.clientX - nameDrag.x, event.clientY - nameDrag.y) < DRAG_THRESHOLD)
+		return;
+
+	// The ghost is cloned before the source is marked, so it does not inherit the faded look.
+	if (!nameDrag.moved) {
+		nameDrag.moved = true;
+		nameDrag.ghost = liftedGhost(nameDrag.chip);
+		nameDrag.chip.classList.add("dragging");
+		document.body.classList.add("dragging-name");
+	}
+
+	nameDrag.ghost.style.left = (event.clientX - nameDrag.grabX) + "px";
+	nameDrag.ghost.style.top = (event.clientY - nameDrag.grabY) + "px";
+
+	const over = chipAt(event.clientX, event.clientY);
+	for (const chip of $("name-chips").querySelectorAll(".name-chip"))
+		chip.classList.toggle("target", chip === over && chip !== nameDrag.chip);
+	$("names-hint").textContent = dragHint(over);
+});
+
+// A press that never moved toggles the name. A drag carries the one name it started on: onto
+// another chip it joins that chip's group, and on the strip's own background it leaves the group
+// it was in. A drop anywhere else is abandoned.
+document.addEventListener("pointerup", event => {
+	if (!nameDrag)
+		return;
+
+	const { cell, chip, moved } = nameDrag;
+	endNameDrag();
+
+	let changed = true;
+	if (!moved) {
+		nameIncluded[cell] = !nameIncluded[cell];
+	} else {
+		const under = document.elementFromPoint(event.clientX, event.clientY);
+		const onto = under ? under.closest(".name-chip") : null;
+		if (onto && onto !== chip) {
+			detachCell(cell);
+			mergeGroups(cell, +onto.dataset.cell);
+		} else if (!onto && under && $("name-chips").contains(under)) {
+			detachCell(cell);
+		} else {
+			changed = false;
+		}
+	}
+
+	renderNames();
+	if (changed)
+		scheduleRun();
+});
+
+document.addEventListener("pointercancel", endNameDrag);
+
+$("names-toggle").addEventListener("click", () => {
+	const body = $("names-body");
+	body.hidden = !body.hidden;
+	$("names-toggle").textContent = body.hidden ? "Show" : "Hide";
+});
+
+// A digit per cell. Which digits are in range is left to canonicalGroups, which reads any of them
+// as a partition.
+const NAME_GROUPS_PATTERN = new RegExp("^[0-9a-z]{" + CELL_NAMES.length + "}$");
+
+// The included names as a bit per cell, and the grouping as one base36 digit per cell naming its
+// group's leader.
+function stateNameFields() {
+	let mask = 0;
+	for (const cell of ALL_CELLS)
+		if (nameIncluded[cell])
+			mask |= 1 << cell;
+	return [mask.toString(36), ALL_CELLS.map(cell => nameGroup[cell].toString(36)).join("")];
+}
+
+// Any assignment of cells to keys describes a partition. Taking the first cell holding each key as
+// its leader is what the chip order and the merge rules assume, and makes a hand-edited field
+// well-formed whatever it says.
+function canonicalGroups(keys) {
+	const leaderFor = new Map();
+	const groups = NO_GROUPS.slice();
+	for (const cell of ALL_CELLS) {
+		if (!leaderFor.has(keys[cell]))
+			leaderFor.set(keys[cell], cell);
+		groups[cell] = leaderFor.get(keys[cell]);
+	}
+	return groups;
+}
+
+// The name tables a parsed state describes. Empty fields are a string written before the names
+// could be chosen: all included, none merged.
+function nameTablesFrom(parsed) {
+	const included = ALL_INCLUDED.slice();
+	if (parsed.included) {
+		const mask = parseInt(parsed.included, 36);
+		for (const cell of ALL_CELLS)
+			included[cell] = (mask & (1 << cell)) !== 0;
+	}
+	return {
+		included,
+		groupOf: parsed.groups ? canonicalGroups([...parsed.groups].map(digit => parseInt(digit, 36))) : NO_GROUPS.slice()
+	};
+}
+
+function applyNameTables(tables) {
+	for (const cell of ALL_CELLS) {
+		nameIncluded[cell] = tables.included[cell];
+		nameGroup[cell] = tables.groupOf[cell];
+	}
+	renderNames();
+}
+
+// ---------- state string ----------
+
+// The string is the version tag, these fields in order, then the sort flag, the backdrop, the
+// custom backdrop color, the export format and the comma-joined fixed colors.
+const STATE_VERSION = "v1";
+const STATE_SEPARATOR = "|";
+const STATE_IDS = ["count", "strict", "h-min", "h-max", "s-min", "s-max", "l-min", "l-max", "seed"];
+
+// The '#' is stripped from both colors: it would truncate the string inside a URL.
+const stripHash = value => value.replace("#", "");
+
+// Carries the config rather than the raw slider values, so saturation and lightness come back
+// ordered. The seed is written unsigned, which mulberry32 treats as identical and which keeps a
+// minus sign out of the fields.
+function stateString(cfg) {
+	return [STATE_VERSION, cfg.count, cfg.scale, cfg.hMin, cfg.hMax, cfg.sMin, cfg.sMax,
+		cfg.lMin, cfg.lMax, cfg.seed >>> 0, $("sort").checked ? 1 : 0,
+		stripHash($("backdrop").value), stripHash($("backdrop-color").value), $("format").value,
+		cfg.fixed.map(color => stripHash(color.hex)).join(","), ...stateNameFields()
+	].join(STATE_SEPARATOR);
+}
+
+// Matched by stored value rather than by position, so reordering the options cannot remap an old
+// string onto a different one. Null where the value is not offered.
+function findOption(id, stored) {
+	return [...$(id).options].find(option => stripHash(option.value) === stored) || null;
+}
+
+// The fields of a state string, or null when it does not parse. Separate from applying them, so a
+// palette can be generated from a string without disturbing the controls.
+function parseState(text) {
+	const [tag, ...fields] = text.trim().split(STATE_SEPARATOR);
+	// The sort flag, backdrop, custom color and export format always follow the nine control values.
+	// Fixed colors, then the included names and the grouping, were each added later: a string
+	// written before one of them ends where it was added, and the rest take their defaults.
+	const required = STATE_IDS.length + 4;
+	if (tag !== STATE_VERSION || fields.length < required || fields.length > required + 3)
+		return null;
+
+	const numbers = fields.slice(0, STATE_IDS.length + 1).map(f => f.trim() === "" ? NaN : Number(f));
+	const [backdrop, custom, format, fixed = "", included = "", groups = ""] = fields.slice(STATE_IDS.length + 1);
+	const backdropOption = findOption("backdrop", backdrop);
+	const formatOption = findOption("format", format);
+
+	if (numbers.some(n => !Number.isFinite(n)) || !backdropOption || !formatOption || !/^[0-9a-f]{6}$/i.test(custom)
+		|| !(fixed === "" || /^[0-9a-f]{6}(,[0-9a-f]{6})*$/i.test(fixed))
+		|| !(included === "" || /^[0-9a-z]{1,6}$/.test(included))
+		|| !(groups === "" || NAME_GROUPS_PATTERN.test(groups)))
+		return null;
+
+	return { numbers, backdrop: backdropOption.value, custom, format: formatOption.value, fixed, included, groups };
+}
+
+const fixedFromField = field => field.split(",").filter(Boolean).map(hex => "#" + hex.toLowerCase());
+
+// The generator's view of a parsed state. Ranges are ordered the same way readConfig orders them,
+// so a palette built from here matches the one the controls produce once the string is applied.
+function configFromState(parsed) {
+	const [count, scale, hMin, hMax, s1, s2, l1, l2, seed] = parsed.numbers;
+	const [sMin, sMax] = ordered(s1, s2);
+	const [lMin, lMax] = ordered(l1, l2);
+	return { count, scale, hMin, hMax, sMin, sMax, lMin, lMax, seed: seed | 0,
+		fixed: fixedFromField(parsed.fixed).map(colorFromHex), ...nameTablesFrom(parsed) };
+}
+
+// Out-of-range numbers are left to the inputs, which clamp to their own min and max.
+function applyStateString(text) {
+	const parsed = parseState(text);
+	if (!parsed)
+		return false;
+
+	STATE_IDS.forEach((id, i) => $(id).value = parsed.numbers[i]);
+	$("sort").checked = parsed.numbers[STATE_IDS.length] !== 0;
+	$("backdrop").value = parsed.backdrop;
+	$("backdrop-color").value = "#" + parsed.custom.toLowerCase();
+	$("format").value = parsed.format;
+	// One per line: the string carries the parsed colors, not the text they were typed in.
+	$("fixed-colors").value = fixedFromField(parsed.fixed).join("\n");
+
+	// Assigning a select's value fires no change event, so the backdrop is applied by hand.
+	applyBackdrop(currentBackdrop());
+	applyNameTables(nameTablesFrom(parsed));
+	recentreChartL();
+	run();
+	return true;
+}
+
+// Not while the field has focus: rewriting it would drop a string being pasted. Refreshing on blur
+// instead would fire on the way to the Apply button, dropping it there.
+function refreshState() {
+	if (document.activeElement !== $("state"))
+		$("state").value = stateString(readConfig());
+}
+
+// Holds the text each element had before its first flash: a repeat inside the window must not
+// restore the transient message.
+const pendingRestore = new WeakMap();
+
+function flashLabel(el, message) {
+	const pending = pendingRestore.get(el);
+	const original = pending ? pending.original : el.textContent;
+	if (pending)
+		clearTimeout(pending.timer);
+
+	el.textContent = message;
+	pendingRestore.set(el, {
+		original,
+		timer: setTimeout(() => { el.textContent = original; pendingRestore.delete(el); }, 900)
+	});
+}
+
+// navigator.clipboard is absent outside a secure context, and writeText rejects on a denied
+// permission or an unfocused document, so both paths fall back to a selection copy.
+function writeClipboard(text) {
+	if (navigator.clipboard)
+		return navigator.clipboard.writeText(text).catch(() => legacyCopy(text));
+	return legacyCopy(text);
+}
+
+function legacyCopy(text) {
+	const field = document.createElement("textarea");
+	field.value = text;
+	field.readOnly = true;
+	field.style.cssText = "position: fixed; top: 0; opacity: 0";
+	document.body.appendChild(field);
+
+	let copied = false;
+	try {
+		field.select();
+		copied = document.execCommand("copy");
+	} catch {
+		copied = false;
+	} finally {
+		field.remove();
+	}
+	return copied ? Promise.resolve() : Promise.reject(new Error("copy rejected"));
+}
+
+function copy(text, label, message) {
+	writeClipboard(text).then(() => flashLabel(label, message), () => flashLabel(label, "failed"));
+}
+
+function run() {
+	refreshLabels();
+	refreshState();
+	const cfg = readConfig();
+	render(generate(cfg), cfg);
+}
+
+let runScheduled = false;
+
+// At most one generate outstanding, fired on the next animation frame: a drag emits events far
+// faster than the ~200ms a palette costs at the top of the ranges, and the frame boundary lets
+// the browser paint between runs.
+// A hidden tab gets no frames, so there a timer stands in: the work must not strand until the
+// tab is shown.
+function scheduleRun() {
+	if (runScheduled)
+		return;
+	runScheduled = true;
+	const fire = () => { runScheduled = false; run(); };
+	if (document.hidden)
+		setTimeout(fire, 0);
+	else
+		requestAnimationFrame(fire);
+}
+
+for (const id of [...STATE_IDS, "fixed-colors", "push-min", "push-max"])
+	$(id).addEventListener("input", () => { refreshLabels(); scheduleRun(); });
+
+const recentreChartL = () => $("hs-l").value = (+$("l-min").value + +$("l-max").value) / 2;
+for (const id of ["l-min", "l-max"])
+	$(id).addEventListener("input", recentreChartL);
+
+// The chart lightness is a view control: it redraws the chart from the palette already generated.
+let chartRedrawScheduled = false;
+$("hs-l").addEventListener("input", () => {
+	if (chartRedrawScheduled)
+		return;
+	chartRedrawScheduled = true;
+	requestAnimationFrame(() => { chartRedrawScheduled = false; drawHSPlane(readConfig(), palette); });
+});
+
+$("sort").addEventListener("change", scheduleRun);
+
+// The output panel is flexible, so its canvas needs re-sizing to each new width.
+window.addEventListener("resize", scheduleRun);
+$("format").addEventListener("change", () => { refreshExport(); refreshState(); });
+$("generate").addEventListener("click", () => { $("seed").value = (+$("seed").value | 0) + 1; run(); });
+
+// Swatch text and borders read from --ink/--ink-dim/--line, so overriding those on the
+// container re-colors them for whatever backdrop is behind them.
+function applyBackdrop(value) {
+	const el = $("palette-area");
+	const custom = value !== "panel";
+
+	el.style.background = custom ? value : "";
+	el.style.padding = custom ? "10px" : "";
+
+	for (const prop of ["--ink", "--ink-dim", "--line", "--swatch-hover"])
+		el.style.removeProperty(prop);
+
+	if (!custom)
+		return;
+
+	const dark = !isLightColor(parseHex(value));
+	el.style.setProperty("--ink", dark ? "#f2f2f6" : "#15151a");
+	el.style.setProperty("--ink-dim", dark ? "#c8c8d2" : "#3f3f49");
+	el.style.setProperty("--line", dark ? "rgba(255, 255, 255, .3)" : "rgba(0, 0, 0, .3)");
+	el.style.setProperty("--swatch-hover", dark ? "#ffffff" : "#000000");
+}
+
+function currentBackdrop() {
+	const preset = $("backdrop").value;
+	return preset === "custom" ? $("backdrop-color").value : preset;
+}
+
+$("backdrop").addEventListener("change", () => { applyBackdrop(currentBackdrop()); refreshState(); });
+
+$("backdrop-color").addEventListener("input", () => {
+	$("backdrop").value = "custom";
+	applyBackdrop($("backdrop-color").value);
+	refreshState();
+});
+
+// Auto tracks the OS; either explicit choice holds whatever the OS does. Deliberately absent from
+// the state string: a string carries a palette between machines, not how the page is looked at.
+const systemDark = matchMedia("(prefers-color-scheme: dark)");
+
+function applyTheme() {
+	const choice = $("theme").value;
+	document.documentElement.dataset.theme = choice === "auto" ? (systemDark.matches ? "dark" : "light") : choice;
+}
+
+// The 3D materials take their colors when they are built, so a theme change redraws the views, as
+// a resize does. The palette is seeded, so the redraw reproduces it exactly.
+const retheme = () => { applyTheme(); scheduleRun(); };
+$("theme").addEventListener("change", retheme);
+systemDark.addEventListener("change", retheme);
+
+$("swatches").addEventListener("click", e => {
+	const swatch = e.target.closest(".swatch");
+	if (swatch) copy(swatch.dataset.hex.toUpperCase(), swatch.querySelector(".hex"), "copied");
+});
+
+// ---------- cross-view highlight ----------
+
+// The hovered color, marked in every view at once: swatch and tile outline, a ring on its chart
+// dot, the enlarged 3D marker. Null clears.
+function setHighlight(color) {
+	if (color === highlightedColor)
+		return;
+	highlightedColor = color;
+	const index = color ? palette.indexOf(color) : -1;
+	for (const box of ["swatches", "tiles"])
+		[...$(box).children].forEach((el, i) => el.classList.toggle("hilite", i === index));
+	if (hsDraw)
+		paintHS(hsDraw);
+	if (window.highlight3D)
+		window.highlight3D(color);
+}
+
+for (const id of ["swatches", "tiles"]) {
+	$(id).addEventListener("mouseover", e => {
+		const el = e.target.closest("[data-index]");
+		if (el)
+			setHighlight(palette[+el.dataset.index]);
+	});
+	$(id).addEventListener("mouseleave", () => setHighlight(null));
+}
+
+// Chart dots are canvas pixels, so hovering one is a hit-test against the recorded positions.
+const MARK_HIT_RADIUS = 10;
+const hsCanvas = $("hs-canvas");
+hsCanvas.addEventListener("mousemove", e => {
+	if (!hsDraw)
+		return;
+	const rect = hsCanvas.getBoundingClientRect();
+	const x = e.clientX - rect.left, y = e.clientY - rect.top;
+	let hit = null, nearest = MARK_HIT_RADIUS ** 2;
+	for (const mark of hsDraw.marks) {
+		const apart = (mark.x - x) ** 2 + (mark.y - y) ** 2;
+		if (apart < nearest) {
+			nearest = apart;
+			hit = mark.color;
+		}
+	}
+	hsCanvas.style.cursor = hit ? "pointer" : "";
+	hsCanvas.title = hit ? hit.hex.toUpperCase() + " · " + cellLabel(hit) : "";
+	setHighlight(hit);
+});
+hsCanvas.addEventListener("mouseleave", () => setHighlight(null));
+
+$("copy").addEventListener("click", e => copy($("export").value, e.currentTarget, "Copied"));
+
+$("state-copy").addEventListener("click", e => copy($("state").value, e.currentTarget, "Copied"));
+
+function applyPastedState() {
+	flashLabel($("state-apply"), applyStateString($("state").value) ? "Applied" : "Bad string");
+}
+
+$("state-apply").addEventListener("click", applyPastedState);
+$("state").addEventListener("keydown", e => { if (e.key === "Enter") applyPastedState(); });
+
+// ---------- pinned palettes ----------
+
+// Held for the session only. Each entry keeps the state string that reproduces it, so copying one
+// out is the way to keep it; the hexes are the strip drawn in the list and are never read back.
+const pins = [];
+let pinCount = 0;
+
+// The name is user text going into an attribute, so it must not be able to close it.
+const escapeAttribute = text => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+
+const rowIndex = el => +el.closest(".pin").dataset.index;
+
+function renderPins() {
+	$("pin-copy").hidden = pins.length === 0;
+	$("pin-list").innerHTML = pins.map((entry, i) =>
+		'<div class="pin" data-index="' + i + '">'
+			+ '<input type="text" class="pin-name" spellcheck="false" value="' + escapeAttribute(entry.name) + '">'
+			+ '<button class="pin-drop" title="Unpin">×</button>'
+			+ '<button class="pin-strip" title="Restore this palette">'
+				+ entry.hexes.map(hex => '<span style="background:' + hex + '"></span>').join("")
+			+ "</button>"
+		+ "</div>").join("");
+}
+
+// Taken from the config rather than from the state field, which is not refreshed while it has focus.
+$("pin-add").addEventListener("click", () => {
+	pins.push({
+		name: "Palette " + (++pinCount),
+		state: stateString(readConfig()),
+		hexes: palette.map(c => c.hex)
+	});
+	renderPins();
+});
+
+// Tab-separated: a name may contain spaces, and the lines paste into a sheet as two columns.
+$("pin-copy").addEventListener("click", e =>
+	copy(pins.map(entry => entry.name + "\t" + entry.state).join("\n"), e.currentTarget, "Copied"));
+
+// One entry per line, the name before the first tab. A line that is only a state string is taken as
+// one, so a single string pastes in as well. Appends, skipping states already listed.
+// Each entry's strip has to be generated: the copied text carries no colors.
+function loadPins(text) {
+	const known = new Set(pins.map(entry => entry.state));
+	let added = 0;
+
+	for (const line of text.split("\n")) {
+		const tab = line.indexOf("\t");
+		const name = tab < 0 ? "" : line.slice(0, tab).trim();
+		const state = (tab < 0 ? line : line.slice(tab + 1)).trim();
+		if (known.has(state))
+			continue;
+
+		const parsed = parseState(state);
+		if (!parsed)
+			continue;
+
+		const cfg = configFromState(parsed);
+		const colors = generate(cfg).colors;
+		const sorted = parsed.numbers[STATE_IDS.length] !== 0;
+		known.add(state);
+		pins.push({
+			name: name || "Palette " + (++pinCount),
+			state,
+			hexes: (sorted ? sortedByHue(colors, cfg.hMin) : colors).map(c => c.hex)
+		});
+		++added;
+	}
+
+	renderPins();
+	return added;
+}
+
+// Two presses: the first opens the box, the second reads it. An empty box closes without loading.
+$("pin-load").addEventListener("click", e => {
+	const box = $("pin-paste");
+	if (box.hidden) {
+		box.hidden = false;
+		box.focus();
+		return;
+	}
+
+	const added = loadPins(box.value);
+	box.value = "";
+	box.hidden = true;
+	flashLabel(e.currentTarget, added ? "+" + added : "none");
+});
+
+// Renaming leaves the list alone: rebuilding it would take the focus out of the field mid-word.
+$("pin-list").addEventListener("input", e => {
+	const field = e.target.closest(".pin-name");
+	if (field)
+		pins[rowIndex(field)].name = field.value;
+});
+
+$("pin-list").addEventListener("click", e => {
+	const strip = e.target.closest(".pin-strip");
+	if (strip) {
+		applyStateString(pins[rowIndex(strip)].state);
+		return;
+	}
+
+	const drop = e.target.closest(".pin-drop");
+	if (drop) {
+		pins.splice(rowIndex(drop), 1);
+		renderPins();
+	}
+});
+
+// A different palette on every load. Truncated to the 32 bits mulberry32 and the state string both
+// use, so the value in the box survives a save and restore unchanged.
+$("seed").value = Date.now() >>> 0;
+
+renderNames();
+run();
+</script>
+
+<script type="importmap">
+{
+	"imports": {
+		"three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+		"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+	}
+}
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+// OKLab (L, a, b) -> scene (x=a, y=L-0.5, z=b). One OKLab unit along every axis, so on-screen
+// proportions are OKLab proportions up to the rotation.
+const toScene = lab => [lab[1], lab[0] - 0.5, lab[2]];
+
+const container = $("gamut-3d");
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+container.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+// Orthographic: rotation is then the only distortion of OKLab distances.
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -10, 10);
+camera.position.set(1.2, 0.55, 1.2);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.enablePan = false;
+controls.minZoom = 0.6;
+controls.maxZoom = 6;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 1.6;
+renderer.domElement.addEventListener("pointerdown", () => { controls.autoRotate = false; });
+
+// Double-click: back to the home view, spinning again. Fires after its own pointerdown, so the
+// resume wins over the stop above.
+const HOME = camera.position.clone();
+renderer.domElement.addEventListener("dblclick", () => {
+	camera.position.copy(HOME);
+	camera.zoom = 1;
+	camera.updateProjectionMatrix();
+	controls.target.set(0, 0, 0);
+	controls.autoRotate = true;
+});
+
+// An indexed (nu x nv) sheet over the unit square: `at` gives the sRGB color, kept as both the
+// OKLab position and the vertex color. Colors are stored linear, the working space of the shaders.
+function sheet(nu, nv, at) {
+	const positions = [], colors = [], index = [];
+	for (let i = 0; i <= nu; ++i)
+		for (let j = 0; j <= nv; ++j) {
+			const rgb = at(i / nu, j / nv);
+			positions.push(...toScene(rgbToOklab(rgb)));
+			colors.push(srgbToLinear(rgb[0]), srgbToLinear(rgb[1]), srgbToLinear(rgb[2]));
+		}
+	for (let i = 0; i < nu; ++i)
+		for (let j = 0; j < nv; ++j) {
+			const k = i * (nv + 1) + j;
+			index.push(k, k + 1, k + nv + 1, k + 1, k + nv + 2, k + nv + 1);
+		}
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+	geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+	geometry.setIndex(index);
+	return geometry;
+}
+
+// The gamut boundary is the image of the RGB cube's six faces: the OKLab map is continuous and
+// one-to-one, so surface maps to surface.
+const SHELL_STEPS = 48;
+const shellMaterial = new THREE.MeshBasicMaterial({
+	vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0.22, depthWrite: false });
+const shell = new THREE.Group();
+for (let axis = 0; axis < 3; ++axis)
+	for (const side of [0, 1])
+		shell.add(new THREE.Mesh(sheet(SHELL_STEPS, SHELL_STEPS, (u, v) => {
+			const rgb = [];
+			rgb[axis] = side;
+			rgb[(axis + 1) % 3] = u;
+			rgb[(axis + 2) % 3] = v;
+			return rgb;
+		}), shellMaterial));
+scene.add(shell);
+
+// The grey axis: zero chroma at every lightness.
+scene.add(new THREE.Line(
+	new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, -0.5, 0), new THREE.Vector3(0, 0.5, 0)]),
+	new THREE.LineBasicMaterial({ color: 0x9298a4 })));
+
+const regionGroup = new THREE.Group(), markerGroup = new THREE.Group(),
+	pairGroup = new THREE.Group(), zoneGroup = new THREE.Group();
+scene.add(regionGroup, markerGroup, pairGroup, zoneGroup);
+
+// Every rebuilt mesh owns its geometry and material, so a rebuild can dispose both.
+function clearGroup(group) {
+	group.traverse(object => {
+		if (object.geometry) object.geometry.dispose();
+		if (object.material) object.material.dispose();
+	});
+	group.clear();
+}
+
+// The six faces of the H/S/L box, mapped through hsl2rgb into OKLab: the selected volume as it
+// actually sits in the space. A full hue span is a closed band and needs no hue end caps.
+function regionMeshes(cfg) {
+	const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+	const span = cfg.hMin <= cfg.hMax ? cfg.hMax - cfg.hMin : 360 - cfg.hMin + cfg.hMax;
+	const hue = t => (cfg.hMin + t * span) % 360;
+	const sat = t => (cfg.sMin + t * (cfg.sMax - cfg.sMin)) / 100;
+	const light = t => (cfg.lMin + t * (cfg.lMax - cfg.lMin)) / 100;
+
+	const sheets = [];
+	for (const t of [0, 1]) {
+		if (span < 360)
+			sheets.push(sheet(16, 16, (u, v) => hsl2rgb(hue(t), sat(u), light(v))));
+		sheets.push(sheet(64, 16, (u, v) => hsl2rgb(hue(u), sat(t), light(v))));
+		sheets.push(sheet(64, 16, (u, v) => hsl2rgb(hue(u), sat(v), light(t))));
+	}
+	return sheets.map(geometry => new THREE.Mesh(geometry, material));
+}
+
+// Generated colors are spheres, fixed ones cones - the chart's dots and triangles. The contrast
+// shell is a back-face copy, black over light colors and white over dark, as drawMarker strokes.
+// The ghosted copies invert the depth test, drawing exactly where the solid ones are buried: a
+// marker inside the region body dims instead of vanishing. renderOrder keeps them after the
+// gamut shell, so they also show through it.
+function markerMeshes(colors) {
+	return colors.map(color => {
+		const geometry = color.fixed
+			? new THREE.ConeGeometry(0.015, 0.034, 24)
+			: new THREE.SphereGeometry(0.013, 20, 14);
+		const contrast = isLightColor(color.rgb) ? 0x000000 : 0xffffff;
+		const ghosted = { transparent: true, opacity: 0.45, depthFunc: THREE.GreaterDepth, depthWrite: false };
+
+		const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: color.hex }));
+		mesh.userData.color = color;
+		mesh.position.set(...toScene(color.lab));
+		for (const [settings, order, scale] of [
+			[{ color: contrast, side: THREE.BackSide }, 0, 1.35],
+			[{ color: contrast, side: THREE.BackSide, ...ghosted }, 2, 1.35],
+			[{ color: color.hex, ...ghosted }, 3, 1]
+		]) {
+			const part = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial(settings));
+			part.renderOrder = order;
+			part.scale.setScalar(scale);
+			mesh.add(part);
+		}
+		return mesh;
+	});
+}
+
+// The hardest pair, joined in the warning amber of the swatch outlines. Depth testing is off:
+// the line is an annotation over the scene, not a body in it.
+function pairMesh(pair) {
+	const ends = pair.map(color => new THREE.Vector3(...toScene(color.lab)));
+	const direction = ends[1].clone().sub(ends[0]);
+	if (direction.length() < 1e-4)
+		return null;
+
+	// Trimmed at both ends: drawn over everything, the line would otherwise cross the markers.
+	const trim = Math.min(0.018, direction.length() / 3);
+	const warn = getComputedStyle(document.body).getPropertyValue("--warn").trim();
+	const mesh = new THREE.Mesh(
+		new THREE.CylinderGeometry(0.004, 0.004, direction.length() - 2 * trim, 8),
+		new THREE.MeshBasicMaterial({ color: warn, transparent: true, opacity: 0.9, depthTest: false }));
+	mesh.position.copy(ends[0]).add(ends[1]).multiplyScalar(0.5);
+	mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+	mesh.renderOrder = 4;
+	return mesh;
+}
+
+// Half the Distinctness distance around every color, so two zones meet exactly where the pair
+// sits `scale` deltaE apart. Annotations like the pair line: depth testing off, drawn between
+// the shell and the marker ghosts.
+function zoneMeshes(colors, radius) {
+	return colors.map(color => {
+		const zone = new THREE.Mesh(new THREE.SphereGeometry(radius, 24, 16),
+			new THREE.MeshBasicMaterial({
+				color: color.hex, transparent: true, opacity: 0.16, depthTest: false, depthWrite: false }));
+		zone.position.set(...toScene(color.lab));
+		zone.renderOrder = 1;
+		return zone;
+	});
+}
+
+window.update3D = (cfg, colors, pair) => {
+	clearGroup(regionGroup);
+	regionGroup.add(...regionMeshes(cfg));
+	clearGroup(markerGroup);
+	if (colors.length)
+		markerGroup.add(...markerMeshes(colors));
+	clearGroup(pairGroup);
+	const line = pair ? pairMesh(pair) : null;
+	if (line)
+		pairGroup.add(line);
+	clearGroup(zoneGroup);
+	// The scene is in OKLab units, the slider in deltaE, a hundred times larger.
+	const radius = cfg.scale / 200;
+	if (radius > 0 && colors.length)
+		zoneGroup.add(...zoneMeshes(colors, radius));
+};
+
+window.highlight3D = color => {
+	for (const marker of markerGroup.children)
+		marker.scale.setScalar(marker.userData.color === color ? 1.7 : 1);
+};
+
+// Marker hover: the shared highlight, plus a pointer cursor and a hex-and-name tooltip.
+const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
+renderer.domElement.addEventListener("pointermove", e => {
+	// Buttons down means the pointer is steering the camera.
+	if (e.buttons)
+		return;
+
+	const rect = renderer.domElement.getBoundingClientRect();
+	pointer.set((e.clientX - rect.left) / rect.width * 2 - 1, 1 - (e.clientY - rect.top) / rect.height * 2);
+	raycaster.setFromCamera(pointer, camera);
+	const hit = raycaster.intersectObjects(markerGroup.children, true)[0];
+	let marker = hit ? hit.object : null;
+	while (marker && marker.parent !== markerGroup)
+		marker = marker.parent;
+
+	const color = marker ? marker.userData.color : null;
+	renderer.domElement.style.cursor = color ? "pointer" : "";
+	renderer.domElement.title = color ? color.hex.toUpperCase() + " · " + cellLabel(color) : "";
+	setHighlight(color);
+});
+renderer.domElement.addEventListener("pointerleave", () => setHighlight(null));
+
+function resize() {
+	const w = container.clientWidth, h = container.clientHeight;
+	const half = 0.62, aspect = w / h;
+	renderer.setSize(w, h);
+	camera.left = -half * aspect;
+	camera.right = half * aspect;
+	camera.top = half;
+	camera.bottom = -half;
+	camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize);
+resize();
+
+// The classic script has already generated and drawn: pick up its state, then follow its hooks.
+window.update3D(readConfig(), palette, lastWorstPair);
+
+// The loop runs only while the panel is on screen. A hidden tab needs no handling of its own:
+// the loop is requestAnimationFrame-driven and the browser stalls it there.
+const animate = () => { controls.update(); renderer.render(scene, camera); };
+new IntersectionObserver(entries => renderer.setAnimationLoop(entries.at(-1).isIntersecting ? animate : null))
+	.observe(container);
+</script>
+
+</body>
+</html>

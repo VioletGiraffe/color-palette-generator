@@ -7,7 +7,8 @@ single self-contained file.
 `evolution.md`, alongside this file, is the design history: what was tried for the generator, the
 numbers each step produced, the negative results, and how the metric below was arrived at. Read it
 before changing the generator or the identification model — most of the obvious alternatives have
-been measured there already.
+been measured there already. The steps it names are kept as working pages in `past-experiments/`,
+one per step, each titled by its step.
 
 ## Where the data comes from
 
