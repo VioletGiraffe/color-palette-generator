@@ -1,0 +1,2 @@
+# Every tracked file is text and stays LF, whatever a contributor's core.autocrlf is set to.
+* text=auto eol=lf
