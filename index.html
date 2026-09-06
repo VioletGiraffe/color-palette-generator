@@ -624,46 +624,54 @@ function searchCuspLightness(h) {
 	return (lo + hi) / 2;
 }
 
+const CUSP_STEP = 1;
+
+// The cusp locus follows the edges of the sRGB cube and turns a corner at each of the six primaries
+// and secondaries, blue's five times sharper than the next. The relative coordinates divide by these
+// values, so an unsmoothed corner shears both of them across one degree of hue.
+// Only the corners move: everywhere else the blur shifts the locus by under 0.15, so one blur over
+// the whole circle needs no special case at the six hues.
+const CUSP_SMOOTHING = 2;
+function smoothRing(samples) {
+	const sigma = CUSP_SMOOTHING / CUSP_STEP, radius = Math.ceil(sigma * 3), weights = [];
+	for (let k = -radius; k <= radius; ++k)
+		weights.push(Math.exp(-k * k / (2 * sigma * sigma)));
+	const total = weights.reduce((a, b) => a + b, 0);
+	return samples.map((_, n) => {
+		let sum = 0;
+		for (let k = -radius; k <= radius; ++k)
+			sum += samples[(n + k + samples.length) % samples.length] * weights[k + radius];
+		return sum / total;
+	});
+}
+
 // The cusp depends on the hue alone, so the search runs once per sample and everything else reads
 // the samples. Built on first use: the search is far too slow to run per draw or per pixel.
-// The six sRGB primaries and secondaries are corners of the ridge; their hues are sampled too, so
-// no interpolated segment spans one.
-const CUSP_STEP = 1;
-const CUSP_CORNER_HUES = [[1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 1, 1], [0, 0, 1], [1, 0, 1]]
-	.map(rgb => lchOf(rgbToOklab(rgb))[2]);
 let cuspSamples = null;
 
 function cuspTable() {
 	if (!cuspSamples) {
-		const hues = Array.from({ length: Math.round(360 / CUSP_STEP) }, (_, n) => n * CUSP_STEP)
-			.concat(CUSP_CORNER_HUES).sort((a, b) => a - b);
-		const light = hues.map(searchCuspLightness);
-		cuspSamples = { hues, light, chroma: hues.map((h, n) => gamutChroma(light[n], h)) };
+		const light = [], chroma = [];
+		for (let n = 0; n < 360 / CUSP_STEP; ++n) {
+			const h = n * CUSP_STEP, L = searchCuspLightness(h);
+			light.push(L);
+			chroma.push(gamutChroma(L, h));
+		}
+		cuspSamples = { light: smoothRing(light), chroma: smoothRing(chroma) };
 	}
 	return cuspSamples;
 }
 
 // One cusp sample at any hue, straight between the samples either side of it.
 function cuspValue(h, key) {
-	const table = cuspTable();
-	const hues = table.hues, samples = table[key];
-	const hue = ((h % 360) + 360) % 360;
-	// The first sample is hue 0, so the search never lands before it and `before` stays in range.
-	let lo = 0, hi = hues.length;
-	while (lo < hi) {
-		const mid = (lo + hi) >> 1;
-		if (hues[mid] <= hue)
-			lo = mid + 1;
-		else
-			hi = mid;
-	}
-	// Past the last sample the segment wraps to the first, a turn of 360 away.
-	const before = lo - 1, after = lo % hues.length;
-	const start = hues[before], end = hues[after] + (after === 0 ? 360 : 0);
-	const within = end > start ? (hue - start) / (end - start) : 0;
-	return samples[before] * (1 - within) + samples[after] * within;
+	const samples = cuspTable()[key];
+	const at = ((h % 360) + 360) % 360 / CUSP_STEP;
+	const before = Math.floor(at), within = at - before;
+	return samples[before] * (1 - within) + samples[(before + 1) % samples.length] * within;
 }
 
+// Both read the smoothed table, so both land near the true cusp, not on it. Everything that needs
+// the cusp itself calls searchCuspLightness.
 const cuspLightness = h => cuspValue(h, "light");
 const cuspChroma = h => cuspValue(h, "chroma");
 
@@ -696,10 +704,12 @@ const withinLightness = (L, h, cfg) => {
 	return relative >= cfg.lMin && relative <= cfg.lMax;
 };
 
-// The chroma range is stated relative to the hue's cusp too, where 100 is the most chroma sRGB
-// shows at that hue and 0 is neutral. Cusp chroma runs from 14.5 at teal to 32.2 at magenta, so an
-// absolute range asks for the whole gamut at the first hue and its top half at the second, and a
-// floor above 14.5 drops teal entirely.
+// The chroma range is stated relative to the hue's cusp too, where 100 is the hue's cusp chroma and
+// 0 is neutral. Cusp chroma runs from 14.5 at teal to 32.2 at magenta, so an absolute range asks for
+// the whole gamut at the first hue and its top half at the second, and a floor above 14.5 drops teal
+// entirely.
+// Smoothing puts 100 up to 1.0 chroma outside the gamut near blue; the callers clamp to gamutChroma
+// at the point's own lightness.
 // A fraction of the cusp, not of the reach at the point's own lightness as data/identify.js takes
 // it: only the cusp makes one number mean the same vividness at every hue.
 const absoluteC = (relative, h) => relative / 100 * cuspChroma(h);

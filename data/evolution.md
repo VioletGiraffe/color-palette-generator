@@ -535,6 +535,16 @@ the interpolation, whose worst error against a fresh search is 0.20 chroma.
 Chroma stays absolute on the hue-chroma chart's axis, as lightness does on the other, so the selected band
 curves with each hue's peak rather than running level.
 
+Both coordinates together are HSL's, rebuilt. HSL puts every fully saturated color at lightness 0.5 and
+states saturation as a fraction of the most that lightness allows - and its S=1 locus, one channel at
+maximum and one at minimum, is this cusp locus. The three anchors agree exactly: black, white, and the
+saturated ridge at the midpoint. Everything between them differs, and that is where the value is. The
+anchor here is a measured cusp instead of max/min arithmetic on gamma-encoded channels; the interpolation
+runs in OKLab's lightness instead of encoded RGB; hue is OKLab's angle instead of a hexagonal one; and
+chroma is a fraction of the cusp instead of the reach, which is HSL's answer and the fork rejected above.
+None of it reaches the metric: HSL says where a color stands in its own gamut and nothing at all about how
+far apart two colors look.
+
 Both range controls went back to sliders with this. They had been number boxes because the value that mattered
 was a different number at every hue - the absolute chroma or lightness that just clipped the brightest yellow -
 and a slider could not be aimed at it. Relative to the cusp that value is the same number everywhere, so the
@@ -606,6 +616,44 @@ both of which vary across the chart.
 Chroma over lightness is not single-peaked, as the cubic-root section notes: at hue 201 it rises 2.98 above
 its running low near L 0. That never decides the pick - over every hue and six ranges the cusp-nearest
 lightness came within 0.006 chroma of the best its band holds, two per cent of a pixel row.
+
+## Smoothing the cusp table
+
+Both relative coordinates divide by the cusp, so the cusp's shape is the shape of the controls. The locus
+follows the edges of the sRGB cube and turns a corner at each of the six primaries and secondaries, where the
+binding face changes; blue's corner is five times sharper than the next, and on the charts it read as a shear
+rather than as compression.
+
+Most of the visible tear was the table's own doing. `CUSP_CORNER_HUES` inserted an exact sample at each corner
+hue so no interpolated segment spanned one. At blue that put a sample at 264.052 beside the regular one at
+264.000, and the table fell from L 49.27 to 45.18 across those 0.052 degrees - 79 L per degree, against under
+1.2 anywhere else. The locus itself is continuous; only its derivative turns.
+
+Adopted: drop the corner samples, keep a uniform 1 degree grid, blur both columns around the circle with a
+Gaussian of `CUSP_SMOOTHING` = 2 degrees. Second difference of cusp lightness at each corner:
+
+| sigma | red 29 | yellow 110 | green 142 | cyan 195 | blue 264 | magenta 328 |
+|---|---|---|---|---|---|---|
+| none | 0.45 | 0.75 | 0.26 | 0.40 | 4.08 | 0.63 |
+| 1.5 | 0.15 | 0.24 | 0.12 | 0.13 | 0.80 | 0.23 |
+| 2 | 0.11 | 0.18 | 0.09 | 0.10 | 0.55 | 0.18 |
+| 3 | 0.07 | 0.12 | 0.06 | 0.07 | 0.31 | 0.12 |
+
+2 is the smallest sigma putting blue under yellow's 0.75, the sharpest corner the unsmoothed table already
+had. Steepest cusp lightness slope over the whole circle falls from 79 to 1.97 per degree.
+
+One blur over the whole circle needs no special case at the six hues: every 10 degree band it moves by more
+than 0.15 lies within the blur radius of a corner, and the smooth stretches do not move at all. What it costs:
+
+- 100 chroma sits up to 1.0 outside the gamut near blue, and up to 0.65 L off the true cusp at the other five
+  corners. Callers already clamp to `gamutChroma` at the point's own lightness.
+- `relativeL` and `absoluteL` stay exact inverses, both reading the same smoothed value; the round trip is
+  1e-14 in both coordinates.
+- `pureHue` calls `searchCuspLightness`, so the swatch it draws is still the true cusp color.
+
+`cuspValue` lost its binary search along with the corner samples, a uniform grid indexing directly.
+`STATE_VERSION` stays v4: the strings parse and mean the same, though a range near blue now selects a slightly
+different band.
 
 ## Files
 
