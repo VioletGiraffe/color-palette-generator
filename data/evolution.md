@@ -744,7 +744,11 @@ Not done:
 
 - The weights and the noise width were fitted on unwarped hue distances. A refit under the respaced circle is
   the next calibration question, and whether the fit then shows anomalies is part of its interest.
-- Whether the palettes look even is the perceptual claim behind the belief, and only eyes can check it.
+- Whether the palettes look even is the perceptual claim behind the belief, and only eyes can check it. The first
+  measurement toward it is `data/calibrate-hue-steps.html`: around anchors dealt on a grid over the ridge, the first
+  code on each side that reads as a different color. `data/fit_hue_steps.js` turns the steps into a density two ways,
+  equal steps as equal warped angle or as equal warped chord, against the table. Which of the two the steps sit
+  nearer decides whether the table belongs on the angle, as it is now, or on the chord.
 
 ## Files
 
@@ -772,3 +776,4 @@ Not done:
 - `data/calibrate-names.html`, `data/fit_names.js`, `data/naming-verdicts-16px.json`: the naming round.
 - `data/hue-density.html`: the hue respacing tool; its presets define `HUE_DENSITY`. A copy of the page from
   before the respacing with the tool on top, so its generator warps once.
+- `data/calibrate-hue-steps.html`, `data/fit_hue_steps.js`: the hue step round, a measured density against the table.
