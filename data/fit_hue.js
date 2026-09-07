@@ -13,15 +13,18 @@
 // shape of the hue term is identifiable against the threshold, not its level, which is why it is
 // written as a trough about one rather than as a free gain per sector.
 //
-//     node data/fit_hue.js [--relative] hue-log.json [more.json ...]
+//     node data/fit_hue.js [--relative] [--warped] hue-log.json [more.json ...]
 //
 // --relative measures the lightness term against the cusp-relative coordinate instead of absolute L,
 // which the metric carried until data/calibrate-cusp.html told the two apart: on the hue rounds alone
 // they fit alike, a trough centred on blue standing in for the coordinate.
+// --warped measures the pair distance on the respaced hue circle of HUE_DENSITY, as recallDistance does;
+// the default is the raw circle the shipped terms were fitted on. The hue trough then reports what the
+// respacing leaves unexplained.
 
 "use strict";
 const fs = require("fs");
-const { labOf, relativePosition, weightedDistance, W_L, W_C } = require("./identify.js");
+const { labOf, relativePosition, weightedDistance, warpedLab, W_L, W_C } = require("./identify.js");
 
 const SECTORS = 6;
 const LIGHTNESS_REF = 50, CHROMA_REF = 10;
@@ -56,7 +59,8 @@ const normalCdf = x => 0.5 * erfc(-x / Math.SQRT2);
 const hueOf = lab => (Math.atan2(lab[2], lab[1]) * 180 / Math.PI + 360) % 360;
 
 const ABSOLUTE = !process.argv.includes("--relative"), COORDINATE = ABSOLUTE ? "absolute" : "relative";
-const logs = process.argv.slice(2).filter(arg => arg !== "--relative").map(file => JSON.parse(fs.readFileSync(file, "utf8")));
+const WARPED = process.argv.includes("--warped");
+const logs = process.argv.slice(2).filter(arg => !arg.startsWith("--")).map(file => JSON.parse(fs.readFileSync(file, "utf8")));
 // Any log carrying probe pairs will do, not only calibrate-hue.html's: a probe that records no
 // sector gets one from its own hue, and the model is a gain on the distance whatever axis the pair
 // was stepped along. The lightness round's log pools in on those terms, which is most of the
@@ -80,16 +84,16 @@ for (const [index, session] of sessions.entries()) {
 		const hue = hueOf(a), verdict = grade.get(pairKey(probe.a, probe.b)) ?? 2;
 		probes.push({ session: index, sector: probe.sector ?? Math.floor(hue / (360 / SECTORS)), level: probe.level,
 			axis: probe.axis || "H", asked: probe.distance,
-			distance: weightedDistance(a, b, W_L, W_C),
+			distance: WARPED ? weightedDistance(warpedLab(a), warpedLab(b), W_L, W_C) : weightedDistance(a, b, W_L, W_C),
 			relL: Math.max(LIGHTNESS_FLOOR, ABSOLUTE ? (a[0] + b[0]) / 2 : (rel[probe.a][0] + rel[probe.b][0]) / 2),
 			chroma: Math.max(CHROMA_FLOOR, (Math.hypot(a[1], a[2]) + Math.hypot(b[1], b[2])) / 2),
 			hue, grade: verdict, marked: verdict < 2 });
 	}
 }
 
-console.log("%s palettes, %s probe pairs: %s too close, %s marginal; swatch %s px, ground %s; lightness coordinate %s",
+console.log("%s palettes, %s probe pairs: %s too close, %s marginal; swatch %s px, ground %s; lightness coordinate %s; hue circle %s",
 	sessions.length, probes.length, probes.filter(p => p.grade === 0).length, probes.filter(p => p.grade === 1).length,
-	[...sizes].join("/"), [...grounds].join("/"), ABSOLUTE ? "absolute" : "cusp-relative");
+	[...sizes].join("/"), [...grounds].join("/"), ABSOLUTE ? "absolute" : "cusp-relative", WARPED ? "respaced" : "raw");
 if (sizes.size > 1 || grounds.size > 1)
 	console.log("warning: mixed swatch sizes or grounds fit one set of constants");
 const axes = [...new Set(probes.map(p => p.axis))].sort();

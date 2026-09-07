@@ -57,11 +57,11 @@ python data/build_cells.py --check [page.html] # verify the page matches; non-ze
 node data/identify.js [page.html]             # end-to-end: generate palettes, score both ways
 node data/identify.js --hex "#rrggbb ..."     # score one palette
 node data/identify.js --file palettes.txt     # score one palette per line
-node data/fit.js log.json                     # fit identify.js's constants to a calibrate.html log
-node data/fit_hue.js log.json [more.json]     # fit the position terms, over any probe logs pooled
+node data/fit.js --warped log.json            # fit identify.js's constants to a calibrate.html log; without --warped, on the raw hue circle
+node data/fit_hue.js --warped log.json [more.json] # fit the position terms, over any probe logs pooled
 node data/fit_hue.js --relative log.json      # the same against cusp-relative lightness, the coordinate before the cusp rounds
 node data/fit_hue_steps.js log.json           # a hue density from calibrate-hue-steps.html, against HUE_DENSITY
-node data/hue-marginals.js [--names] [m/d ...] # the hue and name shares the generator delivers, metric and draw density set apart
+node data/hue-marginals.js [--names] [--counts 7,10,14] [m/d ...] # the hue and name shares the generator delivers, metric and draw density set apart
 node data/fit_chroma.js chroma-log.json       # the chroma round's own question, see below
 node data/fit_names.js log.json               # fit the naming score to a calibrate-names.html log
 ```
@@ -93,7 +93,8 @@ Noise is anisotropic - lightness and chroma differences count by a weight agains
 difference is the ab chord less its radial part, taken after each hue moves to its place on the
 respaced circle of `HUE_DENSITY` - and a pair swaps with the chance the noise carries a recall past
 their midpoint. A color's error is the sum over its pairs, the same formula the page optimizes.
-The weights were fitted before the respacing, on unwarped hue distances; see `evolution.md`. A
+The weights, the noise width and the position terms are fitted on that respaced circle (the fit
+scripts' `--warped`); the raw circle needed a hue trough at blue that the respacing removes. A
 palette reports each color's accuracy, the floor (the worst color), and the pair confused most. A
 Monte Carlo (noise drawn per recall, nearest entry answered) was tried in
 four geometries and fitted the calibration verdicts worse than this formula in every one, by 5 to
@@ -171,18 +172,23 @@ allows at each hue, which is what decorrelates the three candidates. `cusp-log.j
 with absolute lightness bands shared by all four, which is what tells the lightness coordinate apart
 (below).
 
-Fitted together by `node data/fit_hue.js` over the four probe logs, 371 pairs, the ordered model
-over all three grades:
+Fitted together by `node data/fit_hue.js --warped` over the five probe logs, 443 pairs, the ordered
+model over all three grades, on the respaced hue circle:
 
 | term | value | earns | zero excluded |
 |---|---|---|---|
-| absolute lightness exponent | 0.40 | 34 log-likelihood units | yes, profile and bootstrap |
-| hue trough | amplitude 0.08 at 270 degrees | 2.8 units, 2 parameters | profile barely, bootstrap no |
-| chroma exponent | 0.00 | 0 units | no |
+| absolute lightness exponent | 0.50 | 39 log-likelihood units | yes, profile and bootstrap |
+| hue trough | amplitude 0.00 | 0 units, 2 parameters | no |
+| chroma exponent | -0.15 | 3 units | profile yes, bootstrap no |
+
+On the raw circle the same data wants a trough of amplitude 0.10 at 270 degrees worth 5.6 units, blue
+pairs reading closer than their distance says; the respacing, fitted on the step criterion with no
+parameter spent here, removes it, and the blue-over-red gain interval moves from 0.84 to 1.00 onto
+0.97 to 1.10. The weights and the noise width refit on the respaced circle unchanged.
 
 Adopted: the lightness exponent alone, as a gain on the whole distance in `apart2` and
-`recallDistance`, on the pair's mean absolute lightness. The gain is 1 at lightness 50, 1.32 at white
-and 0.40 at the floor of 5, so the fine threshold runs from 6 weighted deltaE near white to 20 at the
+`recallDistance`, on the pair's mean absolute lightness. The gain is 1 at lightness 50, 1.41 at white
+and 0.32 at the floor of 5, so the fine threshold runs from 6 weighted deltaE near white to 27 at the
 floor.
 
 The coordinate is the finding of the cusp rounds. The gain was first carried on cusp-relative
@@ -208,5 +214,5 @@ cusps are dark. `calibrate-hue.html` exists because of that.
 schedule with no ground control. Archival: its ranges contain the current fit, and the two logs are
 not poolable.
 
-Refit with `node data/fit.js data/calibration-log.json`. A different swatch size needs its own log
+Refit with `node data/fit.js --warped data/calibration-log.json`. A different swatch size needs its own log
 and fit; the thresholds are size-dependent.

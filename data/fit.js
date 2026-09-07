@@ -5,11 +5,14 @@
 // with a lapse rate for stray marks. Prints the constants to paste, the likelihood profile along
 // each parameter, and observed against predicted verdicts per probe condition.
 //
-//     node data/fit.js log.json [more.json ...]
+//     node data/fit.js [--warped] log.json [more.json ...]
+//
+// --warped measures every pair on the respaced hue circle of HUE_DENSITY, as recallDistance does; the
+// default is the raw OKLab circle the shipped constants were fitted on.
 
 "use strict";
 const fs = require("fs");
-const { labOf, relativePosition } = require("./identify.js");
+const { labOf, relativePosition, warpedLab } = require("./identify.js");
 
 const WEIGHTS = [0.25, 0.3, 0.35, 0.4, 0.5, 0.6, 0.7, 0.85, 1, 1.2, 1.4, 1.7, 2, 2.5];
 // The "too close" threshold and the width of the marginal band above it, in weighted deltaE.
@@ -47,7 +50,8 @@ function erfc(x) {
 }
 const normalCdf = x => 0.5 * erfc(-x / Math.SQRT2);
 
-const logs = process.argv.slice(2).map(file => JSON.parse(fs.readFileSync(file, "utf8")));
+const WARPED = process.argv.includes("--warped");
+const logs = process.argv.slice(2).filter(arg => arg !== "--warped").map(file => JSON.parse(fs.readFileSync(file, "utf8")));
 const sessions = logs.filter(log => log.version === 2).flatMap(log => log.sessions);
 if (!sessions.length) {
 	console.error("no version 2 calibrate.html log with palettes: node data/fit.js log.json");
@@ -61,9 +65,9 @@ const pairKey = (a, b) => Math.min(a, b) + "," + Math.max(a, b);
 // its two colors' relative coordinates; the verdict; the probe condition if any.
 const pairs = [];
 for (const session of sessions) {
-	const labs = session.hexes.map(labOf);
+	const raw = session.hexes.map(labOf), labs = WARPED ? raw.map(warpedLab) : raw;
 	const chroma = labs.map(lab => Math.hypot(lab[1], lab[2]));
-	const relative = labs.map(relativePosition);
+	const relative = raw.map(relativePosition);
 	const grade = new Map(session.verdicts.map(v => [pairKey(v.a, v.b), GRADES.indexOf(v.grade)]));
 	const probe = new Map((session.probes || []).map(p => [pairKey(p.a, p.b), p]));
 	for (let i = 0; i < labs.length; ++i)
@@ -81,7 +85,7 @@ const graded = GRADES.map((_, g) => pairs.filter(p => p.grade === g).length);
 const sizes = [...new Set(sessions.map(s => s.swatchPx))];
 const gaps = [...new Set(sessions.map(s => s.spotGap ?? "unrecorded"))];
 console.log(sessions.length + " palettes, " + pairs.length + " pairs: " + graded[0] + " too close, " + graded[1] + " marginal, "
-	+ graded[2] + " fine; swatch " + sizes.join("/") + " px, spot gap " + gaps.join("/"));
+	+ graded[2] + " fine; swatch " + sizes.join("/") + " px, spot gap " + gaps.join("/") + "; hue circle " + (WARPED ? "respaced" : "raw"));
 if (sizes.length > 1)
 	console.log("warning: mixed swatch sizes fit one set of thresholds");
 // How far apart the swatches sat is part of what a verdict answers: a pair too far to compare in one

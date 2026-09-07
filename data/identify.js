@@ -34,10 +34,10 @@ const W_L = 0.35;
 const W_C = 0.6;
 // A dark pair needs more distance than the weights alone give it, as a gain on the whole distance
 // by the pair's mean lightness. Fitted by data/fit_hue.js to the light-ground rounds, which the
-// page's `apart2` carries too. The gain is one at lightness 50, 1.32 at white and 0.40 at the floor,
-// so the fine threshold runs from 6 weighted deltaE near white to 20 at the floor. Absolute
+// page's `apart2` carries too. The gain is one at lightness 50, 1.41 at white and 0.32 at the floor,
+// so the fine threshold runs from 6 weighted deltaE near white to 27 at the floor. Absolute
 // lightness, not the cusp-relative coordinate: data/calibrate-cusp.html told the two apart.
-const LIGHTNESS_EXPONENT = 0.4;
+const LIGHTNESS_EXPONENT = 0.5;
 const LIGHTNESS_REFERENCE = 50;
 // Without a floor the gain reaches zero at black, where every pair would read as confusable. The
 // calibration reaches down to 8, so anything under this is extrapolation either way.
@@ -46,7 +46,7 @@ const CALIBRATED_PX = 16;
 // Each hue's share of the circle in the metric, per whole degree at mean 1; the page's copy, which
 // loadPage checks against this one. Measured: the chord density B of the hue step rounds, the output of
 // node data/fit_hue_steps.js --table b over the hue-*-steps-log.json files. See index.html.
-// The weights above were fitted on unwarped hue distances and have not been refitted since.
+// The constants above were fitted on this circle (the fit scripts' --warped).
 const HUE_DENSITY = [
 	1.082, 1.066, 1.049, 1.033, 1.018, 1.003, 0.989, 0.978, 0.969, 0.963, 0.961, 0.962, 0.967, 0.974, 0.982, 0.991, 0.999,
 	1.006, 1.011, 1.015, 1.018, 1.02, 1.021, 1.023, 1.023, 1.023, 1.022, 1.02, 1.018, 1.017, 1.017, 1.018, 1.02, 1.022,

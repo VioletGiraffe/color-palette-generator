@@ -742,8 +742,6 @@ box and cached.
 
 Not done:
 
-- The weights and the noise width were fitted on unwarped hue distances. A refit under the respaced circle is
-  the next calibration question, and whether the fit then shows anomalies is part of its interest.
 - Whether the palettes look even is the perceptual claim behind the belief, and only eyes can check it. The
   measurement toward it is `data/calibrate-hue-steps.html`: around anchors dealt on a grid in random order, the
   first swatch on each side that reads as a meaningfully different color, past mere detectability. That minimal
@@ -814,9 +812,15 @@ Not done:
   Per color name in a saturated box, the authored table made greens 28% and blue 16% of every palette while
   cyans and magentas got half their room; under B no family dominates, and reds are the thin one at 6%, the
   smallest hue family by room.
-  Open: the weights and noise width refit under the respaced circle; a second 80% round to separate a session
-  offset from a chroma effect at the top end; family coverage as its own goal, by a start stratified over color
-  names rather than a density over degrees.
+  Refit on the respaced circle (`--warped` in `fit.js` and `fit_hue.js`, the hue distance of every pair taken
+  after the warp): the weights, noise width and thresholds come back unchanged, the identification log too small
+  to tell the circles apart (0.5 units). On the five probe logs, 443 pairs, the raw circle wants a hue trough of
+  amplitude 0.10 at 270 degrees worth 5.6 units; on the respaced circle the trough is exactly zero and the
+  blue-over-red gain interval moves from 0.84 to 1.00 onto 0.97 to 1.10. B, fitted on the step criterion, predicts
+  the recall verdicts' blue effect with no parameter spent. The lightness exponent moves 0.40 to 0.50 (profile 0.40
+  to 0.55), the chroma exponent -0.10 to -0.15, the lapse 0.05 to 0.005. Adopted: exponent 0.5.
+  Open: a second 80% round to separate a session offset from a chroma effect at the top end; family coverage as
+  its own goal, by a start stratified over color names rather than a density over degrees.
 
 ## Files
 

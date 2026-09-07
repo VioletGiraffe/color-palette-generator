@@ -915,12 +915,12 @@ function parseFixedColors(text) {
 const W_L = 0.35;
 const W_C = 0.6;
 // A dark pair needs more distance than the weights alone give it: the calibration puts the fine
-// threshold at 6 weighted deltaE near white and 20 at the floor, against 8 at lightness 50. Measured
+// threshold at 6 weighted deltaE near white and 27 at the floor, against 8.5 at lightness 50. Measured
 // over five rounds on the light ground; see data/README.md. The gain is on the whole distance, not
 // on the lightness weight - lightness-stepped and hue-stepped pairs move together with lightness -
 // and on absolute lightness, not the cusp-relative coordinate of the range controls: a round built
 // to tell the two apart chose absolute.
-const LIGHTNESS_EXPONENT = 0.4;
+const LIGHTNESS_EXPONENT = 0.5;
 // The lightness at which the gain is one, so the Distinctness scale keeps its meaning there.
 const LIGHTNESS_REFERENCE = 50;
 // Without a floor the gain reaches zero at black, where every pair would read as confusable. The
@@ -932,7 +932,7 @@ const LIGHTNESS_FLOOR = 5;
 // data/calibrate-hue-steps.html as the chord density of minimal meaningful hue differences, the output of
 // node data/fit_hue_steps.js --table b over the hue step logs; a retune is a new paste here and in
 // data/identify.js, which must match. Also the acceptance density of the starting draws, see hueWeightFor.
-// The weights above were fitted on unwarped hue distances and have not been refitted since.
+// The constants above were fitted on this circle (the fit scripts' --warped).
 const HUE_DENSITY = [
 	1.082, 1.066, 1.049, 1.033, 1.018, 1.003, 0.989, 0.978, 0.969, 0.963, 0.961, 0.962, 0.967, 0.974, 0.982, 0.991, 0.999,
 	1.006, 1.011, 1.015, 1.018, 1.02, 1.021, 1.023, 1.023, 1.023, 1.022, 1.02, 1.018, 1.017, 1.017, 1.018, 1.02, 1.022,
