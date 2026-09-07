@@ -806,9 +806,17 @@ Not done:
   table and raw OKLab, nearer raw: yellow to green 40 degrees against the table's 58 and raw's 32, magenta to red
   63 against 43, blue 7 degrees earlier than the table.
 
-  Open: B replaces the table in the metric, with the table kept as the draw density or dropped; the weights and
-  noise width refit under the respaced circle afterward. A second 80% round separates a session offset from a
-  chroma effect at the top end.
+  B is now `HUE_DENSITY` in both roles, the metric's warp and the draw's acceptance; the authored table stays in
+  the code as `HUE_DENSITY_AUTHORED`, read by nothing but the fit. Measured before the swap, 200 seeds at 7 and 10
+  colors: the draw density moves the delivered hue share 15 to 30% of the way toward its own, since dartStart
+  takes the clearest of many weighted draws; a B draw delivers the same as a uniform one; against B's share the
+  shipped page was off by a CV of 0.57 and B in both roles sits at 0.17, the floor the box's own hue room sets.
+  Per color name in a saturated box, the authored table made greens 28% and blue 16% of every palette while
+  cyans and magentas got half their room; under B no family dominates, and reds are the thin one at 6%, the
+  smallest hue family by room.
+  Open: the weights and noise width refit under the respaced circle; a second 80% round to separate a session
+  offset from a chroma effect at the top end; family coverage as its own goal, by a start stratified over color
+  names rather than a density over degrees.
 
 ## Files
 
@@ -834,7 +842,8 @@ Not done:
   `data/fit_chroma.js`: the position-term rounds; their logs are `data/light-calibration-log.json`,
   `data/chroma-log.json`, `data/hue-log.json`, `data/cusp-log.json`, `data/cusp-log-new.json`.
 - `data/calibrate-names.html`, `data/fit_names.js`, `data/naming-verdicts-16px.json`: the naming round.
-- `data/hue-density.html`: the hue respacing tool; its presets define `HUE_DENSITY`. A copy of the page from
+- `data/hue-marginals.js`: the hue and name shares generated palettes deliver, per condition of metric and draw density.
+- `data/hue-density.html`: the hue respacing tool; its presets define `HUE_DENSITY_AUTHORED`. A copy of the page from
   before the respacing with the tool on top, so its generator warps once.
 - `data/calibrate-hue-steps.html`, `data/fit_hue_steps.js`, `data/ridge-2-steps-log.json`, `data/hue-1-steps-log.json`, `data/hue-2-steps-log.json`, `data/hue-3-c70-steps-log.json`, `data/hue-4-c80-steps-log.json`:
   the hue step rounds, a measured density against the table. The ridge log is version 1 and holds both ridge rounds; the hue logs are version 2, three rounds at chroma 50%, one at 70%, one at 80%.

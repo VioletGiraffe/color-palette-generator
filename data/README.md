@@ -61,6 +61,7 @@ node data/fit.js log.json                     # fit identify.js's constants to a
 node data/fit_hue.js log.json [more.json]     # fit the position terms, over any probe logs pooled
 node data/fit_hue.js --relative log.json      # the same against cusp-relative lightness, the coordinate before the cusp rounds
 node data/fit_hue_steps.js log.json           # a hue density from calibrate-hue-steps.html, against HUE_DENSITY
+node data/hue-marginals.js [--names] [m/d ...] # the hue and name shares the generator delivers, metric and draw density set apart
 node data/fit_chroma.js chroma-log.json       # the chroma round's own question, see below
 node data/fit_names.js log.json               # fit the naming score to a calibrate-names.html log
 ```

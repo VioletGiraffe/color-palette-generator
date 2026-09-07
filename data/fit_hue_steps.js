@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Reads calibrate-hue-steps.html logs and turns the steps into a hue density, compared with the
-// HUE_DENSITY the page and identify.js carry.
+// HUE_DENSITY the page and identify.js carry (shipped) and the table authored before it (authored).
 //
 // A step is the span from the left pick to the right pick around an anchor: two minimal meaningful
 // differences, the first swatch each side that reads as a different color, past mere detectability.
@@ -12,12 +12,13 @@
 //     A(h) = 1 / delta(h)              equal perceived steps take equal warped angle
 //     B(h) = 1 / (C(h) delta(h))       equal perceived steps take equal warped chord, C the anchor's chroma
 //
-// A is the criterion the table was authored under; B is what the metric implies, its hue term being
-// the ab chord. The last blocks report how constant a side is under each reading, as the coefficient
-// of variation over the sides, and the noise: right over left within a trial, the same within an anchor
-// across rounds (equal to the first means no asymmetry repeats), the step against the anchor's mean
-// across rounds (the criterion's spread), and each anchor's left side against the previous anchor's
-// right side, which cover nearly the same hues.
+// A is the criterion the authored table was drawn under; B is what the metric implies, its hue term
+// being the ab chord, and B is what ships. The last blocks report how constant a side is under each
+// reading, raw and under the shipped warp, as the coefficient of variation over the sides, and the
+// noise: right over left within a trial, the same within an anchor across rounds (equal to the first
+// means no asymmetry repeats), the step against the anchor's mean across rounds (the criterion's
+// spread), and each anchor's left side against the previous anchor's right side, which cover nearly
+// the same hues.
 //
 // Version 2 logs step hue alone at one lightness and chroma. Version 1 logs walked the sRGB cube's
 // saturated edges, where near a primary the codes move lightness and chroma and hardly any hue, so
@@ -33,7 +34,7 @@
 
 "use strict";
 const fs = require("fs");
-const { labOf, W_L, W_C, HUE_DENSITY } = require("./identify.js");
+const { labOf, W_L, W_C, HUE_DENSITY, HUE_DENSITY_AUTHORED } = require("./identify.js");
 
 const SHARE_CUT = 0.7;
 const KERNEL_WIDTH = 4;   // degrees, about half the anchor spacing
@@ -161,7 +162,7 @@ function main(args) {
 		return [r, p.chroma * p.degreesRight / (r.chroma * r.degreesLeft)];
 	}));
 	console.log(rows.length + " anchors, " + trials.length + " trials; " + sides.length + " of " + 2 * trials.length + " sides at a hue share of " + cut + " or more");
-	console.log("   hue  chroma  hex      deg -/+      step deg  +-   r/l  share -/+      A      B  table   A/t   B/t   ovl");
+	console.log("   hue  chroma  hex      deg -/+      step deg  +-   r/l  share -/+      A      B  ship.   A/s   B/s   ovl");
 	for (const r of rows) {
 		const a = A[Math.round(r.hue) % 360], b = B[Math.round(r.hue) % 360], t = tableAt(r.hue);
 		console.log(fmt(r.hue, 6, 1) + fmt(r.chroma, 8, 1) + "  " + r.hex + fmt(r.degreesLeft, 6, 2) + "/" + fmt(r.degreesRight, 6, 2)
@@ -182,10 +183,10 @@ function main(args) {
 
 	console.log("\nper 30 degree bin, mean 1 over the circle");
 	console.log("bin start " + Array.from({ length: 12 }, (_, b) => String(b * 30).padStart(6)).join(""));
-	for (const [name, curve] of [["A", A], ["B", B], ["table", HUE_DENSITY]])
+	for (const [name, curve] of [["A", A], ["B", B], ["shipped", HUE_DENSITY], ["authored", HUE_DENSITY_AUTHORED]])
 		console.log(name.padEnd(10) + bins(curve).map(v => fmt(v)).join(""));
-	const closeness = curve => mean(curve.map((v, h) => Math.abs(Math.log(v / HUE_DENSITY[h]))));
-	console.log("mean |log ratio| to the table: A " + closeness(A).toFixed(3) + ", B " + closeness(B).toFixed(3));
+	const closeness = (curve, to) => mean(curve.map((v, h) => Math.abs(Math.log(v / to[h]))));
+	console.log("mean |log ratio| of B: to shipped " + closeness(B, HUE_DENSITY).toFixed(3) + ", to authored " + closeness(B, HUE_DENSITY_AUTHORED).toFixed(3));
 
 	// Each file and round on its own: files for rounds taken at different settings, rounds for the repeat.
 	const rounds = groupBy(trials, t => t.source + " round " + t.round);
@@ -204,8 +205,8 @@ function main(args) {
 	const rad = Math.PI / 180;
 	console.log("  degrees, no warp             " + fmt(cv(sides.map(s => s.degrees)), 6, 3));
 	console.log("  chord, no warp               " + fmt(cv(sides.map(s => s.chroma * s.degrees * rad)), 6, 3));
-	console.log("  degrees, warped by the table " + fmt(cv(sides.map(s => tableAt(s.hue) * s.degrees)), 6, 3));
-	console.log("  chord, warped by the table   " + fmt(cv(sides.map(s => s.chroma * tableAt(s.hue) * s.degrees * rad)), 6, 3));
+	console.log("  degrees, warped as shipped   " + fmt(cv(sides.map(s => tableAt(s.hue) * s.degrees)), 6, 3));
+	console.log("  chord, warped as shipped     " + fmt(cv(sides.map(s => s.chroma * tableAt(s.hue) * s.degrees * rad)), 6, 3));
 
 	// Rms deviation of a per-trial value from its anchor's mean, over anchors with repeats, corrected for the mean's own
 	// share of the spread: equal to the rms over all trials means nothing about the anchor is repeatable.
