@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hue step calibration</title>
+<style>
+	:root {
+		color-scheme: light dark;
+		--bg: #f4f4f4; --panel: #ffffff; --ink: #1c1c1c; --ink-dim: #6a6a6a; --line: #d4d4d4; --accent: #3c6ea5; --warn: #c0453a;
+	}
+	@media (prefers-color-scheme: dark) {
+		:root { --bg: #161616; --panel: #202020; --ink: #e6e6e6; --ink-dim: #9a9a9a; --line: #3a3a3a; --accent: #6ea0d8; --warn: #e06a5e; }
+	}
+	* { box-sizing: border-box; }
+	body { margin: 0; padding: 16px; font: 14px/1.45 system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+	h1 { font-size: 18px; margin: 0 0 6px; }
+	h2 { font-size: 14px; margin: 0 0 8px; }
+	p, .hint { margin: 0 0 8px; }
+	.hint { font-size: 12px; color: var(--ink-dim); }
+	#layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
+	@media (max-width: 800px) { #layout { grid-template-columns: 100%; } }
+	.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+	label.row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+	label.row input[type=number] { width: 70px; }
+	label.row input[type=text] { width: 90px; }
+	textarea { width: 100%; font: 12px/1.4 ui-monospace, monospace; }
+	button { font: inherit; padding: 5px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); cursor: pointer; }
+	button:hover { border-color: var(--accent); }
+	button:disabled { opacity: 0.5; cursor: default; }
+	button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+	.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+	#arena { border-radius: 6px; padding: 24px 12px; overflow-x: auto; user-select: none; }
+	#run { display: flex; align-items: center; justify-content: center; gap: 0; width: max-content; margin: 0 auto; }
+	.side { display: flex; gap: 2px; }
+	.code { cursor: pointer; flex: none; }
+	.code.picked { outline: 2px solid #fff; outline-offset: 1px; box-shadow: 0 0 0 4px #000; position: relative; z-index: 1; }
+	#anchor { flex: none; margin: 0 10px; }
+	#triple { display: flex; justify-content: center; margin-top: 24px; min-height: 96px; }
+	#triple div { width: 96px; height: 96px; }
+	#progress { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+	#offsets { text-align: center; font-variant-numeric: tabular-nums; color: var(--ink-dim); margin-top: 6px; }
+	[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<h1>Hue step calibration</h1>
+<p class="hint">A perceptual hue scale from local steps. Each trial shows an anchor hue at one OKLab lightness and chroma,
+with the hues below it running left and the hues above it running right, a set number of degrees per swatch; the
+whole run shares the anchor's lightness and chroma, so the swatches differ in hue alone. Pick on each side the first
+swatch that reads as a meaningfully different color from the anchor, past the point where a difference is merely
+detectable: a step is one minimal meaningful difference each side, and how that varies with hue is what the round
+measures. The two picks then sit against the anchor for a last look. Anchors are dealt on a grid in random order, so a step is never judged in the light of the one
+before. The log is kept in this browser between visits and can be downloaded and loaded back, so a round can be
+continued. Run the log through <code>node data/fit_hue_steps.js log.json</code>.</p>
+
+<div id="layout">
+<div>
+	<div class="panel" id="setup">
+		<h2>Setup</h2>
+		<label class="row">Anchor every, degrees <input type="number" id="spacing" value="7.5" min="1" max="90" step="0.5"></label>
+		<div class="hint">7.5 puts 48 anchors on the circle.</div>
+		<label class="row">Rounds per anchor <input type="number" id="rounds" value="1" min="1" max="10"></label>
+		<label class="row">Lightness, 0 to 100, cusp 50 <input type="number" id="rel-l" value="50" min="5" max="95"></label>
+		<label class="row">Chroma, % of gamut <input type="number" id="rel-c" value="70" min="5" max="100"></label>
+		<div class="hint">Lightness in the hue's own gamut, chroma as a share of the gamut's reach at that lightness. A side
+		of the run ends where its hues leave the gamut at that chroma; the header says where.</div>
+		<label class="row">Swatches per side <input type="number" id="reach" value="32" min="8" max="120"></label>
+		<label class="row">Degrees per swatch <input type="number" id="step" value="1" min="0.1" max="10" step="0.25"></label>
+		<label class="row">Swatch width, px <input type="number" id="swatch-px" value="18" min="6" max="48"></label>
+		<label class="row">Swatch height, px <input type="number" id="swatch-h" value="48" min="16" max="120"></label>
+		<label class="row">Anchor, px <input type="number" id="anchor-px" value="64" min="24" max="160"></label>
+		<label class="row">Ground <input type="text" id="ground" value="#808080"></label>
+		<div class="actions"><button class="primary" id="start">Start</button></div>
+		<div class="hint" id="schedule-status"></div>
+	</div>
+	<div class="panel">
+		<h2>Log</h2>
+		<div id="log-status" class="hint"></div>
+		<div class="actions">
+			<button id="export">Show JSON</button>
+			<button id="download">Download</button>
+			<button id="load">Load JSON</button>
+			<button id="clear">Clear</button>
+		</div>
+		<input type="file" id="file" accept="application/json,.json" hidden>
+		<textarea id="json" rows="6" hidden></textarea>
+	</div>
+</div>
+
+<div>
+	<div class="panel" id="session" hidden>
+		<h2>Anchor <span id="progress"></span></h2>
+		<div class="hint" id="where"></div>
+		<div id="arena">
+			<div id="run"><div class="side" id="left"></div><div id="anchor"></div><div class="side" id="right"></div></div>
+		</div>
+		<div id="offsets"></div>
+		<div id="triple"></div>
+		<div class="hint">Each anchor opens with both picks five swatches out. Click a swatch on each side, or use the keys:
+		Up and Down move the right pick a swatch out and in, Left and Right the left pick; after a clear, the first
+		press on a side takes the swatch next to the anchor. Keys 1 to 4 re-deal this anchor at 0.5, 1, 2 or 4 degrees per
+		swatch, as does any change to the setup. On a side the gamut cut short, moving the pick out past the last swatch
+		marks the side as clipped: the step there is beyond the run, and the log holds where the gamut ended instead of a
+		pick. Comma and period turn the anchor a degree down or up its hue, off the grid, to gain range on a short side;
+		the header shows the grid hue it stands for. Enter accepts, with one side clipped or with both; Escape clears the
+		picks; S skips the anchor, the same as accepting with both sides clipped. An anchor without a step is due again
+		next round.</div>
+		<div class="actions">
+			<button class="primary" id="accept" disabled>Accept</button>
+			<button id="redo" disabled>Redo</button>
+			<button id="skip">Skip</button>
+		</div>
+	</div>
+</div>
+</div>
+
+<script>
+"use strict";
+
+const $ = id => document.getElementById(id);
+
+// ---------- color math (OKLab, as in index.html; x100 so distances read like deltaE) ----------
+
+function srgbToLinear(u) {
+	return u <= 0.04045 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4);
+}
+
+function labOf(hex) {
+	const n = parseInt(hex.slice(1), 16);
+	const r = srgbToLinear((n >> 16 & 255) / 255), g = srgbToLinear((n >> 8 & 255) / 255), b = srgbToLinear((n & 255) / 255);
+	const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+	const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+	const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+	return [
+		(0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s) * 100,
+		(1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s) * 100,
+		(0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s) * 100];
+}
+
+// The a and b weight of each LMS term, and the LMS mix of each linear channel: gamutChroma solves
+// these same expressions symbolically and must use the identical numbers.
+const LMS_A = [0.3963377774, -0.1055613458, -0.0894841775];
+const LMS_B = [0.2158037573, -0.0638541728, -1.2914855480];
+const RGB_FROM_LMS = [
+	[4.0767416621, -3.3077115913, 0.2309699292],
+	[-1.2684380046, 2.6097574011, -0.3413193965],
+	[-0.0041960863, -0.7034186147, 1.7076147010]];
+
+// Linear sRGB from OKLab, lightness and chroma normalized to 0..1.
+function oklabToLinear(L, a, b) {
+	const l = (L + LMS_A[0] * a + LMS_B[0] * b) ** 3;
+	const m = (L + LMS_A[1] * a + LMS_B[1] * b) ** 3;
+	const s = (L + LMS_A[2] * a + LMS_B[2] * b) ** 3;
+	return [
+		RGB_FROM_LMS[0][0] * l + RGB_FROM_LMS[0][1] * m + RGB_FROM_LMS[0][2] * s,
+		RGB_FROM_LMS[1][0] * l + RGB_FROM_LMS[1][1] * m + RGB_FROM_LMS[1][2] * s,
+		RGB_FROM_LMS[2][0] * l + RGB_FROM_LMS[2][1] * m + RGB_FROM_LMS[2][2] * s];
+}
+
+// Null when the color is outside sRGB. The tolerance absorbs a boundary color's rounding, which
+// gamutChroma's does not: this one decides whether a hex can be made, that one where the edge is.
+function hexOf(lab) {
+	const lin = oklabToLinear(lab[0] / 100, lab[1] / 100, lab[2] / 100);
+	const rgb = lin.map(u => u <= 0.0031308 ? u * 12.92 : 1.055 * u ** (1 / 2.4) - 0.055);
+	if (rgb.some(v => v < -0.002 || v > 1.002))
+		return null;
+	return "#" + rgb.map(v => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, "0")).join("");
+}
+
+const hueOf = lab => (Math.atan2(lab[2], lab[1]) * 180 / Math.PI + 360) % 360;
+const inGamut = rgb => rgb.every(v => v >= -1e-6 && v <= 1 + 1e-6);
+
+// ---------- the sRGB gamut and its cusp (as in index.html, which is the reference) ----------
+
+// Above the most chroma sRGB shows anywhere (32.25, at magenta).
+const CHROMA_MAX = 32.5;
+
+// The real roots of a x^3 + b x^2 + c x + d, degenerating to the quadratic and the line.
+function cubicRoots(a, b, c, d) {
+	if (Math.abs(a) < 1e-12) {
+		if (Math.abs(b) < 1e-12)
+			return Math.abs(c) < 1e-12 ? [] : [-d / c];
+		const discriminant = c * c - 4 * b * d;
+		if (discriminant < 0)
+			return [];
+		const root = Math.sqrt(discriminant);
+		return [(-c + root) / (2 * b), (-c - root) / (2 * b)];
+	}
+
+	// Depressed to t^3 + p t + q, where x is t less a third of the quadratic coefficient.
+	const quad = b / a, lin = c / a, base = d / a;
+	const shift = quad / 3;
+	const p = lin - quad * quad / 3;
+	const q = 2 * quad * quad * quad / 27 - quad * lin / 3 + base;
+	if (Math.abs(p) < 1e-14)
+		return [Math.cbrt(-q) - shift];
+
+	const delta = q * q / 4 + p * p * p / 27;
+	if (delta > 0) {
+		const root = Math.sqrt(delta);
+		return [Math.cbrt(-q / 2 + root) + Math.cbrt(-q / 2 - root) - shift];
+	}
+	// Three real roots: p is negative here, so the trigonometric form applies.
+	const scale = 2 * Math.sqrt(-p / 3);
+	const angle = Math.acos(Math.min(1, Math.max(-1, 3 * q / (p * scale)))) / 3;
+	return [0, 1, 2].map(k => scale * Math.cos(angle - 2 * Math.PI * k / 3) - shift);
+}
+
+// The most chroma sRGB shows at this lightness and hue; 0 at black and white.
+// Along the ray each LMS term is linear in chroma and then cubed, so every linear channel is a
+// cubic in it and the sRGB box is six cubic inequalities. Their roots cut the ray into spans that
+// are wholly in or out, and the outermost span that is in gives the answer.
+function gamutChroma(L, h) {
+	const turn = h * Math.PI / 180, toA = Math.cos(turn), toB = Math.sin(turn);
+	const light = L / 100, limit = CHROMA_MAX / 100;
+	// The LMS terms as light + slope * chroma.
+	const slope = LMS_A.map((a, n) => a * toA + LMS_B[n] * toB);
+	const breaks = [0, limit];
+	for (const mix of RGB_FROM_LMS) {
+		let c3 = 0, c2 = 0, c1 = 0, c0 = 0;
+		for (let n = 0; n < 3; ++n) {
+			const w = mix[n], k = slope[n];
+			c3 += w * k * k * k;
+			c2 += w * 3 * light * k * k;
+			c1 += w * 3 * light * light * k;
+			c0 += w * light * light * light;
+		}
+		for (const target of [0, 1])
+			for (const root of cubicRoots(c3, c2, c1, c0 - target))
+				if (root > 0 && root < limit)
+					breaks.push(root);
+	}
+
+	breaks.sort((p, q) => p - q);
+	for (let n = breaks.length - 1; n > 0; --n) {
+		const mid = (breaks[n - 1] + breaks[n]) / 2;
+		if (inGamut(oklabToLinear(light, mid * toA, mid * toB)))
+			return breaks[n] * 100;
+	}
+	return 0;
+}
+
+// The lightness at which sRGB shows the most chroma at this hue, the gamut cusp. A coarse scan
+// brackets the peak, golden-section search narrows it to 0.1 L: chroma over lightness at one hue
+// has a single peak.
+const CUSP_SCAN_LEVELS = 24;
+function searchCuspLightness(h) {
+	let bestLevel = 0, bestC = 0;
+	for (let n = 1; n < CUSP_SCAN_LEVELS; ++n) {
+		const C = gamutChroma(100 * n / CUSP_SCAN_LEVELS, h);
+		if (C > bestC) {
+			bestLevel = n;
+			bestC = C;
+		}
+	}
+
+	const R = (Math.sqrt(5) - 1) / 2;
+	let lo = 100 * (bestLevel - 1) / CUSP_SCAN_LEVELS, hi = 100 * (bestLevel + 1) / CUSP_SCAN_LEVELS;
+	let a = hi - R * (hi - lo), b = lo + R * (hi - lo), Ca = gamutChroma(a, h), Cb = gamutChroma(b, h);
+	while (hi - lo > 0.1) {
+		if (Ca < Cb) {
+			lo = a;
+			a = b;
+			Ca = Cb;
+			b = lo + R * (hi - lo);
+			Cb = gamutChroma(b, h);
+		} else {
+			hi = b;
+			b = a;
+			Cb = Ca;
+			a = hi - R * (hi - lo);
+			Ca = gamutChroma(a, h);
+		}
+	}
+	return (lo + hi) / 2;
+}
+
+// The cusp depends on the hue alone, so the search runs once per sample and everything else reads
+// the samples. Built on first use: the search is far too slow to run per draw.
+// The six sRGB primaries and secondaries are corners of the ridge; their hues are sampled too, so
+// no interpolated segment spans one.
+const CUSP_STEP = 1;
+const CUSP_CORNER_HUES = ["#ff0000", "#ffff00", "#00ff00", "#00ffff", "#0000ff", "#ff00ff"]
+	.map(hex => hueOf(labOf(hex)));
+let cuspSamples = null;
+
+function cuspTable() {
+	if (!cuspSamples) {
+		const hues = Array.from({ length: Math.round(360 / CUSP_STEP) }, (_, n) => n * CUSP_STEP)
+			.concat(CUSP_CORNER_HUES).sort((a, b) => a - b);
+		cuspSamples = { hues, light: hues.map(searchCuspLightness) };
+	}
+	return cuspSamples;
+}
+
+// The cusp lightness at any hue, straight between the samples either side of it.
+function cuspLightness(h) {
+	const { hues, light } = cuspTable();
+	const hue = ((h % 360) + 360) % 360;
+	// The first sample is hue 0, so the search never lands before it and `before` stays in range.
+	let lo = 0, hi = hues.length;
+	while (lo < hi) {
+		const mid = (lo + hi) >> 1;
+		if (hues[mid] <= hue)
+			lo = mid + 1;
+		else
+			hi = mid;
+	}
+	// Past the last sample the segment wraps to the first, a turn of 360 away.
+	const before = lo - 1, after = lo % hues.length;
+	const start = hues[before], end = hues[after] + (after === 0 ? 360 : 0);
+	const within = end > start ? (hue - start) / (end - start) : 0;
+	return light[before] * (1 - within) + light[after] * within;
+}
+
+// Absolute lightness from a standing in the hue's own gamut, piecewise linear either side of the
+// cusp: 0 is black, CUSP_ANCHOR the cusp, 100 white. Anchors are placed in these coordinates, and in
+// relative chroma, so that one setting means one vividness at every hue - in absolute chroma only
+// reds, blues and magentas reach past 20.
+const CUSP_ANCHOR = 50;
+function absoluteL(relative, h) {
+	const cusp = cuspLightness(h);
+	return relative <= CUSP_ANCHOR ? cusp * relative / CUSP_ANCHOR
+		: cusp + (100 - cusp) * (relative - CUSP_ANCHOR) / (100 - CUSP_ANCHOR);
+}
+
+// ---------- log ----------
+
+// Version 1 logs came from a walk along the sRGB cube's saturated edges; fit_hue_steps.js still reads them.
+const LOG_VERSION = 2;
+const STORAGE_KEY = "hue-steps-log-2";
+// Unlike the other calibration pages this log is stored: a round here is fifty to ninety anchors and
+// may be continued on a later visit. The status line says what was restored, and Clear empties it.
+const log = { version: LOG_VERSION, records: [] };
+try {
+	const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
+	if (stored && stored.version === LOG_VERSION)
+		log.records = stored.records;
+} catch {}
+
+const anchorGrid = spacing => Array.from({ length: Math.floor(360 / spacing) }, (_, i) => i * spacing);
+const steps = () => log.records.filter(record => record.leftHex || record.rightHex);
+function judgedCounts() {
+	const counts = new Map();
+	for (const record of steps())
+		counts.set(record.anchor, (counts.get(record.anchor) || 0) + 1);
+	return counts;
+}
+// The anchors of the current grid still short of the rounds asked for, one entry per missing round.
+function remaining() {
+	const counts = judgedCounts(), rounds = +$("rounds").value, due = [];
+	for (const anchor of anchorGrid(+$("spacing").value))
+		for (let n = counts.get(anchor) || 0; n < rounds; ++n)
+			due.push(anchor);
+	return due;
+}
+
+function saveLog() {
+	try { localStorage.setItem(STORAGE_KEY, JSON.stringify(log)); } catch {}
+	const due = remaining().length, grid = anchorGrid(+$("spacing").value).length * +$("rounds").value;
+	const skipped = log.records.length - steps().length;
+	$("log-status").textContent = steps().length + " steps recorded" + (skipped ? " and " + skipped + " skipped" : "") + ", " + (grid - due) + " of " + grid
+		+ " on this grid at these rounds.";
+	if (!$("json").hidden)
+		$("json").value = JSON.stringify(log);
+}
+$("spacing").oninput = $("rounds").oninput = saveLog;
+
+$("export").onclick = () => {
+	$("json").hidden = !$("json").hidden;
+	$("json").value = JSON.stringify(log);
+};
+$("download").onclick = () => {
+	const url = URL.createObjectURL(new Blob([JSON.stringify(log)], { type: "application/json" }));
+	const link = Object.assign(document.createElement("a"), { href: url, download: "hue-steps-log.json" });
+	link.click();
+	URL.revokeObjectURL(url);
+};
+$("load").onclick = () => $("file").click();
+$("file").onchange = async () => {
+	const file = $("file").files[0];
+	$("file").value = "";
+	if (!file)
+		return;
+	let loaded;
+	try {
+		loaded = JSON.parse(await file.text());
+	} catch {
+		alert("Not a JSON file.");
+		return;
+	}
+	if (!loaded || loaded.version !== LOG_VERSION || !Array.isArray(loaded.records)) {
+		alert("Not a log of this page.");
+		return;
+	}
+	if (log.records.length && !confirm("Replace the " + log.records.length + " steps recorded here with the file's " + loaded.records.length + "?"))
+		return;
+	log.records = loaded.records;
+	saveLog();
+};
+$("clear").onclick = () => {
+	if (confirm("Discard every recorded step? Download first if they are wanted."))  {
+		log.records = [];
+		saveLog();
+	}
+};
+
+// ---------- running ----------
+
+// A pick is a count of swatches out from the anchor on its side, null for none.
+let schedule = [], trialIndex = -1, trial = null, picks = { left: null, right: null };
+let anchorShift = 0;  // degrees the current anchor is turned off its grid hue, to gain range on a short side
+const START_SWATCHES = 5;  // every anchor opens with its picks this many swatches out
+
+function shuffled(items) {
+	const out = items.slice();
+	for (let i = out.length - 1; i > 0; --i) {
+		const j = Math.floor(Math.random() * (i + 1));
+		[out[i], out[j]] = [out[j], out[i]];
+	}
+	return out;
+}
+
+$("start").onclick = () => {
+	schedule = shuffled(remaining());
+	if (!schedule.length) {
+		$("schedule-status").textContent = "Every anchor on this grid has its rounds. Raise the rounds or change the spacing.";
+		return;
+	}
+	$("schedule-status").textContent = "";
+	trialIndex = -1;
+	nextTrial();
+};
+
+function nextTrial() {
+	anchorShift = 0;
+	if (++trialIndex >= schedule.length) {
+		$("session").hidden = true;
+		$("schedule-status").textContent = "Round complete.";
+		return;
+	}
+	showTrial();
+}
+
+// Builds the run for the current anchor from the setup, which stays live during a trial, so the step
+// can be chosen per anchor. The run shares one lightness and chroma, the share asked for at the
+// anchor; a side ends where its hues leave the gamut at that chroma.
+function showTrial() {
+	const grid = schedule[trialIndex], anchor = ((grid + anchorShift) % 360 + 360) % 360;
+	const relativeL = +$("rel-l").value, relativeC = +$("rel-c").value / 100;
+	const step = +$("step").value, reach = +$("reach").value, L = absoluteL(relativeL, anchor);
+	const C = relativeC * gamutChroma(L, anchor);
+	const hueAt = k => ((anchor + k * step) % 360 + 360) % 360;
+	const hexAt = k => {
+		const turn = hueAt(k) * Math.PI / 180;
+		return hexOf([L, C * Math.cos(turn), C * Math.sin(turn)]);
+	};
+	// Swatches in the gamut on each side, counted out from the anchor to the first that is not.
+	const swatchesInGamut = sign => {
+		let k = 0;
+		while (k < reach && hexAt(sign * (k + 1)) !== null)
+			++k;
+		return k;
+	};
+	trial = { grid, anchor, L, C, relativeL, relativeC, step, asked: reach, reach: { left: swatchesInGamut(-1), right: swatchesInGamut(1) }, hueAt, hexAt,
+		swatchPx: +$("swatch-px").value, swatchH: +$("swatch-h").value, anchorPx: +$("anchor-px").value, ground: $("ground").value.trim() || "#808080" };
+	const startPick = side => trial.reach[side] ? Math.min(START_SWATCHES, trial.reach[side]) : null;
+	picks = { left: startPick("left"), right: startPick("right") };
+	$("progress").textContent = (trialIndex + 1) + " / " + schedule.length;
+	const short = ["left", "right"].filter(side => trial.reach[side] < reach);
+	$("where").textContent = "hue " + anchor + (anchorShift ? " (grid " + grid + ")" : "") + ", L " + L.toFixed(1) + ", C " + C.toFixed(1) + ", " + step + " degrees per swatch"
+		+ (short.length ? "; the gamut ends " + short.map(side => trial.reach[side] + " swatches " + side).join(", ") : "");
+	$("session").hidden = false;
+	$("arena").style.background = trial.ground;
+	$("triple").style.background = trial.ground;
+	const swatch = (k, side) => {
+		const el = document.createElement("div");
+		el.className = "code";
+		el.style.cssText = "width:" + trial.swatchPx + "px;height:" + trial.swatchH + "px;background:" + hexAt(side === "left" ? -k : k);
+		el.title = (side === "left" ? "-" : "+") + (k * step).toFixed(2);
+		el.dataset.side = side;
+		el.dataset.k = k;
+		el.onclick = () => pick(side, k);
+		return el;
+	};
+	const left = [], right = [];
+	for (let k = trial.reach.left; k >= 1; --k)
+		left.push(swatch(k, "left"));
+	for (let k = 1; k <= trial.reach.right; ++k)
+		right.push(swatch(k, "right"));
+	$("left").replaceChildren(...left);
+	$("right").replaceChildren(...right);
+	$("anchor").style.cssText = "width:" + trial.anchorPx + "px;height:" + trial.anchorPx + "px;background:" + hexAt(0);
+	// A run wider than the arena scrolls; the anchor starts in view.
+	$("arena").scrollLeft = ($("run").scrollWidth - $("arena").clientWidth) / 2;
+	showPicks();
+}
+for (const id of ["rel-l", "rel-c", "reach", "step", "swatch-px", "swatch-h", "anchor-px", "ground"])
+	$(id).oninput = () => { if (!$("session").hidden) showTrial(); };
+
+function pick(side, k) {
+	picks[side] = k;
+	showPicks();
+}
+
+// A pick is a swatch count, or Infinity for a side marked clipped: the step there is beyond the run.
+const picked = side => Number.isFinite(picks[side]);
+const clipped = side => picks[side] === Infinity;
+const inGamutDegrees = side => trial.reach[side] * trial.step;
+const degreesOut = side => picked(side) ? (side === "left" ? "-" : "+") + (picks[side] * trial.step).toFixed(2)
+	: clipped(side) ? "beyond " + inGamutDegrees(side).toFixed(2) : "-";
+
+function showPicks() {
+	for (const el of document.querySelectorAll(".code"))
+		el.classList.toggle("picked", +el.dataset.k === picks[el.dataset.side]);
+	$("accept").disabled = picks.left === null || picks.right === null;
+	$("redo").disabled = picks.left === null && picks.right === null;
+	$("offsets").textContent = degreesOut("left") + "  /  " + degreesOut("right");
+	const shown = [picked("left") ? -picks.left : null, 0, picked("right") ? picks.right : null].filter(k => k !== null);
+	$("triple").replaceChildren(...($("accept").disabled ? [] : shown).map(k => {
+		const el = document.createElement("div");
+		el.style.background = trial.hexAt(k);
+		return el;
+	}));
+}
+
+// Moves a pick one swatch out (by 1) or in, within reach; a side without a pick gets the swatch next
+// to the anchor. Out past the last swatch of a side the gamut cut short marks the side clipped, and in from
+// there returns to the last swatch.
+function nudge(side, by) {
+	const k = clipped(side) ? (by < 0 ? trial.reach[side] : Infinity) : picks[side] === null ? 1 : picks[side] + by;
+	if (k >= 1 && k <= trial.reach[side])
+		pick(side, k);
+	else if (k > trial.reach[side] && trial.reach[side] < trial.asked)
+		pick(side, Infinity);
+}
+
+// A record holds the trial's setup, each side's pick as a hue and a hex or null where the side was clipped, and
+// the degrees each side had in the gamut: on a clipped side that bounds the step from below.
+function record() {
+	const at = side => picked(side) ? (side === "left" ? -picks.left : picks.right) : null;
+	const hue = side => at(side) === null ? null : trial.hueAt(at(side)), hex = side => at(side) === null ? null : trial.hexAt(at(side));
+	log.records.push({ anchor: trial.grid, hue: trial.anchor, anchorHex: trial.hexAt(0), left: hue("left"), right: hue("right"), leftHex: hex("left"), rightHex: hex("right"),
+		inGamut: { left: inGamutDegrees("left"), right: inGamutDegrees("right") },
+		L: trial.L, C: trial.C, relativeL: trial.relativeL, relativeC: trial.relativeC, step: trial.step, reach: trial.asked,
+		swatchPx: trial.swatchPx, swatchH: trial.swatchH, anchorPx: trial.anchorPx, ground: trial.ground, at: new Date().toISOString() });
+	saveLog();
+	nextTrial();
+}
+$("accept").onclick = record;
+$("redo").onclick = () => {
+	picks = { left: null, right: null };
+	showPicks();
+};
+$("skip").onclick = () => {
+	picks = { left: Infinity, right: Infinity };
+	record();
+};
+
+addEventListener("keydown", e => {
+	if ($("session").hidden || e.ctrlKey || e.metaKey || e.altKey || e.target.matches("input, textarea"))
+		return;
+	const key = e.key;
+	if (key === "Enter" && !$("accept").disabled)
+		$("accept").onclick();
+	else if (key === "Escape")
+		$("redo").onclick();
+	else if (key === "s" || key === "S")
+		$("skip").onclick();
+	else if (key === "," || key === ".") {
+		anchorShift += key === "," ? -1 : 1;
+		showTrial();
+	}
+	else if (key === "ArrowUp" || key === "ArrowDown")
+		nudge("right", key === "ArrowUp" ? 1 : -1);
+	else if (key === "ArrowLeft" || key === "ArrowRight")
+		nudge("left", key === "ArrowLeft" ? 1 : -1);
+	else if (key >= "1" && key <= "4") {
+		$("step").value = [0.5, 1, 2, 4][key - 1];
+		showTrial();
+	} else
+		return;
+	e.preventDefault();
+});
+
+saveLog();
+</script>
+</body>
+</html>

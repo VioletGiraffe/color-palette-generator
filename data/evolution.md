@@ -744,11 +744,71 @@ Not done:
 
 - The weights and the noise width were fitted on unwarped hue distances. A refit under the respaced circle is
   the next calibration question, and whether the fit then shows anomalies is part of its interest.
-- Whether the palettes look even is the perceptual claim behind the belief, and only eyes can check it. The first
-  measurement toward it is `data/calibrate-hue-steps.html`: around anchors dealt on a grid over the ridge, the first
-  code on each side that reads as a different color. `data/fit_hue_steps.js` turns the steps into a density two ways,
-  equal steps as equal warped angle or as equal warped chord, against the table. Which of the two the steps sit
-  nearer decides whether the table belongs on the angle, as it is now, or on the chord.
+- Whether the palettes look even is the perceptual claim behind the belief, and only eyes can check it. The
+  measurement toward it is `data/calibrate-hue-steps.html`: around anchors dealt on a grid in random order, the
+  first swatch on each side that reads as a meaningfully different color, past mere detectability. That minimal
+  meaningful difference varying with hue is the quantity itself, not a criterion to hold constant: a step that
+  repeats across rounds is an effect, one that does not is noise. `data/fit_hue_steps.js` takes every trial as one sample
+  whose criterion is a random factor on both its sides, each side one observation at the midpoint of its span, and
+  turns them into a density two ways, equal steps as equal warped angle or as equal warped chord, against the
+  table; the two sides of one trial, the same anchor across rounds, and each anchor's left side against its
+  neighbour's right side over nearly the same hues, give the noise. The ridge sampled one
+  chroma per hue, so the two readings differ only by the ridge's chroma profile and the data cannot separate them;
+  the metric being a chord, the chord reading is the consistent one.
+
+  Two rounds of 51 anchors over the ridge of most saturated colors, `data/ridge-2-steps-log.json` (both
+  rounds in one log), repeat within a factor 1.3, and contradict the table:
+  - Within a few degrees of a primary the codes move lightness and chroma and no hue, 24 codes around #001eff span
+    0.05 degrees, so a step there is not a hue measurement. The fit reports each side's hue share and drops the low
+    ones; 29 of 102 sides go.
+  - Elsewhere the shape disagrees where the table follows the code walk. Lime through green (114 to 142) takes the
+    longest steps on the circle, 8 to 14 degrees, and the table gives it 1.1 to 6.5 against the steps' 0.4 to 1.1;
+    the red-magenta flank (14 to 27) is 2 to 4 times over; cyan, azure and pink are half. Orange through yellow and
+    purple agree. One step is 2.6 table-warped degrees at #ff00b4 and 32 at #3cff00, a spread raw OKLab does not
+    exceed.
+  - The two methods answer different questions. The strip sets how much of the rainbow each family occupies, and
+    green is a broad family; the steps set how far two colors must be apart to differ, and greens are alike. The
+    metric's job is the second. The first can stay a draw density.
+
+  The page now steps hue alone: anchors on a grid in degrees, each run at one OKLab lightness and chroma
+  (lightness in the hue's own gamut, chroma a share of the gamut's reach; a side of the run ends where its hues
+  leave the gamut).
+  Its logs are version 2; the fit reads both. Three hue-only rounds at lightness 50 and chroma 50%,
+  `data/hue-1-steps-log.json` and `data/hue-2-steps-log.json` (two rounds), 144 trials:
+  - The chord reading holds: a side is nearly constant in OKLab chord over the circle (CV 0.25) and half as constant
+    in degrees (0.43). The unwarped metric already predicts most of the steps; the table makes both worse (0.74, 0.68).
+  - The rounds agree to within 0.15 per bin. Against the table, lime and pink are absent as features and blue is
+    inverted: azure through blue (210 to 270) takes the longest chord steps on the circle, chord density about 0.7,
+    where the table has 0.5 to 1.4; green (120 to 180) sits at 1.25. Elsewhere the chord density is 0.9 to 1.15.
+  - Noise: right over left within a trial 0.21 rms log, 0.15 within an anchor across rounds, so part of the asymmetry
+    repeats; hue 180 to 225 has the right side 1.2 to 1.6 times the left in every round, the slope B shows there.
+    The criterion's spread across rounds is 0.15, its drift within a round under that.
+
+  One round each at chroma 70% and 80%, `data/hue-3-c70-steps-log.json` and `data/hue-4-c80-steps-log.json`, test
+  the chord law across chroma. At 70% the same anchors took 1.40 times the chroma and 0.72 times the degrees, a
+  chord step of 1.00 times (exponent 0.99, where 1 is a constant chord and 0 a constant angle). At 80% the chord
+  step is 1.07 to 1.10 times the 50% one, but it is also 1.07 to 1.10 times the 70% one for a chroma step of 1.14,
+  which no smooth law gives; a session criterion offset of that size is within what the 50% rounds showed. So the
+  chord law holds to within the criterion noise up to 80%, and the hue term of the metric is the right quantity in
+  absolute terms too. Both rounds' chord densities match the 50% shape within round-to-round spread, the 80% one
+  except at yellow, where the clipped sides bias the survivors short. Clipped sides, 6 anchors at 70% and 13 at
+  80%, record the run's reach as a bound on the step; the fit prints the bounds against its curve.
+
+  The table's three spikes are the code walk leaking through the band factors. The walk stalls in hue at the
+  primaries, 94 codes within a degree of blue and 97 of green, a density of 17 and 15 at mean 1; a factor of 0.47
+  at blue and 0.84 at green halves a spike of that size, and the blur spreads the rest over ten degrees, so the
+  table holds 3.3 at blue, 6.5 at green and 3.4 at red without any of them being drawn. B has none: 0.8 straight
+  through blue, 1.2 at green. A multiplicative band factor cannot remove a base spike; the base has to be flat,
+  or the spike has to be measured out.
+
+  As strips of the most vivid color per hue, the six corners land at these degrees of the circle: table 29, 103,
+  161, 223, 272, 346; B 29, 113, 153, 212, 265, 326; raw OKLab 29, 110, 142, 195, 264, 328. B sits between the
+  table and raw OKLab, nearer raw: yellow to green 40 degrees against the table's 58 and raw's 32, magenta to red
+  63 against 43, blue 7 degrees earlier than the table.
+
+  Open: B replaces the table in the metric, with the table kept as the draw density or dropped; the weights and
+  noise width refit under the respaced circle afterward. A second 80% round separates a session offset from a
+  chroma effect at the top end.
 
 ## Files
 
@@ -776,4 +836,5 @@ Not done:
 - `data/calibrate-names.html`, `data/fit_names.js`, `data/naming-verdicts-16px.json`: the naming round.
 - `data/hue-density.html`: the hue respacing tool; its presets define `HUE_DENSITY`. A copy of the page from
   before the respacing with the tool on top, so its generator warps once.
-- `data/calibrate-hue-steps.html`, `data/fit_hue_steps.js`: the hue step round, a measured density against the table.
+- `data/calibrate-hue-steps.html`, `data/fit_hue_steps.js`, `data/ridge-2-steps-log.json`, `data/hue-1-steps-log.json`, `data/hue-2-steps-log.json`, `data/hue-3-c70-steps-log.json`, `data/hue-4-c80-steps-log.json`:
+  the hue step rounds, a measured density against the table. The ridge log is version 1 and holds both ridge rounds; the hue logs are version 2, three rounds at chroma 50%, one at 70%, one at 80%.
