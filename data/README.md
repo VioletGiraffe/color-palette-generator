@@ -88,10 +88,12 @@ cells against how well each one corresponds to a name a person would actually re
 `identify.js` scores a palette by the task itself, without naming: a viewer who learned the
 palette recalls a color with Gaussian memory noise in OKLab and answers with the nearest entry.
 Noise is anisotropic - lightness and chroma differences count by a weight against hue, the hue
-difference is the ab chord less its radial part - and a pair swaps with the chance the noise
-carries a recall past their midpoint. A color's error is the sum over its pairs, the same formula
-the page optimizes. A palette reports each color's accuracy, the floor (the worst color), and the
-pair confused most. A Monte Carlo (noise drawn per recall, nearest entry answered) was tried in
+difference is the ab chord less its radial part, taken after each hue moves to its place on the
+respaced circle of `HUE_DENSITY` - and a pair swaps with the chance the noise carries a recall past
+their midpoint. A color's error is the sum over its pairs, the same formula the page optimizes.
+The weights were fitted before the respacing, on unwarped hue distances; see `evolution.md`. A
+palette reports each color's accuracy, the floor (the worst color), and the pair confused most. A
+Monte Carlo (noise drawn per recall, nearest entry answered) was tried in
 four geometries and fitted the calibration verdicts worse than this formula in every one, by 5 to
 13 log-likelihood units.
 

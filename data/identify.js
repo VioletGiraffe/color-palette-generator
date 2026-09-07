@@ -4,9 +4,9 @@
 // Identification, the one the generator optimizes: the chance a viewer who learned the palette
 // picks the right entry for a color shown on its own. Recall is the color plus Gaussian memory
 // noise in OKLab; the viewer answers with the nearest palette entry. Noise is anisotropic:
-// lightness and chroma differences count by their weight against hue differences. A pair swaps
-// with the chance the noise carries a recall past their midpoint, and a color's error is the sum
-// over its pairs, as in the page.
+// lightness and chroma differences count by their weight against hue differences, and hues are
+// respaced by HUE_DENSITY first. A pair swaps with the chance the noise carries a recall past their
+// midpoint, and a color's error is the sum over its pairs, as in the page.
 //
 // Naming, a second opinion the generator does not steer by: the chance two entries would be
 // described the same way, from the page's own cell overlap table. Telling two colors apart and
@@ -43,6 +43,47 @@ const LIGHTNESS_REFERENCE = 50;
 // calibration reaches down to 8, so anything under this is extrapolation either way.
 const LIGHTNESS_FLOOR = 5;
 const CALIBRATED_PX = 16;
+// Each hue's share of the circle in the metric, per whole degree at mean 1; the page's copy, which
+// loadPage checks against this one. Authored in data/hue-density.html, see index.html.
+// The weights above were fitted on unwarped hue distances and have not been refitted since.
+const HUE_DENSITY = [
+	0.472, 0.487, 0.501, 0.512, 0.52, 0.524, 0.53, 0.541, 0.557, 0.575, 0.595, 0.617, 0.643, 0.669, 0.697, 0.729, 0.768,
+	0.816, 0.873, 0.94, 1.013, 1.091, 1.182, 1.305, 1.491, 1.783, 2.209, 2.72, 3.166, 3.362, 3.217, 2.811, 2.317, 1.878,
+	1.547, 1.315, 1.162, 1.079, 1.05, 1.05, 1.046, 1.015, 0.955, 0.882, 0.816, 0.764, 0.726, 0.694, 0.665, 0.638, 0.616,
+	0.6, 0.588, 0.582, 0.583, 0.589, 0.591, 0.583, 0.568, 0.553, 0.543, 0.538, 0.537, 0.536, 0.536, 0.536, 0.536, 0.538,
+	0.542, 0.553, 0.572, 0.6, 0.633, 0.66, 0.677, 0.681, 0.673, 0.654, 0.635, 0.627, 0.635, 0.655, 0.675, 0.691, 0.703,
+	0.72, 0.743, 0.769, 0.791, 0.805, 0.814, 0.83, 0.855, 0.886, 0.914, 0.935, 0.954, 0.974, 0.997, 1.023, 1.052, 1.08,
+	1.101, 1.117, 1.14, 1.181, 1.228, 1.259, 1.26, 1.235, 1.2, 1.167, 1.144, 1.126, 1.105, 1.081, 1.06, 1.063, 1.102,
+	1.175, 1.262, 1.336, 1.382, 1.395, 1.391, 1.387, 1.397, 1.427, 1.475, 1.537, 1.605, 1.66, 1.679, 1.638, 1.541, 1.441,
+	1.452, 1.705, 2.347, 3.433, 4.793, 5.99, 6.522, 6.193, 5.262, 4.192, 3.307, 2.673, 2.221, 1.875, 1.612, 1.412, 1.268,
+	1.162, 1.079, 1.009, 0.949, 0.9, 0.86, 0.824, 0.79, 0.761, 0.744, 0.74, 0.743, 0.745, 0.742, 0.732, 0.72, 0.708,
+	0.697, 0.684, 0.67, 0.656, 0.643, 0.63, 0.62, 0.611, 0.604, 0.6, 0.599, 0.596, 0.585, 0.569, 0.553, 0.543, 0.538,
+	0.537, 0.536, 0.536, 0.536, 0.535, 0.533, 0.529, 0.523, 0.513, 0.499, 0.481, 0.463, 0.452, 0.448, 0.447, 0.446,
+	0.445, 0.445, 0.445, 0.442, 0.436, 0.433, 0.434, 0.437, 0.441, 0.444, 0.446, 0.446, 0.447, 0.447, 0.447, 0.447,
+	0.447, 0.447, 0.447, 0.447, 0.449, 0.453, 0.462, 0.474, 0.484, 0.486, 0.482, 0.48, 0.488, 0.504, 0.519, 0.529, 0.534,
+	0.536, 0.538, 0.543, 0.554, 0.571, 0.593, 0.615, 0.636, 0.658, 0.682, 0.705, 0.728, 0.755, 0.787, 0.821, 0.85, 0.872,
+	0.89, 0.917, 0.974, 1.076, 1.23, 1.436, 1.681, 1.987, 2.382, 2.846, 3.228, 3.326, 3.063, 2.589, 2.157, 1.917, 1.868,
+	1.9, 1.883, 1.745, 1.478, 1.164, 0.915, 0.81, 0.848, 0.963, 1.067, 1.1, 1.059, 0.979, 0.904, 0.855, 0.837, 0.841,
+	0.852, 0.858, 0.851, 0.837, 0.821, 0.811, 0.806, 0.805, 0.806, 0.811, 0.821, 0.837, 0.854, 0.865, 0.869, 0.871,
+	0.877, 0.885, 0.894, 0.905, 0.917, 0.931, 0.945, 0.959, 0.973, 0.986, 1.001, 1.021, 1.044, 1.062, 1.075, 1.082, 1.09,
+	1.103, 1.124, 1.15, 1.178, 1.197, 1.203, 1.191, 1.148, 1.063, 0.933, 0.779, 0.639, 0.537, 0.479, 0.449, 0.434, 0.425,
+	0.42, 0.416, 0.411, 0.402, 0.391, 0.377, 0.362, 0.349, 0.337, 0.328, 0.321, 0.314, 0.308, 0.306, 0.311, 0.325, 0.348,
+	0.373, 0.395, 0.411, 0.423, 0.438, 0.455];
+
+// The warped hue of each whole degree, 0 to 360: the running integral of HUE_DENSITY.
+const HUE_WARP = (() => {
+	const warp = [0];
+	for (let h = 0; h < 360; ++h)
+		warp.push(warp[h] + HUE_DENSITY[h]);
+	return warp.map(v => v * 360 / warp[360]);
+})();
+// The color with its hue moved to the warped hue, chroma and lightness kept.
+function warpedLab(lab) {
+	const h = (Math.atan2(lab[2], lab[1]) * 180 / Math.PI + 360) % 360, at = Math.floor(h);
+	const turned = (HUE_WARP[at] + (HUE_WARP[at + 1] - HUE_WARP[at]) * (h - at)) * Math.PI / 180;
+	const C = Math.hypot(lab[1], lab[2]);
+	return [lab[0], C * Math.cos(turned), C * Math.sin(turned)];
+}
 
 function srgbToLinear(u) {
 	return u <= 0.04045 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4);
@@ -256,17 +297,17 @@ function erfc(x) {
 // Weighted distance of two colors: lightness and radial chroma differences times their weight, the
 // hue difference (the ab chord less its radial part) as is. Never through the neutral axis: a dull
 // color is as far from its opposite hue as the chord says, which is what the calibration verdicts show.
-// The anisotropic part alone, without the gain below: the fit scripts measure the gain against this,
-// so it must stay the raw quantity they were fitted on.
+// The anisotropic part alone, without the gain and the hue warp below: the fit scripts measure
+// against this, so it must stay the raw quantity they were fitted on.
 function weightedDistance(p, q, wL, wC) {
 	const dL = (p[0] - q[0]) * wL, dC = Math.hypot(p[1], p[2]) - Math.hypot(q[1], q[2]);
 	const chord2 = (p[1] - q[1]) ** 2 + (p[2] - q[2]) ** 2;
 	return Math.sqrt(dL * dL + wC * wC * dC * dC + Math.max(0, chord2 - dC * dC));
 }
 
-// How far apart a pair reads: the weighted distance times the gain for the pair's lightness. This
-// is the metric the generator optimizes and this file scores.
-const recallDistance = (p, q, wL, wC) => weightedDistance(p, q, wL, wC)
+// How far apart a pair reads: the weighted distance of the hue-warped points times the gain for the
+// pair's lightness. This is the metric the generator optimizes and this file scores.
+const recallDistance = (p, q, wL, wC) => weightedDistance(warpedLab(p), warpedLab(q), wL, wC)
 	* (Math.max(LIGHTNESS_FLOOR, (p[0] + q[0]) / 2) / LIGHTNESS_REFERENCE) ** LIGHTNESS_EXPONENT;
 
 // Chance a recall of one color of a pair lands nearer the other: noise of width sigma along the
@@ -351,8 +392,12 @@ function loadPage(pagePath) {
 		const source = [...fs.readFileSync(pagePath, "utf8").matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)]
 			.map(match => match[1]).find(script => script.includes(UI_SECTION));
 		globalThis.atob = s => Buffer.from(s, "base64").toString("binary");
-		pages.set(pagePath, (0, eval)(source.slice(0, source.indexOf(UI_SECTION))
-			+ "; ({ generate, cellOf, CELL_NAMES, CELL_OVERLAP })"));
+		const page = (0, eval)(source.slice(0, source.indexOf(UI_SECTION))
+			+ "; ({ generate, cellOf, CELL_NAMES, CELL_OVERLAP, HUE_DENSITY: typeof HUE_DENSITY === 'undefined' ? null : HUE_DENSITY })");
+		// A page respacing hue differently from this file is scored on a metric other than its own.
+		if (!page.HUE_DENSITY || page.HUE_DENSITY.some((d, h) => d !== HUE_DENSITY[h]))
+			console.warn(path.basename(pagePath) + ": its hue density is not this file's; scores are on this file's metric");
+		pages.set(pagePath, page);
 	}
 	return pages.get(pagePath);
 }
@@ -458,8 +503,8 @@ function main(args) {
 	benchmarkPage(args[0] || defaultPage);
 }
 
-module.exports = { SIGMA, W_L, W_C, LIGHTNESS_EXPONENT, NAME_DECAY, CALIBRATED_PX,
-	labOf, rgbOf, weightedDistance, recallDistance, swapChance, confusionMatrix, summarize, score, nameCollision,
+module.exports = { SIGMA, W_L, W_C, LIGHTNESS_EXPONENT, NAME_DECAY, CALIBRATED_PX, HUE_DENSITY,
+	labOf, rgbOf, warpedLab, weightedDistance, recallDistance, swapChance, confusionMatrix, summarize, score, nameCollision,
 	loadPage, gamutChroma, cuspLightness, relativePosition };
 
 if (require.main === module)

@@ -910,8 +910,7 @@ function parseFixedColors(text) {
 
 // Identification model, as in data/identify.js: recall is the color plus Gaussian memory noise, the
 // viewer answers with the nearest entry. A lightness or chroma difference counts W_L or W_C times
-// its size against a hue difference, hues first respaced by HUE_DENSITY. The noise width is the
-// Distinctness slider.
+// its size against a hue difference. The noise width is the Distinctness slider.
 const W_L = 0.35;
 const W_C = 0.6;
 // A dark pair needs more distance than the weights alone give it: the calibration puts the fine
@@ -927,57 +926,11 @@ const LIGHTNESS_REFERENCE = 50;
 // calibration reaches down to 8, so anything under this is extrapolation either way.
 const LIGHTNESS_FLOOR = 5;
 
-// Each hue's share of the circle in the metric, in multiples of its OKLab share, one entry per whole
-// degree at mean 1: OKLab's hue circle is not evenly spaced to the eye, red and blue in particular
-// get too little of it. Authored by eye in data/hue-density.html (its target presets, target blur 2)
-// and pasted from there; a retune is a new paste here and in data/identify.js.
-// The weights above were fitted on unwarped hue distances and have not been refitted since.
-const HUE_DENSITY = [
-	0.472, 0.487, 0.501, 0.512, 0.52, 0.524, 0.53, 0.541, 0.557, 0.575, 0.595, 0.617, 0.643, 0.669, 0.697, 0.729, 0.768,
-	0.816, 0.873, 0.94, 1.013, 1.091, 1.182, 1.305, 1.491, 1.783, 2.209, 2.72, 3.166, 3.362, 3.217, 2.811, 2.317, 1.878,
-	1.547, 1.315, 1.162, 1.079, 1.05, 1.05, 1.046, 1.015, 0.955, 0.882, 0.816, 0.764, 0.726, 0.694, 0.665, 0.638, 0.616,
-	0.6, 0.588, 0.582, 0.583, 0.589, 0.591, 0.583, 0.568, 0.553, 0.543, 0.538, 0.537, 0.536, 0.536, 0.536, 0.536, 0.538,
-	0.542, 0.553, 0.572, 0.6, 0.633, 0.66, 0.677, 0.681, 0.673, 0.654, 0.635, 0.627, 0.635, 0.655, 0.675, 0.691, 0.703,
-	0.72, 0.743, 0.769, 0.791, 0.805, 0.814, 0.83, 0.855, 0.886, 0.914, 0.935, 0.954, 0.974, 0.997, 1.023, 1.052, 1.08,
-	1.101, 1.117, 1.14, 1.181, 1.228, 1.259, 1.26, 1.235, 1.2, 1.167, 1.144, 1.126, 1.105, 1.081, 1.06, 1.063, 1.102,
-	1.175, 1.262, 1.336, 1.382, 1.395, 1.391, 1.387, 1.397, 1.427, 1.475, 1.537, 1.605, 1.66, 1.679, 1.638, 1.541, 1.441,
-	1.452, 1.705, 2.347, 3.433, 4.793, 5.99, 6.522, 6.193, 5.262, 4.192, 3.307, 2.673, 2.221, 1.875, 1.612, 1.412, 1.268,
-	1.162, 1.079, 1.009, 0.949, 0.9, 0.86, 0.824, 0.79, 0.761, 0.744, 0.74, 0.743, 0.745, 0.742, 0.732, 0.72, 0.708,
-	0.697, 0.684, 0.67, 0.656, 0.643, 0.63, 0.62, 0.611, 0.604, 0.6, 0.599, 0.596, 0.585, 0.569, 0.553, 0.543, 0.538,
-	0.537, 0.536, 0.536, 0.536, 0.535, 0.533, 0.529, 0.523, 0.513, 0.499, 0.481, 0.463, 0.452, 0.448, 0.447, 0.446,
-	0.445, 0.445, 0.445, 0.442, 0.436, 0.433, 0.434, 0.437, 0.441, 0.444, 0.446, 0.446, 0.447, 0.447, 0.447, 0.447,
-	0.447, 0.447, 0.447, 0.447, 0.449, 0.453, 0.462, 0.474, 0.484, 0.486, 0.482, 0.48, 0.488, 0.504, 0.519, 0.529, 0.534,
-	0.536, 0.538, 0.543, 0.554, 0.571, 0.593, 0.615, 0.636, 0.658, 0.682, 0.705, 0.728, 0.755, 0.787, 0.821, 0.85, 0.872,
-	0.89, 0.917, 0.974, 1.076, 1.23, 1.436, 1.681, 1.987, 2.382, 2.846, 3.228, 3.326, 3.063, 2.589, 2.157, 1.917, 1.868,
-	1.9, 1.883, 1.745, 1.478, 1.164, 0.915, 0.81, 0.848, 0.963, 1.067, 1.1, 1.059, 0.979, 0.904, 0.855, 0.837, 0.841,
-	0.852, 0.858, 0.851, 0.837, 0.821, 0.811, 0.806, 0.805, 0.806, 0.811, 0.821, 0.837, 0.854, 0.865, 0.869, 0.871,
-	0.877, 0.885, 0.894, 0.905, 0.917, 0.931, 0.945, 0.959, 0.973, 0.986, 1.001, 1.021, 1.044, 1.062, 1.075, 1.082, 1.09,
-	1.103, 1.124, 1.15, 1.178, 1.197, 1.203, 1.191, 1.148, 1.063, 0.933, 0.779, 0.639, 0.537, 0.479, 0.449, 0.434, 0.425,
-	0.42, 0.416, 0.411, 0.402, 0.391, 0.377, 0.362, 0.349, 0.337, 0.328, 0.321, 0.314, 0.308, 0.306, 0.311, 0.325, 0.348,
-	0.373, 0.395, 0.411, 0.423, 0.438, 0.455];
-
-// The warped hue of each whole degree, 0 to 360: the running integral of HUE_DENSITY.
-const HUE_WARP = (() => {
-	const warp = [0];
-	for (let h = 0; h < 360; ++h)
-		warp.push(warp[h] + HUE_DENSITY[h]);
-	return warp.map(v => v * 360 / warp[360]);
-})();
-// The warped hue of an ab pair, in radians.
-function warpedHue(a, b) {
-	const h = (Math.atan2(b, a) * 180 / Math.PI + 360) % 360;
-	const at = Math.floor(h);
-	return (HUE_WARP[at] + (HUE_WARP[at + 1] - HUE_WARP[at]) * (h - at)) * Math.PI / 180;
-}
-
 // Weighted squared distance in deltaE (OKLab x100): lightness and radial chroma differences by
-// their weights, the tangential hue difference as is after both points turn to their warped hue,
-// the pair's mean lightness as a gain.
+// their weights, the tangential hue difference as is, the pair's mean lightness as a gain.
 function apart2(p, q) {
-	const pC = Math.hypot(p[1], p[2]), qC = Math.hypot(q[1], q[2]);
-	const pH = warpedHue(p[1], p[2]), qH = warpedHue(q[1], q[2]);
-	const dL = (p[0] - q[0]) * W_L, dC = pC - qC;
-	const da = pC * Math.cos(pH) - qC * Math.cos(qH), db = pC * Math.sin(pH) - qC * Math.sin(qH);
+	const dL = (p[0] - q[0]) * W_L, dC = Math.hypot(p[1], p[2]) - Math.hypot(q[1], q[2]);
+	const da = p[1] - q[1], db = p[2] - q[2];
 	const gain = (Math.max(LIGHTNESS_FLOOR, (p[0] + q[0]) / 2) / LIGHTNESS_REFERENCE) ** LIGHTNESS_EXPONENT;
 	return (dL * dL + (W_C * W_C - 1) * dC * dC + da * da + db * db) * gain * gain;
 }
@@ -1025,49 +978,14 @@ function pointInBox(L, a, b, cfg) {
 			|| boxH !== hue || boxC !== rangeC };
 }
 
-// The hue marginal of uniform draws over the box, per HUE_BIN degrees at mean 1 and floored. A draw
-// weighted by HUE_DENSITY over it lands with the density's own hue distribution: the box's hue cover
-// is uneven where its lightness or chroma room varies with hue, and would multiply in otherwise.
-const HUE_BIN = 10, MARGINAL_DRAWS = 20000, MARGINAL_FLOOR = 0.05;
-function hueMarginal(rnd, cfg) {
-	const bins = new Array(360 / HUE_BIN).fill(0);
-	for (let n = 0; n < MARGINAL_DRAWS; ++n)
-		++bins[Math.floor(samplePoint(rnd, cfg)[2] / HUE_BIN)];
-	return bins.map(count => Math.max(MARGINAL_FLOOR, count * bins.length / MARGINAL_DRAWS));
-}
-// The chance a draw over the box is kept, per whole degree of its hue, peak 1. One box is remembered:
-// the sliders change one box at a time and the benchmark runs its seeds per box.
-let hueWeightCache = { key: null, weight: null };
-function hueWeightFor(cfg) {
-	const key = [cfg.hMin, cfg.hMax, cfg.lMin, cfg.lMax, cfg.cMin, cfg.cMax, cfg.included.map(Number).join("")].join(" ");
-	if (hueWeightCache.key !== key) {
-		const marginal = hueMarginal(mulberry32(424242), cfg);
-		const weight = HUE_DENSITY.map((d, h) => d / marginal[Math.floor(h / HUE_BIN)]);
-		const peak = Math.max(...weight);
-		hueWeightCache = { key, weight: weight.map(w => w / peak) };
-	}
-	return hueWeightCache.weight;
-}
-// A box draw kept with its hue's chance; the last draw stands after WEIGHTED_TRIES.
-const WEIGHTED_TRIES = 400;
-function sampleWeighted(rnd, cfg) {
-	let draw = null;
-	for (let n = 0; n < WEIGHTED_TRIES; ++n) {
-		draw = samplePoint(rnd, cfg);
-		if (rnd() < cfg.hueWeight[Math.floor(draw[2])])
-			return draw;
-	}
-	return draw;
-}
-
-// Draws the start spends on one color at most.
+// Uniform draws the start spends on one color at most.
 const START_DRAWS = 1500;
 // Restarts always made, and the most made while the result's floor stays under RESTART_TARGET or more
 // than RESTART_SHORTFALL below the floor the box allows.
 const RESTARTS = 4, MAX_RESTARTS = 16, RESTART_TARGET = 0.9, RESTART_SHORTFALL = 0.02;
 const positionsOf = colors => colors.map(color => color.lab.map(v => v * 100));
 
-// The fixed colors, then for each color the first hue-weighted draw at least the limit distance from
+// The fixed colors, then for each color the first uniform draw at least the limit distance from
 // every color chosen so far. When none of the draws qualifies, the farthest of them: the box is too
 // full for the limit, and the draws are then spread as well as draws can be.
 function dartStart(rnd, cfg) {
@@ -1077,7 +995,7 @@ function dartStart(rnd, cfg) {
 	for (let i = 0; i < cfg.count; ++i) {
 		let pick = null, clearest = -1;
 		for (let n = 0; n < START_DRAWS && clearest < limit2; ++n) {
-			const draw = sampleWeighted(rnd, cfg);
+			const draw = samplePoint(rnd, cfg);
 			const at = positionOf(draw);
 			let nearest = Infinity;
 			for (let k = 0; k < pos.length; ++k)
@@ -1266,7 +1184,6 @@ function generate(cfg) {
 	if (!cells.centres.length)
 		return null;
 	settings.cells = cells.fraction < SPARSE_FRACTION ? cells : null;
-	settings.hueWeight = hueWeightFor(settings);
 	const reachable = attempt(mulberry32(settings.seed + 104729), { ...settings, hull: true }).floor;
 	let best = null;
 	for (let n = 0; n < MAX_RESTARTS && (n < RESTARTS || best.floor < Math.max(RESTART_TARGET, reachable - RESTART_SHORTFALL)); ++n) {
@@ -2585,3 +2502,569 @@ new IntersectionObserver(entries => renderer.setAnimationLoop(entries.at(-1).isI
 
 </body>
 </html>
+
+<script>
+// The hue respacing tool: authors the HUE_DENSITY table index.html and identify.js carry, by eye.
+// The page above is index.html from before the respacing, so the metric swap below warps it once;
+// a fresh copy of the current page would warp twice.
+//   The target: the sRGB code walk (the share of the circle each hue gets when the codes walk the
+//   cube's six saturated edges in unit steps) times a factor per band of hue, blurred. Its presets
+//   are the table's definition; the table itself is window.__blend.target() rounded to 3 places.
+//   The fit sets the page's own band controls to reproduce the target under their blur.
+//   Every strip is the most vivid color per hue, its width a hue's share of the circle under that
+//   strip's density; a palette generated through the density should show the share as its marginal.
+window.addEventListener("load", function () {
+	var STEPS = 360, BAR_H = 54;
+
+	// A blur around the circle. Separate from the page's smoothRing, which is fixed at the sigma
+	// the cusp table wants.
+	function blurRing(samples, sigma) {
+		if (sigma <= 0)
+			return samples.slice();
+		var radius = Math.ceil(sigma * 3), weights = [], total = 0;
+		for (var k = -radius; k <= radius; ++k) {
+			var g = Math.exp(-k * k / (2 * sigma * sigma));
+			weights.push(g);
+			total += g;
+		}
+		return samples.map(function (_, n) {
+			var sum = 0;
+			for (var k = -radius; k <= radius; ++k)
+				sum += samples[(n + k + samples.length * 4) % samples.length] * weights[k + radius];
+			return sum / total;
+		});
+	}
+
+	// Hue occupancy along the six-edge walk, one bin per degree, scaled to mean 1. 1530 steps over
+	// 360 bins leaves Poisson noise the caller blurs out.
+	function walkDensity() {
+		var counts = new Array(STEPS).fill(0), rgb = [255, 0, 0];
+		[[1, 1], [0, -1], [2, 1], [1, -1], [0, 1], [2, -1]].forEach(function (leg) {
+			for (var n = 0; n < 255; ++n) {
+				rgb[leg[0]] += leg[1];
+				var h = lchOf(rgbToOklab(rgb.map(function (v) { return v / 255; })))[2];
+				++counts[Math.floor(((h % 360) + 360) % 360) % STEPS];
+			}
+		});
+		return counts.map(function (c) { return c / (1530 / STEPS); });
+	}
+	var WALK = walkDensity();
+
+	// The six corners of the cusp locus, marked on every strip so one color can be found across them.
+	var CORNERS = [{ name: "red", h: 29.2 }, { name: "yellow", h: 109.8 }, { name: "green", h: 142.5 },
+		{ name: "cyan", h: 194.8 }, { name: "blue", h: 264.1 }, { name: "magenta", h: 328.4 }];
+
+	// The density is set directly: one value per band of hue, its value the share of the circle that
+	// band gets in multiples of the uniform share. Bands are 10 degrees around red and blue, where the
+	// fine structure is, and 30 elsewhere; each runs from its start to the next band's start.
+	// Flat across the band, then blurred: a step in the density is a pace change on the strip, and
+	// the blur turns it into a ramp.
+	// The blue bands are offset so one is centred on sRGB blue at 264.1.
+	var SECTORS = [0, 4, 9, 14, 19, 24, 29, 34, 39, 44, 54, 63, 72, 81, 90, 110, 115, 120, 125, 130, 135, 140, 145, 150, 165,
+		180, 195, 210, 220, 230, 238, 242, 246, 250, 254, 258, 262, 266, 270, 274, 278, 282, 286, 290, 300, 315, 330, 344, 354];
+	function sectorOf(h) {
+		var s = SECTORS.length - 1;
+		while (SECTORS[s] > h)
+			--s;
+		return s;
+	}
+	function bandsOf(values) {
+		var out = new Array(STEPS);
+		for (var i = 0; i < STEPS; ++i)
+			out[i] = values[sectorOf(i)];
+		return out;
+	}
+	// Scaled to mean 1, so a bin's value is its share against uniform however the values add up.
+	function toMeanOne(samples) {
+		var mean = samples.reduce(function (a, v) { return a + v; }, 0) / STEPS;
+		return samples.map(function (v) { return v / mean; });
+	}
+	function densityCurve(values, blur) { return blurRing(toMeanOne(bandsOf(values)), blur); }
+	// The target: the sRGB code walk with each band scaled by its own factor.
+	function targetCurve(values, blur) {
+		var bands = bandsOf(values);
+		return blurRing(toMeanOne(WALK.map(function (d, i) { return d * bands[i]; })), blur);
+	}
+	// The factor toMeanOne takes out of the scaled walk: 1 when the values stretch as much as they compress.
+	function targetScale(values) {
+		var bands = bandsOf(values);
+		return WALK.reduce(function (sum, d, i) { return sum + d * bands[i]; }, 0) / STEPS;
+	}
+	function bandMeans(samples) {
+		var sums = SECTORS.map(function () { return 0; }), counts = SECTORS.map(function () { return 0; });
+		for (var i = 0; i < STEPS; ++i) {
+			sums[sectorOf(i)] += samples[i];
+			++counts[sectorOf(i)];
+		}
+		return sums.map(function (sum, s) { return sum / counts[s]; });
+	}
+
+	// The most vivid color at a hue, read off the smoothed cusp table the generator's coordinates
+	// use. pureHue draws the true cusp, whose fold at 264 puts a cliff on a strip meant for judging
+	// widths.
+	function ridgeColor(h) {
+		var L = cuspLightness(h);
+		return colorAt(L, gamutChroma(L, h), h);
+	}
+
+	// Cumulative sRGB code steps along the ridge from hue 0, one entry per CODE_STEP degrees: the pace
+	// of visible change a strip has to resolve.
+	var CODE_STEP = 0.1;
+	var CODE_CUM = (function () {
+		var cum = [0], last = null;
+		for (var n = 0; n <= 360 / CODE_STEP; ++n) {
+			var rgb = ridgeColor(n * CODE_STEP).rgb.map(function (v) { return Math.round(v * 255); });
+			if (last)
+				cum.push(cum[cum.length - 1] + Math.abs(rgb[0] - last[0]) + Math.abs(rgb[1] - last[1]) + Math.abs(rgb[2] - last[2]));
+			last = rgb;
+		}
+		return cum;
+	})();
+	function codeSteps(h0, h1) { return CODE_CUM[Math.round(h1 / CODE_STEP)] - CODE_CUM[Math.round(h0 / CODE_STEP)]; }
+
+	// Running integral of the density, in degrees. Strictly increasing for any positive density, so
+	// no hue is skipped and none is reached twice.
+	function warpOf(density) {
+		var cum = [0], total = 0;
+		for (var i = 0; i < density.length; ++i) {
+			total += density[i];
+			cum.push(total);
+		}
+		return { cum: cum, total: total, span: density.length };
+	}
+
+	function warpHue(w, h) {
+		var x = ((h % 360) + 360) % 360 / 360 * w.span;
+		var i = Math.floor(x), f = x - i;
+		return (w.cum[i] + (w.cum[i + 1] - w.cum[i]) * f) / w.total * 360;
+	}
+
+	// The inverse: the hue standing a given fraction of the way around the warped circle.
+	function hueAtFraction(w, t) {
+		var target = t * w.total, lo = 0, hi = w.span;
+		while (lo < hi) {
+			var mid = (lo + hi) >> 1;
+			if (w.cum[mid + 1] <= target)
+				lo = mid + 1;
+			else
+				hi = mid;
+		}
+		var within = (target - w.cum[lo]) / (w.cum[lo + 1] - w.cum[lo] || 1);
+		return (lo + within) / w.span * 360;
+	}
+
+	// A hue turned to where the warp puts it, chroma and lightness untouched.
+	function warpPosition(w, p) {
+		var C = Math.hypot(p[1], p[2]);
+		if (C < 1e-9)
+			return p.slice();
+		var turned = warpHue(w, Math.atan2(p[2], p[1]) * 180 / Math.PI) * Math.PI / 180;
+		return [p[0], C * Math.cos(turned), C * Math.sin(turned)];
+	}
+
+	// The box's own hue marginal, from uniform draws, in 10-degree bins. Not flat: the box has more
+	// room at some hues than others, and a draw weighted by the density alone multiplies the two.
+	var BOX_BIN = 10;
+	function boxMarginal(rnd, cfg) {
+		var draws = 20000, counts = new Array(360 / BOX_BIN).fill(0);
+		for (var n = 0; n < draws; ++n)
+			++counts[Math.floor(((samplePoint(rnd, cfg)[2] % 360) + 360) % 360 / BOX_BIN)];
+		return counts.map(function (c) { return Math.max(0.05, c / (draws / counts.length)); });
+	}
+
+	// A draw whose hue follows the density: a uniform draw kept with probability weight(h), where the
+	// weight is the density over the box marginal, scaled to peak at 1. Everything else about the
+	// draw - the box, the cells, the gamut - is left to samplePoint.
+	function weightedDraw(rnd, cfg, weight) {
+		for (var n = 0; n < 400; ++n) {
+			var draw = samplePoint(rnd, cfg);
+			if (rnd() < weight[Math.floor(((draw[2] % 360) + 360) % 360) % STEPS])
+				return draw;
+		}
+		return samplePoint(rnd, cfg);
+	}
+
+	// dartStart, with the draw optionally weighted. Distances go through whatever apart2 is live: with
+	// the metric warped for the run, the dart, the push and the score all measure the same corrected
+	// hue, and the limit keeps its meaning in that metric.
+	function dartStartBlend(rnd, cfg, opts) {
+		var colors = cfg.fixed.slice();
+		var pos = positionsOf(colors);
+		var limit2 = cfg.limit * cfg.limit;
+		for (var i = 0; i < cfg.count; ++i) {
+			var pick = null, clearest = -1;
+			for (var n = 0; n < START_DRAWS && clearest < limit2; ++n) {
+				var draw = opts.warpDraw ? weightedDraw(rnd, cfg, opts.weight) : samplePoint(rnd, cfg);
+				var at = positionOf(draw);
+				var nearest = Infinity;
+				for (var k = 0; k < pos.length; ++k)
+					nearest = Math.min(nearest, apart2(at, pos[k]));
+				if (nearest > clearest) {
+					pick = draw;
+					clearest = nearest;
+				}
+			}
+			colors.push(colorAt.apply(null, pick));
+			pos.push(positionOf(pick));
+		}
+		return colors;
+	}
+
+	// ---------- panel ----------
+
+	var box = document.createElement("div");
+	box.style.cssText = "position:fixed;inset:0;z-index:99999;background:#111;color:#ddd;"
+		+ "font:13px system-ui,sans-serif;padding:14px 18px;overflow:auto";
+	document.body.appendChild(box);
+
+	function line(host, text, color) {
+		var el = document.createElement("div");
+		el.textContent = text;
+		el.style.cssText = "margin:12px 0 4px;color:" + (color || "#bbb");
+		host.appendChild(el);
+		return el;
+	}
+
+	function spinbox(host, label, min, max, step, value, onInput, swatch) {
+		var wrap = document.createElement("label");
+		wrap.style.cssText = "display:flex;gap:8px;align-items:center;white-space:nowrap";
+		var name = document.createElement("span");
+		name.textContent = label;
+		name.style.cssText = "width:64px;color:#aaa";
+		if (swatch)
+			name.style.cssText += ";width:40px;padding-left:4px;border-left:10px solid " + swatch;
+		var input = document.createElement("input");
+		input.type = "number";
+		input.min = min;
+		input.max = max;
+		input.step = step;
+		input.value = value;
+		input.style.cssText = "width:64px;font-variant-numeric:tabular-nums";
+		input.addEventListener("input", onInput);
+		wrap.append(name, input);
+		host.appendChild(wrap);
+		return input;
+	}
+
+	line(box, "How much of the circle each hue gets, in multiples of its uniform share: 1 is OKLab's "
+		+ "equal split, 2 is twice the room. One value per band of OKLab hue, labelled by where the "
+		+ "band starts: 5 degrees wide through red, 10 through orange, 5 through lime green, 4 around blue, 10 to 30 elsewhere. "
+		+ "Every strip starts at OKLab hue 0, a pink-red, so only the spacing between the ticks "
+		+ "differs; the walk strip is the sRGB code walk turned to that origin.",
+		"#fff");
+
+	var controls = document.createElement("div");
+	controls.style.cssText = "display:flex;flex-wrap:wrap;gap:8px 18px;margin:8px 0 4px;max-width:1160px";
+	box.appendChild(controls);
+
+	// Starting values: the positions set so far, keyed by the start of the band they were set on. A
+	// band added since starts at the value of the band that contained it.
+	var PRESET = [[0, 0.51], [4, 0.53], [9, 0.6], [14, 0.79], [19, 0.89], [24, 2.37], [29, 3.22], [34, 0.81], [39, 1.11],
+		[44, 0.64], [54, 0.56], [63, 0.54], [72, 0.66], [81, 0.7], [90, 1.05], [110, 1.2], [115, 1], [120, 1.43],
+		[125, 1.36], [130, 1.85], [135, 0.88], [140, 7.65], [145, 2.21], [150, 0.94], [165, 0.66], [180, 0.55], [195, 0.45],
+		[210, 0.44], [220, 0.46], [230, 0.52], [238, 0.55], [242, 0.65], [246, 0.74], [250, 0.86], [254, 0.96], [258, 1.47],
+		[262, 4.12], [266, 1.52], [270, 2.22], [274, 0.43], [278, 1.31], [282, 0.77], [286, 0.89], [290, 0.81], [300, 0.92],
+		[315, 1.16], [330, 0.43], [344, 0.31], [354, 0.42]];
+	var TARGET_PRESET = [[0, 0.6], [9, 0.7], [14, 0.75], [19, 0.9], [24, 0.85], [29, 0.9], [34, 0.8], [39, 1.1],
+		[44, 0.9], [54, 1], [72, 1.3], [90, 1.5], [110, 1.2], [115, 1], [120, 1.2], [125, 1], [135, 0.4], [140, 0.84],
+		[145, 1], [150, 0.8], [165, 0.99], [180, 1], [195, 0.95], [210, 1], [254, 0.79], [258, 1], [262, 0.47], [266, 1],
+		[270, 2], [274, 0.47], [278, 1.49], [282, 1], [315, 1.01], [330, 0.39], [344, 0.33], [354, 0.48]];
+	function presetFor(table, start) {
+		var value = table[0][1];
+		for (var p = 1; p < table.length; ++p)
+			if (table[p][0] <= start)
+				value = table[p][1];
+		return value;
+	}
+	function bandEnd(s) { return s + 1 < SECTORS.length ? SECTORS[s + 1] : 360; }
+	// The band whose spinbox was focused last: its edges are drawn on every strip.
+	var focusedBand = -1;
+	var BAND_MIN = 0.01, BAND_MAX = 8, BAND_STEP = 0.01;
+	function bandControls(host, valueFor) {
+		return SECTORS.map(function (start, s) {
+			var input = spinbox(host, String(start), BAND_MIN, BAND_MAX, BAND_STEP, valueFor(start),
+				function () { redraw(); }, ridgeColor((start + bandEnd(s)) / 2 % 360).hex);
+			input.addEventListener("focus", function () { focusedBand = s; redraw(); });
+			return input;
+		});
+	}
+	var densityInputs = bandControls(controls, function (start) { return presetFor(PRESET, start); });
+
+	var second = document.createElement("div");
+	second.style.cssText = "display:flex;flex-wrap:wrap;gap:10px 22px;margin:4px 0 2px";
+	box.appendChild(second);
+	var bandBlurInput = spinbox(second, "band blur", 0, 12, 0.5, 2, function () { redraw(); });
+	var blurInput = spinbox(second, "dR blur", 0, 12, 0.5, 4, function () { redraw(); });
+	var countInput = spinbox(second, "colors", 3, 20, 1, 8, function () { });
+	var setsInput = spinbox(second, "palettes", 5, 120, 5, 40, function () { });
+	function checkbox(host, label, checked) {
+		var wrap = document.createElement("label");
+		wrap.style.cssText = "display:flex;gap:5px;align-items:center;white-space:nowrap;color:#aaa";
+		var input = document.createElement("input");
+		input.type = "checkbox";
+		input.checked = checked;
+		wrap.append(input, document.createTextNode(label));
+		host.appendChild(wrap);
+		return input;
+	}
+	var metricInput = checkbox(second, "warp the metric", true);
+	var drawInput = checkbox(second, "warp the draw", true);
+
+	var runButton = document.createElement("button");
+	runButton.textContent = "Generate palettes";
+	runButton.style.cssText = "padding:3px 10px;background:#222;color:#ddd;border:1px solid #444;"
+		+ "border-radius:3px;cursor:pointer";
+	second.appendChild(runButton);
+
+	var strips = document.createElement("div");
+	box.appendChild(strips);
+	var zoomStrips = document.createElement("div");
+	box.appendChild(zoomStrips);
+
+	line(box, "The target: the sRGB code walk with each band scaled by its own factor, 1 leaving the walk as it "
+		+ "is. Fit sets the main controls to whatever reproduces the target most closely under the current band blur.",
+		"#fff");
+	var targetControls = document.createElement("div");
+	targetControls.style.cssText = controls.style.cssText;
+	box.appendChild(targetControls);
+	var targetInputs = bandControls(targetControls, function (start) { return presetFor(TARGET_PRESET, start); });
+	var targetSecond = document.createElement("div");
+	targetSecond.style.cssText = second.style.cssText;
+	box.appendChild(targetSecond);
+	var targetBlurInput = spinbox(targetSecond, "target blur", 0, 12, 0.5, 2, function () { redraw(); });
+	var fitButton = document.createElement("button");
+	fitButton.textContent = "Fit main controls to target";
+	fitButton.style.cssText = runButton.style.cssText;
+	targetSecond.appendChild(fitButton);
+	var targetScaleOut = document.createElement("span");
+	targetScaleOut.style.cssText = "color:#aaa";
+	targetSecond.appendChild(targetScaleOut);
+	var targetStrips = document.createElement("div");
+	box.appendChild(targetStrips);
+	var palettes = document.createElement("div");
+	box.appendChild(palettes);
+
+	function currentTarget() {
+		return targetCurve(targetInputs.map(function (input) { return +input.value; }), +targetBlurInput.value);
+	}
+
+	// Least squares under the current band blur: each pass adds each band's mean residual to its value.
+	// Blur and band averaging both contract, so the passes converge; the clamp to the spinbox range is
+	// the only regularization.
+	fitButton.addEventListener("click", function () {
+		var target = currentTarget();
+		var blur = +bandBlurInput.value;
+		var values = bandMeans(target);
+		for (var pass = 0; pass < 500; ++pass) {
+			var model = blurRing(bandsOf(values), blur);
+			var step = bandMeans(target.map(function (t, i) { return t - model[i]; }));
+			values = values.map(function (v, s) { return Math.min(BAND_MAX, Math.max(BAND_MIN, v + step[s])); });
+		}
+		densityInputs.forEach(function (input, s) { input.value = (Math.round(values[s] / BAND_STEP) * BAND_STEP).toFixed(2); });
+		redraw();
+	});
+
+	function stripWidth() { return Math.max(360, Math.min(1200, window.innerWidth - 48)); }
+
+	// view: the fraction of the warped circle at the strip's middle and the magnification. Absent, the
+	// strip shows the whole circle once.
+	function strip(host, label, density, view) {
+		view = view || { centre: 0.5, scale: 1 };
+		var cap = document.createElement("div");
+		cap.textContent = label;
+		cap.style.cssText = "margin:10px 0 3px;color:#bbb";
+		host.appendChild(cap);
+		var width = stripWidth();
+		var canvas = document.createElement("canvas");
+		canvas.width = width;
+		canvas.height = BAR_H;
+		canvas.style.cssText = "display:block;width:" + width + "px;height:" + BAR_H + "px;border-radius:4px";
+		var g = canvas.getContext("2d"), w = warpOf(density);
+		// The pixel column of a fraction of the warped circle, taken on the turn nearest the middle of the view.
+		function xOf(f) {
+			var off = f - view.centre;
+			return Math.round((off - Math.round(off)) * width * view.scale + width / 2);
+		}
+		function xOfHue(h) { return xOf(warpHue(w, h) / 360); }
+		for (var x = 0; x < width; ++x) {
+			var f = view.centre + (x + 0.5 - width / 2) / (width * view.scale);
+			g.fillStyle = ridgeColor(hueAtFraction(w, f - Math.floor(f))).hex;
+			g.fillRect(x, 0, 1, BAR_H);
+		}
+		// A named tick at each corner hue, so the same color can be found across strips: every strip
+		// starts at hue 0 and only the spacing between the ticks differs.
+		g.font = "9px system-ui,sans-serif";
+		g.textBaseline = "bottom";
+		CORNERS.forEach(function (corner) {
+			var x = xOfHue(corner.h);
+			if (x < 0 || x >= width)
+				return;
+			g.fillStyle = "#000";
+			g.fillRect(x, BAR_H - 12, 1, 12);
+			g.fillText(corner.name, Math.min(width - 42, x + 3), BAR_H - 2);
+		});
+		// Magnified, every band edge in view is a ruler mark labelled with the band's start.
+		if (view.scale > 1) {
+			g.textBaseline = "top";
+			SECTORS.forEach(function (start) {
+				var x = xOfHue(start);
+				if (x < 0 || x >= width)
+					return;
+				g.fillStyle = "#000";
+				g.fillRect(x, 0, 1, 8);
+				g.fillText(String(start), Math.min(width - 20, x + 3), 1);
+			});
+		}
+		if (focusedBand >= 0)
+			[SECTORS[focusedBand], bandEnd(focusedBand)].forEach(function (h) {
+				g.fillStyle = "#000";
+				g.fillRect(xOfHue(h), 0, 1, BAR_H);
+			});
+		host.appendChild(canvas);
+	}
+
+	// The focused band and its surroundings on every strip, all at one magnification: the smallest
+	// that gives every strip at least two pixels per code step across the band. The strips are
+	// aligned on the band's middle, so their spacing differs only where the densities do.
+	function drawZoom(curves) {
+		zoomStrips.textContent = "";
+		if (focusedBand < 0)
+			return;
+		var start = SECTORS[focusedBand], end = bandEnd(focusedBand), width = stripWidth();
+		var codes = codeSteps(start, end), scale = 1;
+		curves.forEach(function (curve) {
+			curve.w = warpOf(curve.density);
+			curve.px = (warpHue(curve.w, end) - warpHue(curve.w, start) + 360) % 360 / 360 * width;
+			scale = Math.max(scale, 2 * codes / curve.px);
+		});
+		line(zoomStrips, "Band " + start + " to " + end + " magnified x" + scale.toFixed(1) + ": " + codes
+			+ " code steps along the ridge across the band.", "#fff");
+		curves.forEach(function (curve) {
+			strip(zoomStrips, curve.label + " - " + (curve.px * scale / codes).toFixed(1) + " px per code step",
+				curve.density, { centre: warpHue(curve.w, (start + end) / 2) / 360, scale: scale });
+		});
+	}
+
+	function bins(density) {
+		var out = [];
+		for (var b = 0; b < 12; ++b) {
+			var sum = 0;
+			for (var i = b * 30; i < b * 30 + 30; ++i)
+				sum += density[i];
+			out.push(sum / 30);
+		}
+		return out;
+	}
+	// One row of the readout, the name padded to the width the bin header uses.
+	function row(name, values) {
+		return name.padEnd(10) + values.map(function (v) { return (Math.round(v * 100) / 100).toFixed(2).padStart(4); }).join("  ");
+	}
+	var BIN_HEADER = row("bin start", []) + Array.from({ length: 12 },
+		function (_, b) { return String(b * 30).padStart(4); }).join("  ");
+
+	var current = null;
+
+	function redraw() {
+		var walk = blurRing(WALK, +blurInput.value);
+		var density = densityCurve(densityInputs.map(function (input) { return +input.value; }), +bandBlurInput.value);
+		var target = currentTarget();
+		current = density;
+		strips.textContent = "";
+		strip(strips, "OKLab - every hue an equal share of the circle", new Array(STEPS).fill(1));
+		strip(strips, "yours", density);
+		strip(strips, "sRGB code walk - each hue's share of the codes, as is", walk);
+		var targetValues = targetInputs.map(function (input) { return +input.value; });
+		targetScaleOut.textContent = "mean of the factors " + (targetValues.reduce(function (a, v) { return a + v; }, 0) / targetValues.length).toFixed(3)
+			+ ", strip divided by " + targetScale(targetValues).toFixed(3);
+		targetStrips.textContent = "";
+		strip(targetStrips, "sRGB code walk - as is, for reference", walk);
+		strip(targetStrips, "target - the walk scaled band by band", target);
+		strip(targetStrips, "fitted - the top controls as they stand, the fit's result once it has run", density);
+		drawZoom([{ label: "OKLab", density: new Array(STEPS).fill(1) }, { label: "sRGB code walk", density: walk },
+			{ label: "target", density: target }]);
+		var readout = document.createElement("pre");
+		readout.style.cssText = "margin:10px 0 0;color:#999;font:12px ui-monospace,monospace";
+		readout.textContent = [BIN_HEADER, row("yours", bins(density)), row("walk", bins(walk)), row("target", bins(target)),
+			row("yours-tgt", bins(density.map(function (d, i) { return d - target[i]; })))].join("\n");
+		targetStrips.appendChild(readout);
+	}
+
+	// Palettes through the warped dart, pushed and scored as the page always does.
+	runButton.addEventListener("click", function () {
+		runButton.disabled = true;
+		runButton.textContent = "working...";
+		setTimeout(function () {
+			var base = readConfig(), sigma = Math.max(base.scale, 1);
+			var cfg = Object.assign({}, base, { count: +countInput.value, fixed: [], sigma: sigma,
+				limit: limitDistance(sigma), included: base.included || ALL_INCLUDED,
+				pushMin: base.pushMin || PUSH_ANGLE_MIN, pushMax: base.pushMax || PUSH_ANGLE_MAX });
+			var cells = boxCells(cfg);
+			cfg.cells = cells.fraction < SPARSE_FRACTION ? cells : null;
+			var box = boxMarginal(mulberry32(424242), cfg);
+			var boxAt = current.map(function (_, h) { return box[Math.floor(h / BOX_BIN)]; });
+			var weight = current.map(function (d, h) { return d / boxAt[h]; });
+			var top = Math.max.apply(null, weight);
+			var opts = { warp: warpOf(current), weight: weight.map(function (w) { return w / top; }),
+				warpDraw: drawInput.checked, warpMetric: metricInput.checked };
+			window.__blend.lastOpts = opts;
+			// The page's apart2 is a global function binding, so swapping it warps every caller for
+			// the run: dart, push and identification alike.
+			var trueApart2 = apart2;
+			if (opts.warpMetric)
+				apart2 = function (p, q) { return trueApart2(warpPosition(opts.warp, p), warpPosition(opts.warp, q)); };
+			var sets = +setsInput.value;
+			// The start's marginal beside the final one: whichever stage loses the shape shows here.
+			var binOf = function (color) { return Math.floor(((color.lch[2] % 360) + 360) % 360 / 30); };
+			var startCounts = new Array(12).fill(0), counts = new Array(12).fill(0), rows = [];
+			var began = performance.now();
+			for (var s = 0; s < sets; ++s) {
+				var rnd = mulberry32(700001 + s * 7919);
+				var start = dartStartBlend(rnd, cfg, opts);
+				start.forEach(function (color) { ++startCounts[binOf(color)]; });
+				var made = pushApart(rnd, start, cfg);
+				made.forEach(function (color) { ++counts[binOf(color)]; });
+				if (rows.length < 12)
+					rows.push(made);
+			}
+			apart2 = trueApart2;
+			var total = sets * cfg.count;
+			var share = function (c) { return c / total * 12; };
+			var atStart = startCounts.map(share), got = counts.map(share);
+			var want = bins(current);
+			palettes.textContent = "";
+			line(palettes, "Hue marginal of " + total + " generated colors against the density it was "
+				+ "asked for, after the dart start and after the push. Ratio 1.00 means the share landed.",
+				"#fff");
+			var readout = document.createElement("pre");
+			readout.style.cssText = "margin:6px 0 8px;color:#999;font:12px ui-monospace,monospace";
+			readout.textContent = [BIN_HEADER, row("box", bins(boxAt)), row("asked", want),
+				row("start", atStart), row("got", got),
+				row("ratio", got.map(function (v, i) { return v / want[i]; })), "",
+				sets + " palettes in " + (performance.now() - began).toFixed(0) + " ms, draw "
+					+ (opts.warpDraw ? "warped" : "uniform") + ", metric "
+					+ (opts.warpMetric ? "warped" : "true")].join("\n");
+			palettes.appendChild(readout);
+			rows.forEach(function (made) {
+				var row = document.createElement("div");
+				row.style.cssText = "display:flex;gap:2px;margin-bottom:2px";
+				made.forEach(function (color) {
+					var cell = document.createElement("div");
+					cell.style.cssText = "width:44px;height:26px;border-radius:3px;background:" + color.hex;
+					cell.title = color.hex + "  hue " + color.lch[2].toFixed(0);
+					row.appendChild(cell);
+				});
+				palettes.appendChild(row);
+			});
+			runButton.disabled = false;
+			runButton.textContent = "Generate palettes";
+		}, 20);
+	});
+
+	window.addEventListener("resize", redraw);
+	redraw();
+
+	// For measuring the pieces from the console.
+	window.__blend = { weightedDraw: weightedDraw, boxMarginal: boxMarginal, warpOf: warpOf,
+		dartStartBlend: dartStartBlend, density: function () { return current; }, target: currentTarget };
+});
+</script>

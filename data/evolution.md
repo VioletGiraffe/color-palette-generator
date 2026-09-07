@@ -655,6 +655,97 @@ than 0.15 lies within the blur radius of a corner, and the smooth stretches do n
 `STATE_VERSION` stays v4: the strings parse and mean the same, though a range near blue now selects a slightly
 different band.
 
+## Respacing the hue circle
+
+OKLab's hue angle is not evenly spaced to the eye: on a strip of the most vivid color at each hue, red and blue
+pass in a few degrees while green and cyan sprawl. The generator inherited that spacing twice, in the metric it
+keeps colors apart by and in the uniform hue of its starting draws, so palettes under-delivered red and blue.
+
+### Diagnosis
+
+Measured first, before anything was changed. Hue marginals of generated colors, 250 seeds each at 7 and 10 colors
+and 100 at 15, over a cusp-pinned box (relative C 14-32.5, the highest chroma floor that admits every hue, teal
+peaking at 14.5; relative L 45-55) and a wider one (C 5-32.5, L 40-60), the shipped page against revision 06d52fe:
+
+- Against its own metric's arc length the generator is even: the ratio of delivered to expected share is 1.00
+  in nearly every 30-degree bin. Against the sRGB code walk it is the least even of every scale tried,
+  coefficient of variation 0.53 at 7 colors against 0.30. The generator was not at fault; its metric was, and
+  the disagreement is between the metric and the eye.
+- In OKLab hue the shipped page gave cyan through blue (180 to 240) half to a third of a uniform share and green
+  (120 to 150) 1.4 times it. 06d52fe was no better, and at 10 colors it had two near-empty bins at 30 and 150.
+
+The sRGB code walk (unit steps along the cube's six saturated edges, 1530 codes, binned by OKLab hue) as a
+candidate reference: monotone in OKLab hue (37 backward steps in 1530, the worst 0.0055 degrees at the blue fold),
+so it is a density. Per 30-degree bin, in multiples of uniform: 1.23 0.96 0.47 0.70 2.65 0.82 0.45 0.42 1.74
+0.78 0.91 0.88 from hue 0. Per 5 degrees it is spikes at the primaries with thin flanks: red 3.06 times at 25 to
+30, green 7.29 at 140 to 145, blue 5.74 at 260 to 265, and under 1 on both sides of each. The codes crowd where
+the varying channel sits near zero, a transfer-curve artifact, so the walk states nothing about how much room a
+hue deserves. It is monotone hue with the right general shape and the wrong fine structure. On the same strips
+CIELAB shows its blue-violet turn; OKLab's largest step along the sRGB locus is 4.57 at the blue vertex against
+0.35 for the next, CIELAB's is 0.26.
+
+Two dead ends on the way:
+
+- `d(h) = 1 + alpha(h) (dR(h) - 1)`, a blend between OKLab's flat circle and the walk. No alpha turns a spike into
+  a plateau, and blue's walk territory is the spike: the whole five degrees of it paint the same #0000ff. Dropped
+  for a density stated directly per band of hue.
+- A linear-light mix between two sRGB codes is not the even ramp it looks like it should be: the sRGB encode is
+  concave, so the first quarter of the mix covers more perceptual ground than the other three. A plain lerp in
+  sRGB codes is already close to perceptually even. No bug there; the pipeline was right.
+
+### What each stage does to the hue marginal
+
+Instrumented in the tool, 960 colors at 8 per palette, the density asked for against the draws, the starts and
+the pushed result:
+
+- The push is isotropic on a uniform start: 44 per cent of colors move, by 6.8 degrees of hue on average, and
+  the mean signed shift is 0.088 degrees. Directions cancel across palettes. A start already satisfies the push's
+  own threshold pair by pair, since `limitDistance` is the distance at which one swap chance equals
+  `ERROR_LIMIT`; the push fires only because `errorAt` sums over all neighbours.
+- `dartStart` is dart throwing, not farthest-point: it accepts the first draw that clears the limit. Ranking the
+  draws on a warped metric changed nothing, since in a roomy box the first draw clears. Only the draw itself can
+  carry a density. The weighted draw then delivers the asked density exactly.
+- The dart filter erodes it, and not along hue: it favours hues with lightness and chroma room. Blue 1.41 asked,
+  1.21 started; green 1.19 asked, 1.46 started. No hue correction reaches this, the rejection is in L and C.
+- The push erodes a peaked start under an uncorrected metric, blue 1.30 to 1.00 with the spill into violet, and
+  stops eroding once it measures in the corrected one, 1.21 to 1.29.
+
+Under one candidate density, summed absolute deviation of the ratios over twelve bins: shipped 2.36, the metric
+warped alone 1.94, metric and draw together 1.63. Both levers are one correction: uniform sampling in the
+corrected metric is a draw weighted by the stretch in the old one.
+
+### The correction
+
+The position taken, held until evidence says otherwise: the uneven spacing is a fact about the metric, not a
+sampling preference. The calibration leans the other way, the hue trough tried in the gain bought 8 per cent and
+its bootstrap included zero, but that fit was over a handful of hues. So the correction is one table,
+`HUE_DENSITY`, each hue's share of the circle at mean 1, applied in two places:
+
+- `apart2` turns both points to their warped hue, the running integral of the table, before the ab chord.
+  Push, scoring, restart ranking and the 3D halos all go through it, so they follow without changes of their own.
+- `dartStart` draws with acceptance proportional to the table divided by the box's own hue marginal, the share
+  of uniform draws each hue bin gets in the box, so the box's uneven room does not multiply in.
+
+The table was authored by eye in `data/hue-density.html`: a strip of the most vivid color per hue under the
+candidate density, next to OKLab's and the code walk's, with a factor per band of hue over the walk as the
+controls (bands of 4 degrees around blue, 5 through red and lime green, 10 to 30 elsewhere) and a least-squares
+fit from the resulting curve back to the page's band controls. The bands are flat and blurred; at sigma 4 a
+4-degree band keeps 40 per cent of its own value and the fit has to oscillate between the clamps to undo the
+blur, at sigma 2 it keeps 60 per cent and the fit settles near the band means. Sigma 2 is what the table uses.
+Its presets are the table's definition; a retune is a new paste into `index.html` and `identify.js`, and
+`identify.js` warns when the page it scores carries a different table.
+
+Measured over the benchmark's default box, 960 colors at 6, 8 and 10 per palette: the hue marginal's deviation
+from the table, summed over twelve 30-degree bins, fell from 4.45 to 1.87. The remainder is the dart's bias
+above. Generation costs about the same, 44 ms against 42 per palette under Node; the box marginal is 18 ms per
+box and cached.
+
+Not done:
+
+- The weights and the noise width were fitted on unwarped hue distances. A refit under the respaced circle is
+  the next calibration question, and whether the fit then shows anomalies is part of its interest.
+- Whether the palettes look even is the perceptual claim behind the belief, and only eyes can check it.
+
 ## Files
 
 - `index.html`: step 18 with the calibrated constants, the hue-lightness and hue-chroma charts, the plane
@@ -679,3 +770,5 @@ different band.
   `data/fit_chroma.js`: the position-term rounds; their logs are `data/light-calibration-log.json`,
   `data/chroma-log.json`, `data/hue-log.json`, `data/cusp-log.json`, `data/cusp-log-new.json`.
 - `data/calibrate-names.html`, `data/fit_names.js`, `data/naming-verdicts-16px.json`: the naming round.
+- `data/hue-density.html`: the hue respacing tool; its presets define `HUE_DENSITY`. A copy of the page from
+  before the respacing with the tool on top, so its generator warps once.

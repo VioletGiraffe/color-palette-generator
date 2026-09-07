@@ -31,7 +31,9 @@ for that isolated recognition, not just pairwise difference.
   OKLab and answering with the nearest palette entry. The noise is anisotropic: a lightness
   difference counts about a third of an equal hue difference, a chroma difference about half. The
   width and the weights were fitted to the author's judgments of hundreds of color pairs
-  (`data/README.md`, `data/evolution.md`); the Distinctness slider is the width.
+  (`data/README.md`, `data/evolution.md`); the Distinctness slider is the width. Hue differences are
+  taken on a respaced circle: OKLab gives red and blue too little of it, so each hue's share is set
+  by a table authored by eye (`data/hue-density.html`).
 - A pair's chance of being swapped follows from its weighted distance, and a color's chance of
   being misidentified is the sum over its pairs. The generator keeps every color's chance under a
   limit: colors start at random positions in the selected range at least the limit distance
