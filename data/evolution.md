@@ -819,8 +819,30 @@ Not done:
   blue-over-red gain interval moves from 0.84 to 1.00 onto 0.97 to 1.10. B, fitted on the step criterion, predicts
   the recall verdicts' blue effect with no parameter spent. The lightness exponent moves 0.40 to 0.50 (profile 0.40
   to 0.55), the chroma exponent -0.10 to -0.15, the lapse 0.05 to 0.005. Adopted: exponent 0.5.
+  Three checks on the respaced page, none of which changed it:
+  - The delivered hue shares follow the metric's arc length along the wall, the lightness and chroma of the fold
+    included, not the hue table alone. In a saturated box (L 40-60, C 60-100%, 200 seeds at 7, 10 and 14 colors)
+    the rms deviation of the twelve bins from the ridge's metric arc share is 0.06, against 0.26 for a uniform
+    share and 0.37 for plain OKLab arc length; the one residual is blue, 1.11 delivered against 1.27 of arc.
+    `hue-marginals.js` judges against the table's angle share, and the CV of 0.21 it reports there is the wall's
+    shape at the corners, not a draw or push effect. A hue reading taken against a uniform or a table share
+    overstates the pull toward the corners by that difference; the diagnosis's finding, even against its own
+    arc length, still holds.
+  - Distances without the gamut's corners predict the verdicts worse. Ordered probit as in `fit.js`, each
+    distance with its own threshold grid, in log-likelihood units under the shipped metric, identification log
+    (1260 pairs) then probe logs (6300): sRGB Euclidean 65 and 104, linear RGB Euclidean 130 and 359, an opponent
+    luma/R-Y/B-Y form in sRGB 11 and 67, the same on linear RGB under a cube root 7 and 68 with three parameters
+    spent. A cylinder of relative lightness and relative chroma at one radius over the respaced hue, weights and
+    radius free, is 40 to 48 and 225 under; on pairs within relative lightness 40 to 60 it is 19 to 25 under on
+    1191 probe pairs, and 6 to 14 under on the 72 below 25. The hue warp is not where it loses, A against no warp
+    moves it 0 to 8 units and never up; the radius is: a step in relative chroma is an absolute chroma of 0.06 at
+    cyan and 0.13 at magenta, and the cylinder calls them equal.
+  - Along the ridge the OKLab arc per degree of hue runs from 0.27 near cyan to 4.69 at the blue vertex, mean 0.60.
+    The strips in `hue-density.html` are spaced by degree, so equal width on them is not equal distance, eight
+    times off at blue; the reference the tool needs is the ridge at equal arc length, plain OKLab or the metric's.
   Open: a second 80% round to separate a session offset from a chroma effect at the top end; family coverage as
-  its own goal, by a start stratified over color names rather than a density over degrees.
+  its own goal, by a start stratified over color names rather than a density over degrees; the strips of
+  `hue-density.html` respaced by arc length.
 
 ## Files
 
