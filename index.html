@@ -299,8 +299,8 @@
 		<div class="range-pair">
 			<div class="caption"><span>Hue</span><span class="value" id="h-value"></span></div>
 			<div class="range-bar" id="hue-bar"><canvas id="hue-canvas"></canvas><div class="muted" id="hue-muted-a"></div><div class="muted" id="hue-muted-b"></div></div>
-			<label class="end"><span class="edge">min</span><input type="range" id="h-min" min="0" max="360" value="0"></label>
-			<label class="end"><input type="range" id="h-max" min="0" max="360" value="360"><span class="edge">max</span></label>
+			<label class="end"><span class="edge">min</span><input type="range" id="h-min" min="0" max="360" step="any" value="0"></label>
+			<label class="end"><input type="range" id="h-max" min="0" max="360" step="any" value="360"><span class="edge">max</span></label>
 			<div class="hint" style="grid-column: 1 / -1; margin: 0">Hue wraps when min &gt; max (e.g. 300 &rarr; 60 covers magenta through yellow).</div>
 		</div>
 
@@ -679,9 +679,7 @@ const cuspChroma = h => cuspValue(h, "chroma");
 // cusp sits at CUSP_ANCHOR at every hue, 0 is black and 100 is white. A range therefore selects the
 // same standing in every hue's own gamut, where an absolute range clips the hues whose peak is
 // bright and admits only washed-out colors where it is dark.
-// The metric reads this coordinate too: how far a pair stands up its hue's gamut sets how much
-// distance it needs, which `apart2` applies as a gain. Everything else about a distance is absolute
-// OKLab.
+// `apart2` does not read this coordinate: its lightness gain is on absolute lightness.
 const CUSP_ANCHOR = 50;
 
 // Piecewise linear either side of the cusp, so both maps are exact inverses and both are strictly
@@ -1009,6 +1007,48 @@ function apart2(p, q) {
 	return (dL * dL + (W_C * W_C - 1) * dC * dC + da * da + db * db) * gain * gain;
 }
 
+// The hue control's coordinate: the metric's length along the ridge, the sRGB cube's six saturated
+// edges walked code by code, per whole degree of OKLab hue, as a running integral normalized to 360.
+// Unlike HUE_WARP it carries the lightness and chroma the ridge moves through at a vertex: blue's
+// vertex is 5 deltaE inside a fifth of a degree, one pixel of a bar spaced by degrees.
+const RIDGE_WARP = (() => {
+	const codes = [];
+	for (let g = 0; g < 255; ++g) codes.push([255, g, 0]);
+	for (let r = 255; r > 0; --r) codes.push([r, 255, 0]);
+	for (let b = 0; b < 255; ++b) codes.push([0, 255, b]);
+	for (let g = 255; g > 0; --g) codes.push([0, g, 255]);
+	for (let r = 0; r < 255; ++r) codes.push([r, 0, 255]);
+	for (let b = 255; b > 0; --b) codes.push([255, 0, b]);
+	const labs = codes.map(rgb => rgbToOklab(rgb.map(v => v / 255)));
+	const points = labs.map(lab => lab.map(v => v * 100));
+	const perDegree = new Array(360).fill(0);
+	labs.forEach((lab, i) => {
+		perDegree[Math.floor(lchOf(lab)[2])] += Math.sqrt(apart2(points[i], points[(i + 1) % points.length]));
+	});
+	const warp = [0];
+	for (let h = 0; h < 360; ++h)
+		warp.push(warp[h] + perDegree[h]);
+	return warp.map(v => v * 360 / warp[360]);
+})();
+
+// Degrees to the control's coordinate and back, both over 0 to 360.
+function ridgeWarp(h) {
+	const at = Math.min(359, Math.floor(h));
+	return RIDGE_WARP[at] + (RIDGE_WARP[at + 1] - RIDGE_WARP[at]) * (h - at);
+}
+
+function ridgeUnwarp(v) {
+	let lo = 0, hi = 360;
+	while (hi - lo > 1) {
+		const mid = (lo + hi) >> 1;
+		if (RIDGE_WARP[mid] <= v)
+			lo = mid;
+		else
+			hi = mid;
+	}
+	return lo + (v - RIDGE_WARP[lo]) / (RIDGE_WARP[lo + 1] - RIDGE_WARP[lo]);
+}
+
 // Abramowitz-Stegun 7.1.26, within 1.5e-7.
 function erfc(x) {
 	const t = 1 / (1 + 0.3275911 * Math.abs(x));
@@ -1330,7 +1370,8 @@ function readConfig() {
 		count: bounded("count"),
 		scale: +$("strict").value,
 		pushMin, pushMax,
-		hMin: +$("h-min").value, hMax: +$("h-max").value,
+		// The hue sliders run in the ridge coordinate; the config, the labels and the state are in degrees.
+		hMin: Math.round(ridgeUnwarp(+$("h-min").value)), hMax: Math.round(ridgeUnwarp(+$("h-max").value)),
 		cMin, cMax, lMin, lMax,
 		seed: +$("seed").value | 0,
 		fixed: parseFixedColors($("fixed-colors").value),
@@ -1357,16 +1398,16 @@ function drawHueBar() {
 
 	const ctx = canvas.getContext("2d");
 	for (let x = 0; x < w; ++x) {
-		ctx.fillStyle = pureHue(x / w * 360).hex;
+		ctx.fillStyle = pureHue(ridgeUnwarp(x / w * 360)).hex;
 		ctx.fillRect(x, 0, 1, h);
 	}
 	drawnBarWidth = w;
 }
 
 // Masks the hues outside the range: two segments when the range sits in the middle, and the
-// single segment between max and min when it wraps.
+// single segment between max and min when it wraps. The bar is in the ridge coordinate.
 function maskHueBar(min, max) {
-	const segments = min <= max ? [[0, min], [max, 360]] : [[max, min], [360, 360]];
+	const segments = (min <= max ? [[0, min], [max, 360]] : [[max, min], [360, 360]]).map(seg => seg.map(ridgeWarp));
 
 	segments.forEach((seg, i) => {
 		const el = $(i === 0 ? "hue-muted-a" : "hue-muted-b");
@@ -1887,7 +1928,7 @@ function applyStateString(text) {
 	if (!parsed)
 		return false;
 
-	STATE_IDS.forEach((id, i) => $(id).value = parsed.numbers[i]);
+	STATE_IDS.forEach((id, i) => $(id).value = id === "h-min" || id === "h-max" ? ridgeWarp(parsed.numbers[i]) : parsed.numbers[i]);
 	$("sort").checked = parsed.numbers[STATE_IDS.length] !== 0;
 	$("backdrop").value = parsed.backdrop;
 	$("backdrop-color").value = "#" + parsed.custom.toLowerCase();

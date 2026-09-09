@@ -822,8 +822,9 @@ Not done:
   Three checks on the respaced page, none of which changed it:
   - The delivered hue shares follow the metric's arc length along the wall, the lightness and chroma of the fold
     included, not the hue table alone. In a saturated box (L 40-60, C 60-100%, 200 seeds at 7, 10 and 14 colors)
-    the rms deviation of the twelve bins from the ridge's metric arc share is 0.06, against 0.26 for a uniform
-    share and 0.37 for plain OKLab arc length; the one residual is blue, 1.11 delivered against 1.27 of arc.
+    the rms deviation of the twelve bins from the ridge's metric arc share is 0.04, against 0.26 for a uniform
+    share and 0.32 for plain OKLab arc length; blue included, 1.11 delivered against 1.14 of arc. (Ridge from the
+    cube's edges; the cusp-table ridge first used here put a residual at blue that was its own defect, see below.)
     `hue-marginals.js` judges against the table's angle share, and the CV of 0.21 it reports there is the wall's
     shape at the corners, not a draw or push effect. A hue reading taken against a uniform or a table share
     overstates the pull toward the corners by that difference; the diagnosis's finding, even against its own
@@ -837,12 +838,39 @@ Not done:
     1191 probe pairs, and 6 to 14 under on the 72 below 25. The hue warp is not where it loses, A against no warp
     moves it 0 to 8 units and never up; the radius is: a step in relative chroma is an absolute chroma of 0.06 at
     cyan and 0.13 at magenta, and the cylinder calls them equal.
-  - Along the ridge the OKLab arc per degree of hue runs from 0.27 near cyan to 4.69 at the blue vertex, mean 0.60.
-    The strips in `hue-density.html` are spaced by degree, so equal width on them is not equal distance, eight
-    times off at blue; the reference the tool needs is the ridge at equal arc length, plain OKLab or the metric's.
+  - Along the ridge the OKLab arc per degree of hue runs from 0.24 at hue 79 to 5.4 at the blue vertex,
+    mean 0.60. The strips in `hue-density.html` are spaced by degree, so equal width on them is not equal distance,
+    nine times off at blue; the reference the tool needs is the ridge at equal arc length, plain OKLab or the metric's.
+  Drawing the ridge from the cusp table is wrong across a vertex. The table samples the corner hue between two grid
+  hues, and a segment from the grid sample at 264.00 (L 49.3) to the corner at 264.05 (L 45.2) interpolates lightness;
+  chroma read at that lightness and hue lies inside the gamut (blue channel 0.79), and the last step onto the corner
+  is 4.7 OKLab units at once. On an equal-arc strip that step is 8 per cent of the width in one colour followed by an
+  edge: a jump the ridge does not have. Every ridge figure has to walk the cube's edges code by code instead; the
+  numbers above are from the edges. The generator is unaffected: it reads chroma from the exact boundary, and the
+  page's cusp table is smoothed without corner samples.
+  The blue vertex on the exact edges, zoomed to hue 250-280 with the ridge round's picks marked: an intensity ramp on
+  the cyan side, 4.4 L and 3 chroma within 0.15 degrees of hue (#0000ff to #003cff, the hue turning back at #0028ff),
+  and a hue turn on the magenta side, the same 5.2 OKLab units over 8.8 degrees with lightness up 1.9. A degree bar
+  collapses the ramp into one pixel; an equal-arc bar spends 9 per cent of the region on it and shows no jump, only a
+  darkening. The ridge round's picks from #0000ff sit at 0.9 to 1.5 OKLab on the cyan side (a shade step of about one
+  L unit) and 2.2 to 2.4 on the magenta side (a hue step of about 4 degrees); under the shipped metric 0.4 to 0.6
+  against 1.6 to 1.7. Over all 204 ridge sides the meaningful step is 1.73 OKLab in the fold (250-280) against 1.86
+  for the circle and 2.4 to 2.6 through violet and magenta; the shipped weights make the fold step 0.94 against 1.71.
+  Whether a lightness-only step and a hue step were judged by one criterion there is not known: the lightness and
+  chroma weights have never been measured on a step criterion, only on the recall verdicts. Decision: the weights
+  stay on the recall verdicts, and the metric's shorter fold is taken as the measured response; no lightness or
+  chroma step round is planned.
+  Path length along the ridge and straight-line distance between its points differ where the ridge bends, and the
+  fold is a bend: widths fitted by least squares to the straight-line distances of every pair within 12 deltaE,
+  order kept, give hue 262-267 4.6% of the strip against 5.9% at path length (metric 2.4% against 3.2%), and halve
+  the residual; the rest is what a bent curve cannot give a straight bar. A scratch page, not kept.
+  The hue bar and its two sliders now run in `RIDGE_WARP`: the metric's length along the cube's edges per degree of
+  OKLab hue, a running integral normalized to 360, built at load in 8 ms. The config, the labels and the state string
+  stay in degrees. Equal width on the bar is equal metric distance along the ridge; the blue vertex has 3.2% of the
+  bar where a degree bar gave it one pixel.
   Open: a second 80% round to separate a session offset from a chroma effect at the top end; family coverage as
   its own goal, by a start stratified over color names rather than a density over degrees; the strips of
-  `hue-density.html` respaced by arc length.
+  `hue-density.html` respaced by `RIDGE_WARP`.
 
 ## Files
 
