@@ -865,9 +865,13 @@ Not done:
   order kept, give hue 262-267 4.6% of the strip against 5.9% at path length (metric 2.4% against 3.2%), and halve
   the residual; the rest is what a bent curve cannot give a straight bar. A scratch page, not kept.
   The hue bar and its two sliders now run in `RIDGE_WARP`: the metric's length along the cube's edges per degree of
-  OKLab hue, a running integral normalized to 360, built at load in 8 ms. The config, the labels and the state string
+  OKLab hue, a running integral normalized to 360, built at load in 1 ms. The config, the labels and the state string
   stay in degrees. Equal width on the bar is equal metric distance along the ridge; the blue vertex has 3.2% of the
-  bar where a degree bar gave it one pixel.
+  bar where a degree bar gave it one pixel. Every hue axis on the page follows it, the range plane, the two palette
+  charts and the name chips, so the plane's hue edges stay under the bar's overlays and the slider handles: a chart
+  cannot be proportional to distance in more than one surface, and a chroma-weighted hue warp without the vertex
+  excursions differs from the ridge by under 6% of the width, invisibly on the charts. The palette chart's full build
+  at 576 by 118 is 175 ms, 38 ms with its gamut table cached; the per-column unwarp is nothing beside the bisections.
   Open: a second 80% round to separate a session offset from a chroma effect at the top end; family coverage as
   its own goal, by a start stratified over color names rather than a density over degrees; the strips of
   `hue-density.html` respaced by `RIDGE_WARP`.

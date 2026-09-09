@@ -1454,7 +1454,7 @@ function hcField(w, h, relative, cfg) {
 	const data = image.data;
 
 	for (let x = 0; x < w; ++x) {
-		const hue = x / w * 360;
+		const hue = ridgeUnwarp(x / w * 360);
 		const inHue = hueInRange(hue, cfg.hMin, cfg.hMax);
 		const lightness = absoluteL(relative, hue);
 		const cLow = absoluteC(cfg.cMin, hue), cHigh = absoluteC(cfg.cMax, hue);
@@ -1495,7 +1495,7 @@ function gamutTable(canvas) {
 		const reach = new Float32Array(w * h);
 		for (let y = 0; y < h; ++y)
 			for (let x = 0; x < w; ++x)
-				reach[y * w + x] = gamutChroma(100 * (1 - y / (h - 1)), x / w * 360);
+				reach[y * w + x] = gamutChroma(100 * (1 - y / (h - 1)), ridgeUnwarp(x / w * 360));
 		table = { w, h, reach };
 		gamutTables.set(canvas, table);
 	}
@@ -1510,7 +1510,7 @@ function hlField(canvas, cfg) {
 	const image = new ImageData(w, h);
 	const data = image.data;
 	for (let x = 0; x < w; ++x) {
-		const hue = x / w * 360;
+		const hue = ridgeUnwarp(x / w * 360);
 		const inHue = hueInRange(hue, cfg.hMin, cfg.hMax);
 		const cLow = absoluteC(cfg.cMin, hue), cHigh = absoluteC(cfg.cMax, hue);
 		for (let y = 0; y < h; ++y) {
@@ -1586,7 +1586,7 @@ function drawHCPlane(cfg, colors) {
 	// Not exactly single-peaked near black, but no range picks up more than 0.006 chroma there.
 	const relative = Math.min(cfg.lMax, Math.max(cfg.lMin, CUSP_ANCHOR));
 	hcDraw = { canvas, colors, image: hcField(canvas.width, canvas.height, relative, cfg),
-		place: (color, c) => ({ x: color.lch[2] / 360 * c.width, y: (1 - color.lch[1] / CHROMA_MAX) * (c.height - 1) }) };
+		place: (color, c) => ({ x: ridgeWarp(color.lch[2]) / 360 * c.width, y: (1 - color.lch[1] / CHROMA_MAX) * (c.height - 1) }) };
 	paintChart(hcDraw);
 }
 
@@ -1595,7 +1595,7 @@ function drawHLPlane(cfg, colors) {
 	if (canvas.width === 0)
 		return;
 	hlDraw = { canvas, colors, image: hlField(canvas, cfg),
-		place: (color, c) => ({ x: color.lch[2] / 360 * c.width, y: (1 - color.lch[0] / 100) * (c.height - 1) }) };
+		place: (color, c) => ({ x: ridgeWarp(color.lch[2]) / 360 * c.width, y: (1 - color.lch[0] / 100) * (c.height - 1) }) };
 	paintChart(hlDraw);
 }
 
@@ -1753,7 +1753,7 @@ function paintTerritory(canvas, cell) {
 	const data = image.data;
 
 	for (let x = 0; x < w; ++x) {
-		const hue = x / w * 360;
+		const hue = ridgeUnwarp(x / w * 360);
 		for (let y = 0; y < h; ++y) {
 			const rgb = oklabToRgb(...labOfLch(lightness, CHROMA_MAX * (1 - y / (h - 1)), hue));
 			if (!inGamut(rgb))
