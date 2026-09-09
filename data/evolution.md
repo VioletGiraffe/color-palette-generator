@@ -872,9 +872,13 @@ Not done:
   cannot be proportional to distance in more than one surface, and a chroma-weighted hue warp without the vertex
   excursions differs from the ridge by under 6% of the width, invisibly on the charts. The palette chart's full build
   at 576 by 118 is 175 ms, 38 ms with its gamut table cached; the per-column unwarp is nothing beside the bisections.
+  The gamut table is now one, at the palette chart's size, and the range plane reads it by bilinear interpolation:
+  one build per size instead of two, the plane's field 7 ms. Against its own bisection the plane's reach is off by
+  0.05 chroma on average and 4.7 at the blue vertex column, a fold narrower than the column.
   Open: a second 80% round to separate a session offset from a chroma effect at the top end; family coverage as
-  its own goal, by a start stratified over color names rather than a density over degrees; the strips of
-  `hue-density.html` respaced by `RIDGE_WARP`.
+  its own goal, by a start stratified over color names rather than a density over degrees. Not planned: respacing
+  the strips of `hue-density.html`, a tool whose table is retired; if it is ever used again, its strips should be
+  built from `RIDGE_WARP` along the cube's edges.
 
 ## Files
 

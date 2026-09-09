@@ -1486,27 +1486,37 @@ function hcField(w, h, relative, cfg) {
 	return image;
 }
 
-// The gamut's chroma per pixel of a canvas: a bisection each, so kept per canvas and recomputed only when its size changes.
-const gamutTables = new WeakMap();
-function gamutTable(canvas) {
-	const w = canvas.width, h = canvas.height;
-	let table = gamutTables.get(canvas);
-	if (!table || table.w !== w || table.h !== h) {
+// The gamut's chroma per pixel of the palette chart: a bisection each, so built once per chart size.
+// The range plane, a third of the width, reads the same table by bilinear interpolation.
+let gamutReachTable = null;
+function gamutTable(w, h) {
+	if (!gamutReachTable || gamutReachTable.w !== w || gamutReachTable.h !== h) {
 		const reach = new Float32Array(w * h);
 		for (let y = 0; y < h; ++y)
 			for (let x = 0; x < w; ++x)
 				reach[y * w + x] = gamutChroma(100 * (1 - y / (h - 1)), ridgeUnwarp(x / w * 360));
-		table = { w, h, reach };
-		gamutTables.set(canvas, table);
+		gamutReachTable = { w, h, reach };
 	}
-	return table.reach;
+	return gamutReachTable;
+}
+
+// The reach a canvas of another size reads at its pixel (x, y): the table's neighbours interpolated,
+// pixel centres aligned across, rows by lightness.
+function reachAt(table, x, y, w, h) {
+	const u = Math.min(table.w - 1, Math.max(0, (x + 0.5) / w * table.w - 0.5)), v = y / (h - 1) * (table.h - 1);
+	const x0 = Math.floor(u), y0 = Math.floor(v), x1 = Math.min(table.w - 1, x0 + 1), y1 = Math.min(table.h - 1, y0 + 1);
+	const fx = u - x0, fy = v - y0, r = table.reach, tw = table.w;
+	return (r[y0 * tw + x0] * (1 - fx) + r[y0 * tw + x1] * fx) * (1 - fy) + (r[y1 * tw + x0] * (1 - fx) + r[y1 * tw + x1] * fx) * fy;
 }
 
 // Hue across, lightness up, each pixel at the box's chroma cap for that hue and lightness: the
 // most vivid color the ranges allow there, the outside of the selected region. Hatched outside
 // the hue and lightness ranges and where the gamut stays below the chroma minimum.
 function hlField(canvas, cfg) {
-	const w = canvas.width, h = canvas.height, gamutReach = gamutTable(canvas);
+	const w = canvas.width, h = canvas.height;
+	// The table is the palette chart's; before its first layout the caller's own size serves.
+	const main = $("hl-canvas"), table = gamutTable(main.clientWidth || w, main.clientHeight || h);
+	const exact = table.w === w && table.h === h;
 	const image = new ImageData(w, h);
 	const data = image.data;
 	for (let x = 0; x < w; ++x) {
@@ -1514,7 +1524,7 @@ function hlField(canvas, cfg) {
 		const inHue = hueInRange(hue, cfg.hMin, cfg.hMax);
 		const cLow = absoluteC(cfg.cMin, hue), cHigh = absoluteC(cfg.cMax, hue);
 		for (let y = 0; y < h; ++y) {
-			const L = 100 * (1 - y / (h - 1)), reach = gamutReach[y * w + x];
+			const L = 100 * (1 - y / (h - 1)), reach = exact ? table.reach[y * w + x] : reachAt(table, x, y, w, h);
 			if (reach === 0)
 				continue;
 			const rgb = oklabToRgb(...labOfLch(L, Math.min(reach, cHigh), hue)).map(v => Math.min(1, Math.max(0, v)));
