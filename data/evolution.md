@@ -919,6 +919,19 @@ condition. The pairwise page now deals `--conditions preference`: shipped agains
 seeds at 7 and 10 colors, the round that tests whether the preferred draw makes preferred palettes. Not yet drawn
 on the charts: the region under the floor is not hatched.
 
+## Avoided colors
+
+Excluding names is a family-level exclusion and the preference density a fitted population-level one; the
+judge's third wish is a point-level one: this color and its kin, less of them. index.html takes a list of
+avoided colors beside the fixed ones, from a textarea or a right-click on a palette color, carried in the state
+string. An avoided color is not a gate on the box: a zone wide enough to mean kin covers much of a box, and a
+start that lands inside a gate cannot push its way out, which is what a first gated version did at one color in
+eight. It is a repulsive point instead, a member the palette does not show: the start and the pushes read its
+distance divided by AVOID_REACH, 1.5, so colors settle that many limits away, and the floor and the status
+exclude it. Over 20 default-box seeds with two avoided colors each, no color came within 16.9 of one against a
+limit of 12.3 and a target of 18.5, the palette floor unchanged, generation 157 ms against 45: qualifying draws
+are rarer and restarts more. The reach is unmeasured; the same-y ratio, if the cell round ever runs, would set it.
+
 ## Cell capacity rounds
 
 The judge's account after the member round: some colors are distinguishable and still same-y, and fewer of them

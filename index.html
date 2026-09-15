@@ -225,10 +225,10 @@
 		height: 3px;
 		background: var(--danger);
 	}
-	#fixed-colors { width: 100%; height: 56px; resize: vertical; font: 11px/1.5 ui-monospace, Consolas, monospace; }
-	#fixed-preview { display: flex; height: 18px; margin-top: 6px; border-radius: 4px; overflow: hidden; }
-	#fixed-preview:empty { display: none; }
-	#fixed-preview span { flex: 1; }
+	#fixed-colors, #avoid-colors { width: 100%; height: 56px; resize: vertical; font: 11px/1.5 ui-monospace, Consolas, monospace; }
+	#fixed-preview, #avoid-preview { display: flex; height: 18px; margin-top: 6px; border-radius: 4px; overflow: hidden; }
+	#fixed-preview:empty, #avoid-preview:empty { display: none; }
+	#fixed-preview span, #avoid-preview span { flex: 1; }
 
 	.bar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
 
@@ -328,6 +328,13 @@
 		<textarea id="fixed-colors" spellcheck="false" placeholder="#1a73e8&#10;#e8710a"></textarea>
 		<div id="fixed-preview"></div>
 		<div class="hint">Six-digit hex, any separator. New colors are kept distinct from these. They do not count towards Colors and are not exported.</div>
+	</div>
+
+	<div class="group">
+		<h2>Avoid colors</h2>
+		<textarea id="avoid-colors" spellcheck="false" placeholder="#8b6b4a&#10;#7f7f7f"></textarea>
+		<div id="avoid-preview"></div>
+		<div class="hint">Six-digit hex, any separator. Generated colors keep away from these, half again the distance they keep from each other. Right-click a color in the palette to add it.</div>
 	</div>
 
 </div>
@@ -901,7 +908,7 @@ function colorFromHex(hex) {
 
 // Every six-digit hex token in the text, whatever separates them, without repeats. Tokens are split
 // out and matched whole, so an eight-digit RGBA value is dropped rather than read as its first six.
-function parseFixedColors(text) {
+function parseHexColors(text) {
 	const tokens = text.split(/[^#0-9a-f]+/i).filter(token => /^#?[0-9a-f]{6}$/i.test(token));
 	return [...new Set(tokens.map(token => "#" + token.replace("#", "").toLowerCase()))].map(colorFromHex);
 }
@@ -1130,6 +1137,12 @@ function preferenceOf(C, h) {
 const PREFERENCE_FLOOR = 0.5;
 const wantedLch = (C, h, cfg) => !cfg.preference || preferenceOf(C, h) >= PREFERENCE_FLOOR;
 
+// An avoided color repels like a palette member it is not: the start and the pushes read its distance divided by
+// AVOID_REACH, so colors settle that many limits away from it. More than one: a color one limit away is merely
+// distinguishable, and an avoided color is unwanted with its kin. Not a gate on the box: a zone that wide covers
+// much of a box, and a start that lands inside a gate cannot push its way out.
+const AVOID_REACH = 1.5;
+
 // A box draw kept with its hue's chance and, with preference on, the color's own; the last draw stands after WEIGHTED_TRIES.
 const WEIGHTED_TRIES = 400;
 function sampleWeighted(rnd, cfg) {
@@ -1150,8 +1163,9 @@ const RESTARTS = 4, MAX_RESTARTS = 16, RESTART_TARGET = 0.9, RESTART_SHORTFALL =
 const positionsOf = colors => colors.map(color => color.lab.map(v => v * 100));
 
 // The fixed colors, then for each color the first hue-weighted draw at least the limit distance from
-// every color chosen so far. When none of the draws qualifies, the farthest of them: the box is too
-// full for the limit, and the draws are then spread as well as draws can be.
+// every color chosen so far and AVOID_REACH limits from every avoided color. When none of the draws
+// qualifies, the farthest of them: the box is too full for the limit, and the draws are then spread as
+// well as draws can be.
 function dartStart(rnd, cfg) {
 	const colors = cfg.fixed.slice();
 	const pos = positionsOf(colors);
@@ -1164,6 +1178,8 @@ function dartStart(rnd, cfg) {
 			let nearest = Infinity;
 			for (let k = 0; k < pos.length; ++k)
 				nearest = Math.min(nearest, apart2(at, pos[k]));
+			for (const p of cfg.avoidAt)
+				nearest = Math.min(nearest, apart2(at, p) / (AVOID_REACH * AVOID_REACH));
 			if (nearest > clearest) {
 				pick = draw;
 				clearest = nearest;
@@ -1233,13 +1249,27 @@ function pushApart(rnd, colors, cfg) {
 	const pos = positionsOf(colors);
 	const rejected = pos.map(() => 0);
 	const heading = pos.map(() => null);
-	// The chance color `i` standing at `at` is recalled as another color, summed over the others.
+	// The chance color `i` standing at `at` is recalled as another color, summed over the others and
+	// the avoided colors, an avoided color at its scaled distance.
 	const errorAt = (i, at) => {
 		let error = 0;
 		for (let j = 0; j < pos.length; ++j)
 			if (j !== i)
 				error += swapChance(Math.sqrt(apart2(at, pos[j])), cfg.sigma);
+		for (const p of cfg.avoidAt)
+			error += swapChance(Math.sqrt(apart2(at, p)) / AVOID_REACH, cfg.sigma);
 		return error;
+	};
+	// The push on color `i` away from a point, by the pair's distance in noise widths, added to its shift.
+	const pushAway = (shift, i, other, reach) => {
+		// Coincident colors have no line; they part along a.
+		const between = pos[i].map((v, k) => v - other[k]);
+		const length = Math.hypot(...between);
+		const away = length > 1e-6 ? between.map(v => v / length) : [0, 1, 0];
+		const x = Math.sqrt(apart2(pos[i], other)) / reach / (2 * cfg.sigma);
+		const weight = Math.exp(-x * x / 2);
+		for (let k = 0; k < 3; ++k)
+			shift[i][k] += away[k] * weight;
 	};
 	let best = colors.slice(), bestScore = identification(colors, cfg, pos);
 	for (let n = 0, proposed = true; n < MAX_PUSHES && proposed; ++n) {
@@ -1248,18 +1278,11 @@ function pushApart(rnd, colors, cfg) {
 		for (let i = 0; i < pos.length; ++i) {
 			if (colors[i].fixed || errorAt(i, pos[i]) <= ERROR_LIMIT)
 				continue;
-			for (let j = 0; j < pos.length; ++j) {
-				if (j === i)
-					continue;
-				// Coincident colors have no line; they part along a.
-				const between = pos[i].map((v, k) => v - pos[j][k]);
-				const length = Math.hypot(...between);
-				const away = length > 1e-6 ? between.map(v => v / length) : [0, 1, 0];
-				const x = Math.sqrt(apart2(pos[i], pos[j])) / (2 * cfg.sigma);
-				const weight = Math.exp(-x * x / 2);
-				for (let k = 0; k < 3; ++k)
-					shift[i][k] += away[k] * weight;
-			}
+			for (let j = 0; j < pos.length; ++j)
+				if (j !== i)
+					pushAway(shift, i, pos[j], 1);
+			for (const p of cfg.avoidAt)
+				pushAway(shift, i, p, AVOID_REACH);
 		}
 
 		for (let i = 0; i < pos.length; ++i) {
@@ -1344,6 +1367,7 @@ function generate(cfg) {
 	const sigma = Math.max(cfg.scale, 1);
 	const settings = { ...cfg, sigma, limit: limitDistance(sigma), included: cfg.included ?? ALL_INCLUDED, preference: cfg.preference ?? true,
 		pushMin: cfg.pushMin ?? PUSH_ANGLE_MIN, pushMax: cfg.pushMax ?? PUSH_ANGLE_MAX };
+	settings.avoidAt = positionsOf(cfg.avoid ?? []);
 	const cells = boxCells(settings);
 	if (!cells.centres.length)
 		return null;
@@ -1389,7 +1413,8 @@ function readConfig() {
 		hMin: Math.round(ridgeUnwarp(+$("h-min").value)), hMax: Math.round(ridgeUnwarp(+$("h-max").value)),
 		cMin, cMax, lMin, lMax,
 		seed: +$("seed").value | 0,
-		fixed: parseFixedColors($("fixed-colors").value),
+		fixed: parseHexColors($("fixed-colors").value),
+		avoid: parseHexColors($("avoid-colors").value),
 		included: nameIncluded
 	};
 }
@@ -1678,6 +1703,7 @@ function refreshLabels() {
 	$("c-value").textContent = cfg.cMin + "–" + cfg.cMax + "%";
 	$("l-value").textContent = cfg.lMin + "–" + cfg.lMax;
 	$("fixed-preview").innerHTML = cfg.fixed.map(color => '<span style="background:' + color.hex + '"></span>').join("");
+	$("avoid-preview").innerHTML = cfg.avoid.map(color => '<span style="background:' + color.hex + '"></span>').join("");
 }
 
 const displayName = cell => cellName(cell).replace(/^./, first => first.toUpperCase());
@@ -1931,7 +1957,7 @@ function stateString(cfg) {
 	return [STATE_VERSION, cfg.count, cfg.scale, cfg.hMin, cfg.hMax, cfg.cMin, cfg.cMax,
 		cfg.lMin, cfg.lMax, cfg.seed >>> 0, $("sort").checked ? 1 : 0,
 		stripHash($("backdrop").value), stripHash($("backdrop-color").value), $("format").value,
-		cfg.fixed.map(color => stripHash(color.hex)).join(","), stateNameField()
+		cfg.fixed.map(color => stripHash(color.hex)).join(","), stateNameField(), cfg.avoid.map(color => stripHash(color.hex)).join(",")
 	].join(STATE_SEPARATOR);
 }
 
@@ -1946,26 +1972,27 @@ function findOption(id, stored) {
 function parseState(text) {
 	const [tag, ...fields] = text.trim().split(STATE_SEPARATOR);
 	// The sort flag, backdrop, custom color and export format always follow the nine control values.
-	// Fixed colors, then the included names, were each added later: a string written before one of
-	// them ends where it was added, and the rest take their defaults.
+	// Fixed colors, the included names, then the avoided colors were each added later: a string written
+	// before one of them ends where it was added, and the rest take their defaults.
 	const required = STATE_IDS.length + 4;
-	if (tag !== STATE_VERSION || fields.length < required || fields.length > required + 2)
+	if (tag !== STATE_VERSION || fields.length < required || fields.length > required + 3)
 		return null;
 
 	const numbers = fields.slice(0, STATE_IDS.length + 1).map(f => f.trim() === "" ? NaN : Number(f));
-	const [backdrop, custom, format, fixed = "", included = ""] = fields.slice(STATE_IDS.length + 1);
+	const [backdrop, custom, format, fixed = "", included = "", avoid = ""] = fields.slice(STATE_IDS.length + 1);
 	const backdropOption = findOption("backdrop", backdrop);
 	const formatOption = findOption("format", format);
+	const hexList = /^[0-9a-f]{6}(,[0-9a-f]{6})*$/i;
 
 	if (numbers.some(n => !Number.isFinite(n)) || !backdropOption || !formatOption || !/^[0-9a-f]{6}$/i.test(custom)
-		|| !(fixed === "" || /^[0-9a-f]{6}(,[0-9a-f]{6})*$/i.test(fixed))
+		|| !(fixed === "" || hexList.test(fixed)) || !(avoid === "" || hexList.test(avoid))
 		|| !(included === "" || /^[0-9a-z]{1,8}$/.test(included)))
 		return null;
 
-	return { numbers, backdrop: backdropOption.value, custom, format: formatOption.value, fixed, included };
+	return { numbers, backdrop: backdropOption.value, custom, format: formatOption.value, fixed, included, avoid };
 }
 
-const fixedFromField = field => field.split(",").filter(Boolean).map(hex => "#" + hex.toLowerCase());
+const hexesFromField = field => field.split(",").filter(Boolean).map(hex => "#" + hex.toLowerCase());
 
 // The generator's view of a parsed state. Ranges are ordered the same way readConfig orders them,
 // so a palette built from here matches the one the controls produce once the string is applied.
@@ -1974,7 +2001,7 @@ function configFromState(parsed) {
 	const [cMin, cMax] = ordered(c1, c2);
 	const [lMin, lMax] = ordered(l1, l2);
 	return { count, scale, hMin, hMax, cMin, cMax, lMin, lMax, seed: seed | 0,
-		fixed: fixedFromField(parsed.fixed).map(colorFromHex), ...nameTableFrom(parsed) };
+		fixed: hexesFromField(parsed.fixed).map(colorFromHex), avoid: hexesFromField(parsed.avoid).map(colorFromHex), ...nameTableFrom(parsed) };
 }
 
 // Out-of-range numbers are left to the inputs, which clamp to their own min and max.
@@ -1989,7 +2016,8 @@ function applyStateString(text) {
 	$("backdrop-color").value = "#" + parsed.custom.toLowerCase();
 	$("format").value = parsed.format;
 	// One per line: the string carries the parsed colors, not the text they were typed in.
-	$("fixed-colors").value = fixedFromField(parsed.fixed).join("\n");
+	$("fixed-colors").value = hexesFromField(parsed.fixed).join("\n");
+	$("avoid-colors").value = hexesFromField(parsed.avoid).join("\n");
 
 	// Assigning a select's value fires no change event, so the backdrop is applied by hand.
 	applyBackdrop(currentBackdrop());
@@ -2103,7 +2131,7 @@ function schedulePass(full) {
 function scheduleRun() { schedulePass(true); }
 function scheduleRedraw() { schedulePass(false); }
 
-for (const id of [...STATE_IDS, "fixed-colors", "push-min", "push-max"])
+for (const id of [...STATE_IDS, "fixed-colors", "avoid-colors", "push-min", "push-max"])
 	$(id).addEventListener("input", () => { refreshLabels(); scheduleRun(); });
 
 // Sorting is settled in render, so the palette itself is unchanged.
@@ -2167,6 +2195,17 @@ $("swatches").addEventListener("click", e => {
 	const swatch = e.target.closest(".swatch");
 	if (swatch) copy(swatch.dataset.hex.toUpperCase(), swatch.querySelector(".hex"), "copied");
 });
+// A right-click on a color adds it to the avoided list; the list's input event regenerates.
+for (const id of ["swatches", "tiles"])
+	$(id).addEventListener("contextmenu", e => {
+		const el = e.target.closest("[data-index]");
+		if (!el)
+			return;
+		e.preventDefault();
+		const field = $("avoid-colors"), hex = palette[+el.dataset.index].hex;
+		field.value = (field.value.trim() ? field.value.trimEnd() + "\n" : "") + hex;
+		field.dispatchEvent(new Event("input"));
+	});
 
 // ---------- cross-view highlight ----------
 
