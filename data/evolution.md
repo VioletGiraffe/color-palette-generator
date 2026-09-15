@@ -1021,6 +1021,80 @@ at the warm hues.
 The desktop app's pane opens a page as a data: URL, where storage is disabled: a round there survives only by
 Download. A file:// tab in a browser keeps the log between visits.
 
+## Where the objective goes wrong, and the next start
+
+State of the argument on 2026-09-16, after the avoided colors shipped and the judge tested the page.
+
+The judge's account of the page: light blues and magentas over-abundant, reds under-represented, and the members
+of a family distinguishable from each other, a light, a dark and a deep blue can all coexist; the complaint is
+that a family's second and third members are over-abundant and appear before every family has a first. Excluding
+brown and grey by name did not help much: the freed seats went to blues and magentas. A quota per family was
+considered and rejected: nothing should be forbidden, the order of arrival is what is wrong.
+
+The measured mechanism. The pushes do not spread for spread's sake: a color is pushed only while its confusion
+chance is above the limit, then it stops. The start does the filling: draws are uniform over the box's volume,
+hue-corrected by the density, and a draw is kept if it clears the floor from everything placed, so a region with
+more perceptual room accepts more. That is a Poisson-disc sample in the metric's measure, uniform in how many
+distinguishable colors fit, not in the box's coordinates. Over 40 seeds in the default box, by terciles of the
+draws' own relative chroma and lightness (uniform reads 33/33/33):
+
+| stage | count | chroma terciles | lightness terciles | floor |
+|---|---|---|---|---|
+| plain draws, no rejection, no pushes | 8 | 32/30/38 | 31/27/43 | 0.86 |
+| start only, rejection, no pushes | 8 | 18/28/54 | 24/29/48 | 0.97 |
+| start and pushes, shipped | 8 | 18/32/50 | 26/31/43 | 0.98 |
+| start only | 16 | 20/22/58 | 25/18/57 | 0.92 |
+| start and pushes | 16 | 16/16/68 | 25/7/68 | 0.97 |
+
+The start's rejection is the bias at every count; the pushes add to it only when crowded. Which measure "uniform
+over the available space" means is open, the metric being uneven in the space; the decision taken is that the
+start covers the box in its own coordinates and the metric decides only whether a seat can be filled. Draws per
+family, uniform over the box: default box off white 1 in 426, lime green 1 in 196, purple 10%, blue 9%; tight box
+beige 1 in 20000, maroon 1 in 1176; pastel box grey 1 in 1538, light blue 30%. So a start that rejects draws
+until one lands in a target family would spend its cap on every rare family every round: a pool per attempt
+instead, a few thousand weighted draws bucketed by stratum.
+
+The wall rule, clamped pushes rejected so colors stay off the box's walls. Measured over 40 seeds, colors within
+1% of a wall: default box at 8, none on the chroma wall and 3% on a lightness wall with the rule or without, the
+3% being what uniform draws put in a band that wide; at 16, 12% on the chroma wall with the rule against 26%
+without, 10% against 14% on a lightness wall, floor 0.968 against 0.971. The rule does what it says only in a
+crowded box and its one failure is a box that is all wall: with chroma min and max both 100 the box is the cusp
+ring, every push is clamped, the attempts cannot move and stay at the start's floor, 0.64 at count 6 and 0.00 at
+14, while the hull estimate, which keeps clamped pushes, reaches 0.96, so the restart loop chases a target the
+attempts cannot reach. Every budget then runs out in full: 17 attempts, 1500 draws per color, 400 weighted tries
+per draw, 8 cell jitters per try; count 6 takes 13 s, count 14 a minute, the tab dead meanwhile. Bisected: the
+same on the commit before the preference density; not a regression. Changing the restart goal alone did not help,
+the hull estimate being the wrong ceiling there. The decision: keep the rule's effect, fix its failure, with the
+push in two phases, interior pushes first, then clamped pushes accepted for the colors still under the floor,
+so a roomy box never changes, a crowded one clamps less than with the rule dropped, and the ring works.
+
+The plan agreed, not yet built:
+- A pool start in rounds over strata: strata are name cell by cusp-relative lightness third by chroma third of
+  the gamut's reach; the unnamed slot is no stratum. Each attempt draws a pool of a few thousand points through
+  the existing weighted draw, so the hue density, the preference weight and the avoided colors apply, and
+  buckets them by stratum. Round one visits every non-empty stratum in a fresh random order and seats the first
+  candidate clearing the floor from everything placed, fixed colors counting as seats taken; round two seats a
+  second per stratum, and so on until the count is met or a round seats nobody; the existing draw loop with its
+  farthest-draw fallback fills what remains. Every seed's palette changes.
+- Restarts stop on a plateau: after the minimum four, only while the best floor improved within the last three.
+- The two-phase push above. A zero-width range then needs no special case.
+- Cost measured after the build: the pool size adjusted if rare reachable strata come up empty too often.
+Open after it: whether uniform coverage in the box's coordinates under-uses the vivid colors the judge likes,
+which would be a stratum weighting, not a metric change; the reach 1.5 of avoided colors; the preference round
+dealt in calibrate-palettes.html, shipped against plain in the default box, unrun; the cell capacity and
+direction step rounds, built and shelved.
+Alternatives noted and not taken, kept in case the plan disappoints:
+- Family as the naming overlap with a longer fade: the generator already places colors by name overlap between
+  cells fading past about 8 weighted units; lengthening the fade makes same-named colors repel while
+  distinguishable, graded by the survey's overlap, one constant and no table of ours. Not taken because the
+  rounds address order of arrival, which the judge named as the complaint, and repulsion does not.
+- Family as a hue sector: ignores lightness, navy and light blue one family, wrong in the direction observed.
+- A cap per family scaled by the name's size in the survey, purple two, salmon one: for palettes past the
+  count where every stratum has a seat, if second purples still crowd.
+- A wall margin as an explicit inset of the box for the pushes, clamped pushes accepted within it: keeps colors
+  off the outermost shell even where the floor cannot be met inside, which prefers a confusable palette to a
+  wall-sitting one; the Distinctness slider says the floor comes first, so the two-phase push instead.
+
 ## Files
 
 - `index.html`: step 18 with the calibrated constants, the hue-lightness and hue-chroma charts, the plane
