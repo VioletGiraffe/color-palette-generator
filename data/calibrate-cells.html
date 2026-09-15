@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Step calibration</title>
+<title>Cell capacity calibration</title>
 <style>
 	:root {
 		color-scheme: light dark;
@@ -32,54 +32,36 @@
 	button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 	.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 	#arena { border-radius: 6px; padding: 24px 12px; overflow-x: auto; user-select: none; }
-	#run { display: flex; align-items: center; justify-content: center; gap: 0; width: max-content; margin: 0 auto; }
-	.side { display: flex; gap: 2px; }
-	.code { cursor: pointer; flex: none; }
-	.code.picked { outline: 2px solid #fff; outline-offset: 1px; box-shadow: 0 0 0 4px #000; position: relative; z-index: 1; }
-	#anchor { flex: none; margin: 0 10px; }
-	#triple { display: flex; justify-content: center; margin-top: 24px; min-height: 96px; }
-	#triple div { width: 96px; height: 96px; }
+	#row { display: flex; gap: 4px; width: max-content; margin: 0 auto; }
+	#row div { flex: none; }
 	#progress { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
-	#offsets { text-align: center; font-variant-numeric: tabular-nums; color: var(--ink-dim); margin-top: 6px; }
+	#counts { text-align: center; font-variant-numeric: tabular-nums; color: var(--ink-dim); margin-top: 6px; }
 	[hidden] { display: none !important; }
 </style>
 </head>
 <body>
-<h1>Step calibration</h1>
-<p class="hint">A perceptual scale from local steps. Each trial shows an anchor color at one OKLab lightness and chroma
-on a hue grid, with a run of swatches each side stepping one coordinate: hue, with the hues below running left and
-the hues above running right; lightness, darker left and lighter right; or chroma, duller left and more vivid right.
-The rest of the run shares the anchor's coordinates. Pick on each side the first swatch that reads as a meaningfully
-different color from the anchor, past the point where a difference is merely detectable: a step is one minimal
-meaningful difference each side, and how that varies with hue and direction is what a round measures. The two picks
-then sit against the anchor for a last look. Anchors and directions are dealt in random order, so a step is never
-judged in the light of the one before. The log is kept in this browser between visits and can be downloaded and
-loaded back, so a round can be continued. Run the log through <code>node data/fit_hue_steps.js log.json</code> for
-the hue density and <code>node data/fit_step_weights.js log.json</code> for the lightness and chroma weights per hue.</p>
-
+<h1>Cell capacity calibration</h1>
+<p class="hint">How many colors a slice of the space holds. The space is cut into cells: hue sectors even in the page's hue
+warp, crossed with three lightness thirds in each hue's own gamut, dark, cusp and light, and three chroma thirds of
+the gamut's reach at the color's lightness and hue. Each trial shows one cell and one direction as a row of colors
+across the cell along that coordinate, evenly spaced, the other two coordinates at the cell's middle. Raise and lower
+the count with the keys and mark two stops: the largest count at which every neighbour is still a different color,
+and the largest count before any two look same-y, alike enough that you would not want both. The second is never
+above the first. Cells and directions are dealt in random order. The log is kept in this browser between visits and
+can be downloaded and loaded back, so a round can be continued. Run it through <code>node data/fit_cells.js log.json</code>.</p>
 <div id="layout">
 <div>
 	<div class="panel" id="setup">
 		<h2>Setup</h2>
-		<label class="row">Anchor every, degrees <input type="number" id="spacing" value="7.5" min="1" max="90" step="0.5"></label>
-		<div class="hint">7.5 puts 48 anchors on the circle.</div>
-		<label class="row">Rounds per anchor <input type="number" id="rounds" value="1" min="1" max="10"></label>
+		<div class="hint" id="deal-status"></div>
+		<label class="row">Rounds per cell <input type="number" id="rounds" value="1" min="1" max="10"></label>
 		<div class="checks">Directions
 			<label><input type="checkbox" id="dir-hue" checked> hue</label>
 			<label><input type="checkbox" id="dir-lightness" checked> lightness</label>
 			<label><input type="checkbox" id="dir-chroma" checked> chroma</label>
 		</div>
-		<label class="row">Lightness, 0 to 100, cusp 50 <input type="number" id="rel-l" value="50" min="5" max="95"></label>
-		<label class="row">Chroma, % of gamut <input type="number" id="rel-c" value="70" min="5" max="100"></label>
-		<div class="hint">Lightness in the hue's own gamut, chroma as a share of the gamut's reach at that lightness. A side
-		of the run ends where its hues leave the gamut at that chroma; the header says where.</div>
-		<label class="row">Swatches per side <input type="number" id="reach" value="32" min="8" max="120"></label>
-		<label class="row">Degrees per swatch, hue <input type="number" id="step-hue" value="1" min="0.1" max="10" step="0.25"></label>
-		<label class="row">L units per swatch <input type="number" id="step-lightness" value="0.5" min="0.1" max="10" step="0.25"></label>
-		<label class="row">C units per swatch <input type="number" id="step-chroma" value="0.5" min="0.1" max="10" step="0.25"></label>
-		<label class="row">Swatch width, px <input type="number" id="swatch-px" value="18" min="6" max="48"></label>
-		<label class="row">Swatch height, px <input type="number" id="swatch-h" value="48" min="16" max="120"></label>
-		<label class="row">Anchor, px <input type="number" id="anchor-px" value="64" min="24" max="160"></label>
+		<label class="row">Swatch width, px <input type="number" id="swatch-px" value="24" min="6" max="64"></label>
+		<label class="row">Swatch height, px <input type="number" id="swatch-h" value="64" min="16" max="160"></label>
 		<label class="row">Ground <input type="text" id="ground" value="#808080"></label>
 		<div class="actions"><button class="primary" id="start">Start</button></div>
 		<div class="hint" id="schedule-status"></div>
@@ -100,24 +82,19 @@ the hue density and <code>node data/fit_step_weights.js log.json</code> for the 
 
 <div>
 	<div class="panel" id="session" hidden>
-		<h2>Anchor <span id="progress"></span></h2>
+		<h2>Cell <span id="progress"></span></h2>
 		<div class="hint" id="where"></div>
-		<div id="arena">
-			<div id="run"><div class="side" id="left"></div><div id="anchor"></div><div class="side" id="right"></div></div>
-		</div>
-		<div id="offsets"></div>
-		<div id="triple"></div>
-		<div class="hint">Each anchor opens with both picks five swatches out. Click a swatch on each side, or use the keys:
-		Up and Down move the right pick a swatch out and in, Left and Right the left pick; after a clear, the first
-		press on a side takes the swatch next to the anchor. Keys 1 to 4 re-deal this anchor at the direction's four step
-		sizes, 0.5, 1, 2 or 4 degrees of hue, 0.25, 0.5, 1 or 2 units of lightness or chroma, as does any change to the
-		setup. On a side the gamut cut short, moving the pick out past the last swatch
-		marks the side as clipped: the step there is beyond the run, and the log holds where the gamut ended instead of a
-		pick. Comma and period turn the anchor a degree down or up its hue, off the grid, to gain range on a short side;
-		the header shows the grid hue it stands for. Enter accepts, with one side clipped or with both; Escape clears the
-		picks; S skips the anchor, the same as accepting with both sides clipped. An anchor without a step is due again
-		next round.</div>
+		<div id="arena"><div id="row"></div></div>
+		<div id="counts"></div>
+		<div class="hint">Keys: Right and Up add a color, Left and Down take one away, with Shift by five. D marks the current
+		count as the largest at which all neighbours are distinct, S as the largest at which none are same-y; marking
+		again moves a mark. A mark at one color says the whole cell holds one. Enter accepts once both are marked;
+		Escape clears the marks; K skips the cell, which is due again next round.</div>
 		<div class="actions">
+			<button id="fewer">Fewer</button>
+			<button id="more">More</button>
+			<button id="mark-distinct">All distinct here</button>
+			<button id="mark-varied">None same-y here</button>
 			<button class="primary" id="accept" disabled>Accept</button>
 			<button id="redo" disabled>Redo</button>
 			<button id="skip">Skip</button>
@@ -336,14 +313,17 @@ function absoluteL(relative, h) {
 		: cusp + (100 - cusp) * (relative - CUSP_ANCHOR) / (100 - CUSP_ANCHOR);
 }
 
+// ---------- deal ----------
+const CELL_DEAL = {"version":1,"sectors":[[0,18.01],[18.01,35.65],[35.65,52.4],[52.4,70.93],[70.93,88.84],[88.84,105.44],[105.44,120.68],[120.68,135.32],[135.32,149.39],[149.39,164.49],[164.49,180.15],[180.15,198.98],[198.98,220.08],[220.08,246.13],[246.13,269.72],[269.72,290.03],[290.03,308.12],[308.12,326.05],[326.05,343.67],[343.67,360]]};
+// ---------- end deal ----------
+// Written by make_cell_deal.js between the markers above; the page cannot fetch a file when opened from disk.
+const DEAL = CELL_DEAL;
+
 // ---------- log ----------
 
-// Version 1 logs came from a walk along the sRGB cube's saturated edges; fit_hue_steps.js still reads them.
-const LOG_VERSION = 2;
-const STORAGE_KEY = "hue-steps-log-2";
-// Unlike the other calibration pages this log is stored: a round here is fifty to ninety anchors and
-// may be continued on a later visit. The status line says what was restored, and Clear empties it.
-// A record without a direction is a hue step: the field came with the other two directions.
+const LOG_VERSION = 1;
+const STORAGE_KEY = "cells-log-1";
+// Stored between visits: a round is hundreds of cells and may be continued on a later visit.
 const log = { version: LOG_VERSION, records: [] };
 try {
 	const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
@@ -351,45 +331,42 @@ try {
 		log.records = stored.records;
 } catch {}
 
-// Each direction: the coordinate a run steps, its unit in the log and the header, and the four key step sizes.
-const DIRECTIONS = {
-	hue: { unit: "degrees", keySteps: [0.5, 1, 2, 4] },
-	lightness: { unit: "L", keySteps: [0.25, 0.5, 1, 2] },
-	chroma: { unit: "C", keySteps: [0.25, 0.5, 1, 2] },
-};
-const directionsOn = () => Object.keys(DIRECTIONS).filter(direction => $("dir-" + direction).checked);
-const anchorGrid = spacing => Array.from({ length: Math.floor(360 / spacing) }, (_, i) => i * spacing);
-const steps = () => log.records.filter(record => record.leftHex || record.rightHex);
+const DIRECTIONS = ["hue", "lightness", "chroma"];
+const THIRDS = ["dark", "cusp", "light"], CHROMA_THIRDS = ["dull", "mid", "vivid"];
+const directionsOn = () => DIRECTIONS.filter(direction => $("dir-" + direction).checked);
+const cellKey = cell => [cell.sector, cell.light, cell.chroma, cell.direction].join(" ");
+const judged = () => log.records.filter(record => record.distinct || record.varied);
 function judgedCounts() {
 	const counts = new Map();
-	for (const record of steps()) {
-		const key = record.anchor + " " + (record.direction ?? "hue");
-		counts.set(key, (counts.get(key) || 0) + 1);
-	}
+	for (const record of judged())
+		counts.set(cellKey(record), (counts.get(cellKey(record)) || 0) + 1);
 	return counts;
 }
-// The anchors of the current grid, in the directions on, still short of the rounds asked for: one entry per
-// missing round.
+// Every cell in the directions on still short of the rounds asked for: one entry per missing round.
 function remaining() {
 	const counts = judgedCounts(), rounds = +$("rounds").value, due = [];
-	for (const anchor of anchorGrid(+$("spacing").value))
-		for (const direction of directionsOn())
-			for (let n = counts.get(anchor + " " + direction) || 0; n < rounds; ++n)
-				due.push({ anchor, direction });
+	for (let sector = 0; sector < DEAL.sectors.length; ++sector)
+		for (let light = 0; light < 3; ++light)
+			for (let chroma = 0; chroma < 3; ++chroma)
+				for (const direction of directionsOn()) {
+					const cell = { sector, light, chroma, direction };
+					for (let n = counts.get(cellKey(cell)) || 0; n < rounds; ++n)
+						due.push(cell);
+				}
 	return due;
 }
 
 function saveLog() {
 	try { localStorage.setItem(STORAGE_KEY, JSON.stringify(log)); } catch {}
-	const due = remaining().length, grid = anchorGrid(+$("spacing").value).length * +$("rounds").value * directionsOn().length;
-	const skipped = log.records.length - steps().length;
-	$("log-status").textContent = steps().length + " steps recorded" + (skipped ? " and " + skipped + " skipped" : "") + ", " + (grid - due) + " of " + grid
-		+ " on this grid at these rounds and directions.";
+	const due = remaining().length, grid = DEAL.sectors.length * 9 * directionsOn().length * +$("rounds").value;
+	const skipped = log.records.length - judged().length;
+	$("log-status").textContent = judged().length + " cells recorded" + (skipped ? " and " + skipped + " skipped" : "") + ", " + (grid - due) + " of " + grid
+		+ " at these rounds and directions.";
 	if (!$("json").hidden)
 		$("json").value = JSON.stringify(log);
 }
-$("spacing").oninput = $("rounds").oninput = saveLog;
-for (const direction of Object.keys(DIRECTIONS))
+$("rounds").oninput = saveLog;
+for (const direction of DIRECTIONS)
 	$("dir-" + direction).oninput = saveLog;
 
 $("export").onclick = () => {
@@ -398,7 +375,7 @@ $("export").onclick = () => {
 };
 $("download").onclick = () => {
 	const url = URL.createObjectURL(new Blob([JSON.stringify(log)], { type: "application/json" }));
-	const link = Object.assign(document.createElement("a"), { href: url, download: "hue-steps-log.json" });
+	const link = Object.assign(document.createElement("a"), { href: url, download: "cells-log.json" });
 	link.click();
 	URL.revokeObjectURL(url);
 };
@@ -419,13 +396,13 @@ $("file").onchange = async () => {
 		alert("Not a log of this page.");
 		return;
 	}
-	if (log.records.length && !confirm("Replace the " + log.records.length + " steps recorded here with the file's " + loaded.records.length + "?"))
+	if (log.records.length && !confirm("Replace the " + log.records.length + " cells recorded here with the file's " + loaded.records.length + "?"))
 		return;
 	log.records = loaded.records;
 	saveLog();
 };
 $("clear").onclick = () => {
-	if (confirm("Discard every recorded step? Download first if they are wanted."))  {
+	if (confirm("Discard every recorded cell? Download first if they are wanted."))  {
 		log.records = [];
 		saveLog();
 	}
@@ -433,10 +410,8 @@ $("clear").onclick = () => {
 
 // ---------- running ----------
 
-// A pick is a count of swatches out from the anchor on its side, null for none.
-let schedule = [], trialIndex = -1, trial = null, picks = { left: null, right: null };
-let anchorShift = 0;  // degrees the current anchor is turned off its grid hue, to gain range on a short side
-const START_SWATCHES = 5;  // every anchor opens with its picks this many swatches out
+let schedule = [], trialIndex = -1, trial = null, count = 0, stops = { distinct: null, varied: null };
+const COUNT_MIN = 1, COUNT_MAX = 60, START_COUNT = 4;   // a stop at 1 says the whole cell holds one color
 
 function shuffled(items) {
 	const out = items.slice();
@@ -450,7 +425,7 @@ function shuffled(items) {
 $("start").onclick = () => {
 	schedule = shuffled(remaining());
 	if (!schedule.length) {
-		$("schedule-status").textContent = "Every anchor on this grid has its rounds in the directions on. Raise the rounds, change the spacing or turn a direction on.";
+		$("schedule-status").textContent = "Every cell has its rounds in the directions on. Raise the rounds or turn a direction on.";
 		return;
 	}
 	$("schedule-status").textContent = "";
@@ -459,159 +434,125 @@ $("start").onclick = () => {
 };
 
 function nextTrial() {
-	anchorShift = 0;
 	if (++trialIndex >= schedule.length) {
 		$("session").hidden = true;
 		$("schedule-status").textContent = "Round complete.";
 		return;
 	}
+	trial = schedule[trialIndex];
+	count = START_COUNT;
+	stops = { distinct: null, varied: null };
 	showTrial();
 }
 
-// Builds the run for the current anchor from the setup, which stays live during a trial, so the step
-// can be chosen per anchor. The anchor sits at the lightness and chroma share asked for; the run steps
-// one coordinate and shares the other two, and a side ends where it leaves the gamut, a chroma run also
-// at grey.
+// The sRGB hex of an OKLab point, clamped: a row's end sits on the gamut boundary, where rounding can fall outside.
+function clampedHex(lab) {
+	const lin = oklabToLinear(lab[0] / 100, lab[1] / 100, lab[2] / 100);
+	const rgb = lin.map(u => Math.min(1, Math.max(0, u))).map(u => u <= 0.0031308 ? u * 12.92 : 1.055 * u ** (1 / 2.4) - 0.055);
+	return "#" + rgb.map(v => Math.round(v * 255).toString(16).padStart(2, "0")).join("");
+}
+
+// n colors across the cell along its direction, even in that coordinate, the other two at the cell's middle.
+// Lightness is cusp-relative, chroma a share of the gamut's reach at the color's own lightness and hue, so a
+// lightness row keeps its share of chroma and a hue row its share and relative lightness.
+function rowHexes(cell, n) {
+	const [h0, h1] = DEAL.sectors[cell.sector];
+	const lRange = [cell.light * 100 / 3, (cell.light + 1) * 100 / 3], cRange = [cell.chroma / 3, (cell.chroma + 1) / 3];
+	const hMid = (h0 + h1) / 2 % 360, lMid = (lRange[0] + lRange[1]) / 2, cMid = (cRange[0] + cRange[1]) / 2;
+	return Array.from({ length: n }, (_, k) => {
+		const f = n > 1 ? k / (n - 1) : 0.5;
+		const h = cell.direction === "hue" ? (h0 + f * (h1 - h0)) % 360 : hMid;
+		const relative = cell.direction === "lightness" ? lRange[0] + f * (lRange[1] - lRange[0]) : lMid;
+		const share = cell.direction === "chroma" ? cRange[0] + f * (cRange[1] - cRange[0]) : cMid;
+		const L = absoluteL(relative, h), C = share * gamutChroma(L, h), turn = h * Math.PI / 180;
+		const lab = [L, C * Math.cos(turn), C * Math.sin(turn)];
+		return hexOf(lab) ?? clampedHex(lab);
+	});
+}
+
 function showTrial() {
-	const { anchor: grid, direction } = schedule[trialIndex], anchor = ((grid + anchorShift) % 360 + 360) % 360;
-	const relativeL = +$("rel-l").value, relativeC = +$("rel-c").value / 100;
-	const step = +$("step-" + direction).value, reach = +$("reach").value, L = absoluteL(relativeL, anchor);
-	const C = relativeC * gamutChroma(L, anchor);
-	const lchAt = k => direction === "hue" ? [L, C, ((anchor + k * step) % 360 + 360) % 360]
-		: direction === "lightness" ? [L + k * step, C, anchor] : [L, C + k * step, anchor];
-	const valueAt = k => lchAt(k)[{ hue: 2, lightness: 0, chroma: 1 }[direction]];
-	const hexAt = k => {
-		const [l, c, h] = lchAt(k), turn = h * Math.PI / 180;
-		return c < 0 ? null : hexOf([l, c * Math.cos(turn), c * Math.sin(turn)]);
-	};
-	// Swatches in the gamut on each side, counted out from the anchor to the first that is not.
-	const swatchesInGamut = sign => {
-		let k = 0;
-		while (k < reach && hexAt(sign * (k + 1)) !== null)
-			++k;
-		return k;
-	};
-	trial = { grid, anchor, direction, L, C, relativeL, relativeC, step, asked: reach, reach: { left: swatchesInGamut(-1), right: swatchesInGamut(1) }, valueAt, hexAt,
-		swatchPx: +$("swatch-px").value, swatchH: +$("swatch-h").value, anchorPx: +$("anchor-px").value, ground: $("ground").value.trim() || "#808080" };
-	const startPick = side => trial.reach[side] ? Math.min(START_SWATCHES, trial.reach[side]) : null;
-	picks = { left: startPick("left"), right: startPick("right") };
+	const [h0, h1] = DEAL.sectors[trial.sector];
 	$("progress").textContent = (trialIndex + 1) + " / " + schedule.length;
-	const short = ["left", "right"].filter(side => trial.reach[side] < reach);
-	$("where").textContent = direction + " steps at hue " + anchor + (anchorShift ? " (grid " + grid + ")" : "") + ", L " + L.toFixed(1) + ", C " + C.toFixed(1) + ", "
-		+ step + " " + DIRECTIONS[direction].unit + " per swatch" + (short.length ? "; the run ends " + short.map(side => trial.reach[side] + " swatches " + side).join(", ") : "");
+	$("where").textContent = trial.direction + " row through sector " + (trial.sector + 1) + " (hue " + h0 + " to " + h1 + "), " + THIRDS[trial.light]
+		+ " lightness third, " + CHROMA_THIRDS[trial.chroma] + " chroma third";
 	$("session").hidden = false;
-	$("arena").style.background = trial.ground;
-	$("triple").style.background = trial.ground;
-	const swatch = (k, side) => {
+	$("arena").style.background = $("ground").value.trim() || "#808080";
+	$("row").replaceChildren(...rowHexes(trial, count).map(hex => {
 		const el = document.createElement("div");
-		el.className = "code";
-		el.style.cssText = "width:" + trial.swatchPx + "px;height:" + trial.swatchH + "px;background:" + hexAt(side === "left" ? -k : k);
-		el.title = (side === "left" ? "-" : "+") + (k * step).toFixed(2);
-		el.dataset.side = side;
-		el.dataset.k = k;
-		el.onclick = () => pick(side, k);
-		return el;
-	};
-	const left = [], right = [];
-	for (let k = trial.reach.left; k >= 1; --k)
-		left.push(swatch(k, "left"));
-	for (let k = 1; k <= trial.reach.right; ++k)
-		right.push(swatch(k, "right"));
-	$("left").replaceChildren(...left);
-	$("right").replaceChildren(...right);
-	$("anchor").style.cssText = "width:" + trial.anchorPx + "px;height:" + trial.anchorPx + "px;background:" + hexAt(0);
-	// A run wider than the arena scrolls; the anchor starts in view.
-	$("arena").scrollLeft = ($("run").scrollWidth - $("arena").clientWidth) / 2;
-	showPicks();
-}
-for (const id of ["rel-l", "rel-c", "reach", "step-hue", "step-lightness", "step-chroma", "swatch-px", "swatch-h", "anchor-px", "ground"])
-	$(id).oninput = () => { if (!$("session").hidden) showTrial(); };
-
-function pick(side, k) {
-	picks[side] = k;
-	showPicks();
-}
-
-// A pick is a swatch count, or Infinity for a side marked clipped: the step there is beyond the run.
-const picked = side => Number.isFinite(picks[side]);
-const clipped = side => picks[side] === Infinity;
-const inGamutUnits = side => trial.reach[side] * trial.step;
-const unitsOut = side => picked(side) ? (side === "left" ? "-" : "+") + (picks[side] * trial.step).toFixed(2)
-	: clipped(side) ? "beyond " + inGamutUnits(side).toFixed(2) : "-";
-
-function showPicks() {
-	for (const el of document.querySelectorAll(".code"))
-		el.classList.toggle("picked", +el.dataset.k === picks[el.dataset.side]);
-	$("accept").disabled = picks.left === null || picks.right === null;
-	$("redo").disabled = picks.left === null && picks.right === null;
-	$("offsets").textContent = unitsOut("left") + "  /  " + unitsOut("right");
-	const shown = [picked("left") ? -picks.left : null, 0, picked("right") ? picks.right : null].filter(k => k !== null);
-	$("triple").replaceChildren(...($("accept").disabled ? [] : shown).map(k => {
-		const el = document.createElement("div");
-		el.style.background = trial.hexAt(k);
+		el.style.cssText = "width:" + $("swatch-px").value + "px;height:" + $("swatch-h").value + "px;background:" + hex;
+		el.title = hex.toUpperCase();
 		return el;
 	}));
+	showMarks();
+}
+for (const id of ["swatch-px", "swatch-h", "ground"])
+	$(id).oninput = () => { if (!$("session").hidden) showTrial(); };
+
+function setCount(n) {
+	count = Math.min(COUNT_MAX, Math.max(COUNT_MIN, n));
+	showTrial();
 }
 
-// Moves a pick one swatch out (by 1) or in, within reach; a side without a pick gets the swatch next
-// to the anchor. Out past the last swatch of a side the gamut cut short marks the side clipped, and in from
-// there returns to the last swatch.
-function nudge(side, by) {
-	const k = clipped(side) ? (by < 0 ? trial.reach[side] : Infinity) : picks[side] === null ? 1 : picks[side] + by;
-	if (k >= 1 && k <= trial.reach[side])
-		pick(side, k);
-	else if (k > trial.reach[side] && trial.reach[side] < trial.asked)
-		pick(side, Infinity);
+function showMarks() {
+	$("counts").textContent = count + " colors; all distinct at " + (stops.distinct ?? "-") + ", none same-y at " + (stops.varied ?? "-");
+	$("accept").disabled = stops.distinct === null || stops.varied === null || stops.varied > stops.distinct;
+	$("redo").disabled = stops.distinct === null && stops.varied === null;
 }
 
-// A record holds the trial's setup, each side's pick as the stepped coordinate's value and a hex, or null where
-// the side was clipped, and the units each side had in the run: on a clipped side that bounds the step from below.
+function mark(kind) {
+	stops[kind] = count;
+	showMarks();
+}
+
+// A record holds the cell, its direction, and each stop's count with the row's hexes at that count and at one more,
+// the row the judge rejected: the threshold lies between the two rows' closest pairs. Null on a skip.
 function record() {
-	const at = side => picked(side) ? (side === "left" ? -picks.left : picks.right) : null;
-	const value = side => at(side) === null ? null : trial.valueAt(at(side)), hex = side => at(side) === null ? null : trial.hexAt(at(side));
-	log.records.push({ anchor: trial.grid, direction: trial.direction, hue: trial.anchor, anchorHex: trial.hexAt(0), left: value("left"), right: value("right"),
-		leftHex: hex("left"), rightHex: hex("right"), inGamut: { left: inGamutUnits("left"), right: inGamutUnits("right") },
-		L: trial.L, C: trial.C, relativeL: trial.relativeL, relativeC: trial.relativeC, step: trial.step, reach: trial.asked,
-		swatchPx: trial.swatchPx, swatchH: trial.swatchH, anchorPx: trial.anchorPx, ground: trial.ground, at: new Date().toISOString() });
+	const [h0, h1] = DEAL.sectors[trial.sector];
+	const stop = kind => stops[kind] === null ? null : { count: stops[kind], hexes: rowHexes(trial, stops[kind]), above: rowHexes(trial, stops[kind] + 1) };
+	log.records.push({ sector: trial.sector, hues: [h0, h1], light: trial.light, chroma: trial.chroma, direction: trial.direction,
+		distinct: stop("distinct"), varied: stop("varied"), swatchPx: +$("swatch-px").value, swatchH: +$("swatch-h").value,
+		ground: $("ground").value.trim() || "#808080", at: new Date().toISOString() });
 	saveLog();
 	nextTrial();
 }
+$("fewer").onclick = () => setCount(count - 1);
+$("more").onclick = () => setCount(count + 1);
+$("mark-distinct").onclick = () => mark("distinct");
+$("mark-varied").onclick = () => mark("varied");
 $("accept").onclick = record;
 $("redo").onclick = () => {
-	picks = { left: null, right: null };
-	showPicks();
+	stops = { distinct: null, varied: null };
+	showMarks();
 };
 $("skip").onclick = () => {
-	picks = { left: Infinity, right: Infinity };
+	stops = { distinct: null, varied: null };
 	record();
 };
 
 addEventListener("keydown", e => {
 	if ($("session").hidden || e.ctrlKey || e.metaKey || e.altKey || e.target.matches("input, textarea"))
 		return;
-	const key = e.key;
+	const key = e.key, by = e.shiftKey ? 5 : 1;
 	if (key === "Enter" && !$("accept").disabled)
-		$("accept").onclick();
+		record();
 	else if (key === "Escape")
 		$("redo").onclick();
-	else if (key === "s" || key === "S")
+	else if (key === "k" || key === "K")
 		$("skip").onclick();
-	else if (key === "," || key === ".") {
-		anchorShift += key === "," ? -1 : 1;
-		showTrial();
-	}
-	else if (key === "ArrowUp" || key === "ArrowDown")
-		nudge("right", key === "ArrowUp" ? 1 : -1);
-	else if (key === "ArrowLeft" || key === "ArrowRight")
-		nudge("left", key === "ArrowLeft" ? 1 : -1);
-	else if (key >= "1" && key <= "4") {
-		$("step-" + trial.direction).value = DIRECTIONS[trial.direction].keySteps[key - 1];
-		showTrial();
-	} else
+	else if (key === "d" || key === "D")
+		mark("distinct");
+	else if (key === "s" || key === "S")
+		mark("varied");
+	else if (key === "ArrowRight" || key === "ArrowUp")
+		setCount(count + by);
+	else if (key === "ArrowLeft" || key === "ArrowDown")
+		setCount(count - by);
+	else
 		return;
 	e.preventDefault();
 });
 
+$("deal-status").textContent = DEAL.sectors.length + " hue sectors, 9 cells each.";
 saveLog();
 </script>
 </body>

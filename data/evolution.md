@@ -782,15 +782,19 @@ Not done:
     repeats; hue 180 to 225 has the right side 1.2 to 1.6 times the left in every round, the slope B shows there.
     The criterion's spread across rounds is 0.15, its drift within a round under that.
 
-  One round each at chroma 70% and 80%, `data/hue-3-c70-steps-log.json` and `data/hue-4-c80-steps-log.json`, test
-  the chord law across chroma. At 70% the same anchors took 1.40 times the chroma and 0.72 times the degrees, a
-  chord step of 1.00 times (exponent 0.99, where 1 is a constant chord and 0 a constant angle). At 80% the chord
-  step is 1.07 to 1.10 times the 50% one, but it is also 1.07 to 1.10 times the 70% one for a chroma step of 1.14,
-  which no smooth law gives; a session criterion offset of that size is within what the 50% rounds showed. So the
-  chord law holds to within the criterion noise up to 80%, and the hue term of the metric is the right quantity in
-  absolute terms too. Both rounds' chord densities match the 50% shape within round-to-round spread, the 80% one
-  except at yellow, where the clipped sides bias the survivors short. Clipped sides, 6 anchors at 70% and 13 at
-  80%, record the run's reach as a bound on the step; the fit prints the bounds against its curve.
+  One round at chroma 70% and two at 80%, `data/hue-3-c70-steps-log.json`, `data/hue-4-c80-steps-log.json` and
+  `data/hue-5-c80-steps-log.json`, test the chord law across chroma. At 70% the same anchors took 1.40 times the
+  chroma and 0.72 times the degrees, a chord step of 0.96 times the 50% one. At 80% the chord step is 1.06 and 1.13
+  times the first 50% round, 1.20 and 1.28 times the second, 1.16 for the means, and even over hue (per 30 degree
+  bin 0.87 to 1.31). Rounds under one condition differ by 1.07 at 50% and 1.13 at 80%, a session spread of 0.07 rms
+  log per round, so the 80% excess of 0.15 log is two sigma: a chroma effect of about the 0.3 power over 50 to 80%
+  is likelier than an offset, but the 70% round fits neither. The chord law is kept: a 16% excess at the top end,
+  where clipping removes a quarter of the sides, is too little to fit a chroma exponent for the hue term. In
+  shape the two 80% rounds agree with each other to 0.13 rms log within an anchor, closer than the 50% rounds' 0.15,
+  and with the shipped table to 0.09 mean |log ratio|; the density fitted from all five rounds differs from the
+  shipped one by 0.02, no 30 degree bin by more than 0.03, so `HUE_DENSITY` stays as fitted from four. Clipped
+  sides, 6 at 70% and 14 and 11 at 80%, record the run's reach as a bound on the step; the fit prints the bounds
+  against its curve.
 
   The table's three spikes are the code walk leaking through the band factors. The walk stalls in hue at the
   primaries, 94 codes within a degree of blue and 97 of green, a density of 17 and 15 at mean 1; a factor of 0.47
@@ -875,10 +879,134 @@ Not done:
   The gamut table is now one, at the palette chart's size, and the range plane reads it by bilinear interpolation:
   one build per size instead of two, the plane's field 7 ms. Against its own bisection the plane's reach is off by
   0.05 chroma on average and 4.7 at the blue vertex column, a fold narrower than the column.
-  Open: a second 80% round to separate a session offset from a chroma effect at the top end; family coverage as
-  its own goal, by a start stratified over color names rather than a density over degrees. Not planned: respacing
+  Open: family coverage as its own goal, by a start stratified over color names rather than a density over degrees. Not planned: respacing
   the strips of `hue-density.html`, a tool whose table is retired; if it is ever used again, its strips should be
   built from `RIDGE_WARP` along the cube's edges.
+
+## Step weights per hue
+
+The lightness and chroma weights, 0.35 and 0.6, are one number each over the circle and come from the recall
+verdicts; the hue term alone is measured per hue, on the step criterion. Whether a lightness or chroma step counts
+the same at every hue is untested. `data/calibrate-hue-steps.html` now steps any of the three coordinates: a round
+deals every direction on at every anchor, shuffled together, so the three are judged under one session criterion.
+A lightness run moves L at the anchor's chroma and hue, a chroma run moves C and stops at grey; the units per
+swatch are 1 degree of hue and 0.5 of lightness or chroma, with the four key sizes per direction. Records carry
+`direction`; older records without it are hue steps, and `fit_hue_steps.js` reads only those.
+`data/fit_step_weights.js` takes, per anchor, the step in each direction in OKLab units, the hue step in the
+shipped warp, and gives W_L and W_C per anchor as the hue step over the lightness or chroma step, then per 30
+degree bin with the spread over anchors and the left-right noise per direction. At the cusp anchor the light side
+of a lightness run has little room where the cusp is light: at 50% chroma 2.5 to 7.5 L from hue 90 to 210 against
+13 to 24 elsewhere, at 70% chroma 1 to 4.5; the dark side has 23 to 46 everywhere. A lightness threshold at the
+shipped weight is about 10 L, so the light side clips through yellow, green and cyan and the dark side carries
+the step there. The round is planned at 50% chroma, where the hue rounds have two sessions to compare against.
+
+## A preference density
+
+The judge's reading after the member and pairwise rounds: distinctness and preference are two metrics. The first
+is a constraint, a floor on the closest pair, measured to within session noise three ways and found uniform; the
+second is an objective over what the floor leaves free, and it collapses into the first only in a box too tight to
+leave anything free, which the tight-box pairwise round was. The member round is a measurement of preference's
+bottom, the colors thrown out, and `data/fit_preference.js` fits it: a logistic on absolute chroma and hue with two
+harmonics and a chroma by hue term, 164 log-likelihood units on eight parameters over 960 colors, lightness earning
+0.4 and dropped; the model reproduces the bad rate per hue bin and chroma third within 0.05. Its complement is the
+`PREFERENCE` density in index.html, the chance a color is wanted for itself, chroma clamped to the round's range.
+The draw is weighted by it, and a color under a floor of 0.5, more likely thrown out than kept, is outside the box
+for the draw and the pushes alike: the pushes spread colors to the box's edges, so a draw weight alone left the
+dirty region filled (dirty names 52 to 34 of 320 over 40 seeds in the default box) where the floor empties it (52
+to 25, colors under chroma 12 from 108 to 61, the closest-pair floor unchanged at 0.98, 42 against 47 ms a
+palette). The floor is a generator setting, `preference` in the config, on by default and off for the plain
+condition. The pairwise page now deals `--conditions preference`: shipped against plain in the default box, 60
+seeds at 7 and 10 colors, the round that tests whether the preferred draw makes preferred palettes. Not yet drawn
+on the charts: the region under the floor is not hatched.
+
+## Cell capacity rounds
+
+The judge's account after the member round: some colors are distinguishable and still same-y, and fewer of them
+are wanted. That is a third criterion above confusable and distinguishable, and no term carries it past the naming
+fade. `data/calibrate-cells.html` measures it beside the second: the space is cut into cells, 20 hue sectors even
+in the shipped hue warp (`data/make_cell_deal.js` writes the bounds into the page) by three cusp-relative lightness
+thirds by three chroma thirds of the gamut's reach at the color's lightness and hue. A trial is a cell and a
+direction: a row across the cell along that coordinate, even in it, the other two at the cell's middle. The keys
+change the count and two stops are marked, the largest count at which every neighbour is distinct and the largest
+before any two look same-y, a stop at one color meaning the cell holds one. The record holds each stop's row and the
+row one larger, the one rejected, so the threshold is bracketed rather than read at the integer count, which at
+two or three colors would overstate it by half. `data/fit_cells.js` gives per cell and direction the step at each
+stop, the midpoint of the bracket's closest pairs under the shipped metric, and reads two things: the distinct
+step in metric units by direction, lightness third, chroma third and sector, constant where the metric is right and
+a correction factor where it is not; and the same-y over distinct ratio by the same factors with the spread left
+after each factor's means are removed, which says whether same-y is a criterion scale, a family effect or a
+per-direction one. A synthetic judge with a same-y ratio of 2.4 in the light third and 1.6 elsewhere was read back
+as 2.35 against 1.75 and 1.62, and the lightness factor removed the most spread. Many cells are under one step:
+in the synthetic run at a 3-unit threshold 205 of 540 stops sat at one color, most in the dull and dark thirds,
+where the cell is a sliver; those trials are quick and their bound still counts. 540 trials at 20 sectors, judged
+over several sittings with Download and Load between.
+
+## Palette spread rounds
+
+Every instrument so far grades pairs: the verdict logs, the step rounds, the metric fitted to them, the generator
+spacing by the smallest pair distance. The complaint the project keeps returning to is about whole palettes,
+whether the colors are evenly spread, and nothing measured that. `data/calibrate-palettes.html` does, by pairwise
+choice, the most stable judgment a session gives: two palettes, A and B, the same seed and count under two hue
+conditions, each as the page's square of squares in hue order, random order and random sides. The question is spread alone.
+The answers are A is better, B is better, both are OK, neither is OK; the last two are ties, the tie being the
+judgment, with an OK flag on both palettes that the fit reads as a coarse absolute score, the pairwise strengths
+being the measurement since a threshold drifts within a session and a choice between two things on screen does
+not. Before answering, two optional marks: two swatches that crowd, a swatch with a color missing after it.
+
+`data/make_palette_pairs.js` deals the palettes into the page between its deal markers, since a page opened from
+disk can fetch nothing: 20 seeds at 7 and 10 colors in the saturated box (L 40-60, C 60-100%), three conditions,
+each a density in the generator's two roles: shipped, `HUE_DENSITY` in both; angle, the step rounds' A in both;
+uniform, `HUE_DENSITY` in the metric and a uniform draw. Every pair of conditions per seed and count, 120 pairs.
+Each record carries both palettes, so `data/fit_palettes.js` reads the log alone: a Bradley-Terry fit with ties
+(Davidson) for a strength per condition with a bootstrap interval; a one-parameter logistic per palette feature
+over the choices, the feature's difference the only term, whose log-likelihood gain says what the eye counted:
+the unevenness and the largest gap of the hue gaps in degrees, in the metric's hue warp and in the ridge
+coordinate, the nearest pair's metric distance, the number of distinct names; and the marked seams' gap against
+the other seams' in each coordinate. On a synthetic log whose judge preferred the lower gap CV in the hue warp,
+the fit put that feature first by 6 log-likelihood units over degrees and 17 over the ridge.
+
+A round is one sitting, 50 pairs by default; the next Start takes the pairs not yet judged in the loaded log.
+
+The first deal, `data/palette-pairs-log.json`, 120 pairs in one sitting, 3.5 s a verdict: 89 choices, 24 both OK,
+7 neither. No condition is preferred: angle 0.87 and uniform 1.00 against shipped at 1, the 90% intervals 0.5 to
+1.6; at 7 colors uniform is at 0.5 and at 10 at 1.9, forty pairs each, noise. No feature predicts the choices: the
+hue gap evenness and the largest gap in all three coordinates, the nearest pair, the names, and a further sweep
+(lightness and chroma spread, hue family shares, empty sectors, the mean nearest-neighbour distance) all gain
+under 2 log-likelihood units over 89 choices, the sign test at best 57 of 89 for a larger mean nearest-neighbour
+distance in the metric, one of seventeen tries. The choices are consistent, 2 cyclic triads of 18 where chance
+gives 4.5, so the eye ranks something, but not the hue spread the conditions vary, and not the tested features.
+The instrument has a side bias: B was chosen 56 times of 89. The random flip keeps it out of the strengths, but a
+share of the choices is position, not palette. No marks were made.
+
+The judge's account of the sitting: both palettes often had good members and bad members, and the choice was
+between two mixed bags. The verdict unit was wrong: the judgment being made was per color. `data/calibrate-members.html`
+asks that directly: one palette at a time, click the members to throw out, Done. `data/make_member_deal.js` deals
+120 palettes of 8 from the page in its default box (L 20-60, C 20-100%), every second one keeping one color of the
+palette before it as a fixed color, so 60 colors are judged in two companies. `data/fit_members.js` reads the log
+for the bad rate by hue bin, lightness and chroma third, and name; a logistic per color feature (lightness, chroma,
+the nearest member's metric distance, members with the same name) and the hue bins as a twelve-rate model, on one
+log-likelihood scale; and the shared colors: how often the verdict repeats against independence, and among the
+disagreements whether the bad verdict fell in the company with the closer nearest member. On a synthetic log with
+bad planted at hue 80-140 the hue model gained 43 units where the features gained under 5. The nearest member's
+distance has little variance in generated palettes, the generator spacing every color at about its limit, so
+company can show only through the shared colors.
+
+The first round, `data/palette-members-log.json`, 120 palettes in one sitting at 3.6 s each: 173 of 960 colors
+marked bad, 23 palettes clean. The verdict mostly follows the color: a shared color's verdict repeats 0.83 of the
+time against 0.70 under independence, kappa 0.44; company moves it in one case of six, the 10 disagreements
+splitting 6 to 4 on the closer neighbour. The judge's account: company counts, but some colors no unthemed
+company rescues, and a themed palette, built around them by design, was not on offer here. The bad colors are
+low chroma at warm hues. Chroma alone gains 79 log-likelihood units on one parameter, the twelve hue bins
+88 on eleven; the bad rate is 0.37 in the lowest chroma third, 0.14 in the middle, 0.03 in the top, and hue 30
+to 120 holds 108 of the 173 marks. By name: brown 32 of 37, tan 25 of 33, olive 23 of 38, beige and off white 4
+of 6, mustard 7 of 13; those names hold 104 of the marks. The judge's own word for it is dirty colors. Among the
+other names the rate is 0.085 and still falls with chroma, 0.17 to 0.09 to 0.03 over the thirds, warm hues at
+0.16 against cool at 0.07: purple, orange, pink and maroon at chroma 8 to 16 take most of the rest. Lightness
+does nothing, 0.7 units. The generator's default box, chroma from 20%, draws these colors at a fifth of its
+output; the page's name exclusion removes the named ones, a chroma floor around 17 absolute would remove the rest
+at the warm hues.
+The desktop app's pane opens a page as a data: URL, where storage is disabled: a round there survives only by
+Download. A file:// tab in a browser keeps the log between visits.
 
 ## Files
 
@@ -907,5 +1035,9 @@ Not done:
 - `data/hue-marginals.js`: the hue and name shares generated palettes deliver, per condition of metric and draw density.
 - `data/hue-density.html`: the hue respacing tool; its presets define `HUE_DENSITY_AUTHORED`. A copy of the page from
   before the respacing with the tool on top, so its generator warps once.
-- `data/calibrate-hue-steps.html`, `data/fit_hue_steps.js`, `data/ridge-2-steps-log.json`, `data/hue-1-steps-log.json`, `data/hue-2-steps-log.json`, `data/hue-3-c70-steps-log.json`, `data/hue-4-c80-steps-log.json`:
-  the hue step rounds, a measured density against the table. The ridge log is version 1 and holds both ridge rounds; the hue logs are version 2, three rounds at chroma 50%, one at 70%, one at 80%.
+- `data/calibrate-hue-steps.html`, `data/fit_hue_steps.js`, `data/fit_step_weights.js`, `data/ridge-2-steps-log.json`, `data/hue-1-steps-log.json`, `data/hue-2-steps-log.json`, `data/hue-3-c70-steps-log.json`, `data/hue-4-c80-steps-log.json`, `data/hue-5-c80-steps-log.json`:
+  the hue step rounds, a measured density against the table. The ridge log is version 1 and holds both ridge rounds; the hue logs are version 2, three rounds at chroma 50%, one at 70%, two at 80%.
+- `data/calibrate-palettes.html`, `data/make_palette_pairs.js`, `data/fit_palettes.js`, `data/palette-pairs-log.json`: the palette spread rounds, pairwise choice between whole palettes dealt under two hue conditions; the deal is written into the page.
+- `data/calibrate-members.html`, `data/make_member_deal.js`, `data/fit_members.js`, `data/palette-members-log.json`: the palette member rounds, the bad members of one palette at a time, some colors dealt into two palettes; the deal is written into the page.
+- `data/fit_preference.js`: the draw's preference density from a member log, the PREFERENCE constant in index.html.
+- `data/calibrate-cells.html`, `data/make_cell_deal.js`, `data/fit_cells.js`: the cell capacity rounds, how many distinct and how many not same-y colors a cell of the space holds along each coordinate; the sectors are written into the page.

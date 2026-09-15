@@ -60,8 +60,10 @@ function readLogs(paths) {
 		const log = JSON.parse(fs.readFileSync(path, "utf8"));
 		if (log.version !== 1 && log.version !== 2)
 			throw new Error(path + ": log version " + log.version + ", this script reads 1 and 2");
+		// Hue steps only: a version 2 log can hold lightness and chroma steps, which fit_step_weights.js reads.
 		for (const r of log.records)
-			records.push({ ...r, source: path });
+			if (!r.direction || r.direction === "hue")
+				records.push({ ...r, source: path });
 	}
 	return records;
 }
@@ -133,6 +135,17 @@ function anchorRows(trials) {
 const bins = curve => Array.from({ length: 12 }, (_, b) => mean(curve.slice(b * 30, b * 30 + 30)));
 const fmt = (x, w = 6, d = 2) => x.toFixed(d).padStart(w);
 
+// The two densities from the logs at `paths`, with the trials and sides they came from and each curve's
+// scale. Requires at least six sides at the share cut.
+function densityTables(paths, cut = SHARE_CUT) {
+	const trials = trialsOf(readLogs(paths)), sides = sidesOf(trials, cut);
+	if (sides.length < 6)
+		throw new Error("fewer than six sides with a hue share of " + cut);
+	const angle = s => 1 / s.degrees, chord = s => 1 / (s.chroma * s.degrees);
+	const { curve: A, scale: scaleA } = circleOf(sides, angle), { curve: B, scale: scaleB } = circleOf(sides, chord);
+	return { trials, sides, A, B, scaleA, scaleB, angle, chord };
+}
+
 function main(args) {
 	let table = null, cut = SHARE_CUT;
 	while (args[0] && args[0].startsWith("--")) {
@@ -144,11 +157,7 @@ function main(args) {
 			throw new Error("unknown option " + args[0]);
 		args = args.slice(2);
 	}
-	const trials = trialsOf(readLogs(args)), sides = sidesOf(trials, cut);
-	if (sides.length < 6)
-		throw new Error("fewer than six sides with a hue share of " + cut);
-	const angle = s => 1 / s.degrees, chord = s => 1 / (s.chroma * s.degrees);
-	const { curve: A, scale: scaleA } = circleOf(sides, angle), { curve: B, scale: scaleB } = circleOf(sides, chord);
+	const { trials, sides, A, B, scaleA, scaleB, angle, chord } = densityTables(args, cut);
 	if (table) {
 		console.log((table === "b" ? B : A).map(v => +v.toFixed(3)).join(", "));
 		return;
@@ -226,4 +235,7 @@ function main(args) {
 	console.log("  previous anchor's right side over this left side, means    " + fmt(rms([...overlap.values()].map(Math.log)), 6, 3));
 }
 
-main(process.argv.slice(2));
+if (require.main === module)
+	main(process.argv.slice(2));
+
+module.exports = { densityTables };

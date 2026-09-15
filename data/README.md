@@ -61,6 +61,14 @@ node data/fit.js --warped log.json            # fit identify.js's constants to a
 node data/fit_hue.js --warped log.json [more.json] # fit the position terms, over any probe logs pooled
 node data/fit_hue.js --relative log.json      # the same against cusp-relative lightness, the coordinate before the cusp rounds
 node data/fit_hue_steps.js log.json           # a hue density from calibrate-hue-steps.html, against HUE_DENSITY
+node data/fit_step_weights.js log.json        # lightness and chroma weights per hue from a calibrate-hue-steps.html log with all three directions
+node data/make_cell_deal.js [--sectors 20]    # deal calibrate-cells.html's hue sectors into the page, even in the hue warp
+node data/fit_cells.js log.json               # capacity per cell and direction, the metric's correction factors and the same-y ratio, from a calibrate-cells.html log
+node data/make_palette_pairs.js [--seeds 20] [--counts 7,10] [--box 40 60 60 100] [--conditions hue|preference] # deal calibrate-palettes.html's pairs into the page
+node data/fit_palettes.js log.json            # condition strengths and what the eye counted, from a calibrate-palettes.html log
+node data/make_member_deal.js [--palettes 120] [--count 8] [--box 20 60 20 100] [--shared 0.5] # deal calibrate-members.html's palettes into the page
+node data/fit_members.js log.json             # where the bad colors live and whether bad is the color or its company, from a calibrate-members.html log
+node data/fit_preference.js log.json          # the draw's preference density from a calibrate-members.html log, as the PREFERENCE constant
 node data/hue-marginals.js [--names] [--counts 7,10,14] [m/d ...] # the hue and name shares the generator delivers, metric and draw density set apart
 node data/fit_chroma.js chroma-log.json       # the chroma round's own question, see below
 node data/fit_names.js log.json               # fit the naming score to a calibrate-names.html log
