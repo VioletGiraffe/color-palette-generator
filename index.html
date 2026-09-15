@@ -363,7 +363,7 @@
 	<div class="hint">Hue across, lightness up, each point at the most vivid chroma the ranges allow: the outside of the selected region. Lightness here is plain black to white, so the band the range allows rises and falls with each hue's peak. Hatching is outside the hue or lightness range, or where the chroma minimum leaves nothing. Dots are the generated colors, triangles the fixed ones.</div>
 
 	<div class="plane" id="hc-plane"><canvas id="hc-canvas"></canvas></div>
-	<div class="hint">Hue across, chroma up. Each hue is drawn at the lightness within the range that makes it most vivid, so the top edge is the most chroma the ranges allow at that hue. Blank above it: no lightness in the range reaches that far. Hatching is outside the hue or chroma range; chroma here is absolute, so the band the range allows rises and falls with each hue's peak. Dots are the generated colors, triangles the fixed ones.</div>
+	<div class="hint">Hue across, chroma up. Each hue is drawn at the lightness within the range that makes it most vivid, so the top edge is the most chroma the ranges allow at that hue. Blank above it: no lightness in the range reaches that far. The solid line is the chroma reached at the top of the lightness range, the dashed line at the bottom; between them and the top edge lies what the range gives up. Hatching is outside the hue or chroma range; chroma here is absolute, so the band the range allows rises and falls with each hue's peak. Dots are the generated colors, triangles the fixed ones.</div>
 
 	<hr>
 
@@ -818,7 +818,7 @@ function mulberry32(seed) {
 const ALL_INCLUDED = Array.from({ length: NAME_SLOTS }, () => true);
 
 // Whether a generated color may sit at the point: sRGB shows it and its name is in use.
-const usableLch = (L, C, h, cfg) => showsLch(L, C, h) && cfg.included[cellOf(oklabToRgb(...labOfLch(L, C, h))).cell];
+const usableLch = (L, C, h, cfg) => showsLch(L, C, h) && wantedLch(C, h, cfg) && cfg.included[cellOf(oklabToRgb(...labOfLch(L, C, h))).cell];
 
 // A draw is uniform over the box's OKLab volume: lightness and hue evenly, chroma by its square so
 // the sector's outer arc is not thinned, and unusable draws rejected. A box usable almost nowhere -
@@ -1106,7 +1106,7 @@ function hueMarginal(rnd, cfg) {
 // the sliders change one box at a time and the benchmark runs its seeds per box.
 let hueWeightCache = { key: null, weight: null };
 function hueWeightFor(cfg) {
-	const key = [cfg.hMin, cfg.hMax, cfg.lMin, cfg.lMax, cfg.cMin, cfg.cMax, cfg.included.map(Number).join("")].join(" ");
+	const key = [cfg.hMin, cfg.hMax, cfg.lMin, cfg.lMax, cfg.cMin, cfg.cMax, cfg.preference, cfg.included.map(Number).join("")].join(" ");
 	if (hueWeightCache.key !== key) {
 		const marginal = hueMarginal(mulberry32(424242), cfg);
 		const weight = HUE_DENSITY.map((d, h) => d / marginal[Math.floor(h / HUE_BIN)]);
@@ -1115,13 +1115,28 @@ function hueWeightFor(cfg) {
 	}
 	return hueWeightCache.weight;
 }
-// A box draw kept with its hue's chance; the last draw stands after WEIGHTED_TRIES.
+// The chance a color is wanted for itself: one less the chance of a bad mark in the palette member round, a logistic
+// on absolute chroma and hue with a chroma by hue term, fitted by data/fit_preference.js to data/palette-members-log.json.
+// Chroma is clamped to the round's range: the fit says nothing beyond it.
+const PREFERENCE = {"intercept":2.09931,"chroma":-0.3303,"cos h":-0.1422,"sin h":2.13116,"cos 2h":-0.55858,"sin 2h":-0.27111,"chroma cos h":0.12288,"chroma sin h":-0.06057,"chromaRange":[3,30.3]};
+function preferenceOf(C, h) {
+	const c = Math.min(PREFERENCE.chromaRange[1], Math.max(PREFERENCE.chromaRange[0], C)), turn = h * Math.PI / 180;
+	const bad = PREFERENCE.intercept + PREFERENCE.chroma * c + PREFERENCE["cos h"] * Math.cos(turn) + PREFERENCE["sin h"] * Math.sin(turn)
+		+ PREFERENCE["cos 2h"] * Math.cos(2 * turn) + PREFERENCE["sin 2h"] * Math.sin(2 * turn) + c * (PREFERENCE["chroma cos h"] * Math.cos(turn) + PREFERENCE["chroma sin h"] * Math.sin(turn));
+	return 1 / (1 + Math.exp(bad));
+}
+// A color under the floor is outside the box for the draw and the pushes alike: the pushes spread colors to the box's
+// edges, so a draw density alone leaves the floor's region filled. Above it the draw is still weighted by preference.
+const PREFERENCE_FLOOR = 0.5;
+const wantedLch = (C, h, cfg) => !cfg.preference || preferenceOf(C, h) >= PREFERENCE_FLOOR;
+
+// A box draw kept with its hue's chance and, with preference on, the color's own; the last draw stands after WEIGHTED_TRIES.
 const WEIGHTED_TRIES = 400;
 function sampleWeighted(rnd, cfg) {
 	let draw = null;
 	for (let n = 0; n < WEIGHTED_TRIES; ++n) {
 		draw = samplePoint(rnd, cfg);
-		if (rnd() < cfg.hueWeight[Math.floor(draw[2])])
+		if (rnd() < cfg.hueWeight[Math.floor(draw[2])] * (cfg.preference ? preferenceOf(draw[1], draw[2]) : 1))
 			return draw;
 	}
 	return draw;
@@ -1262,7 +1277,7 @@ function pushApart(rnd, colors, cfg) {
 			const { lch, clamped } = pointInBox(target[0], target[1], target[2], cfg);
 			const at = positionOf(lch);
 			const color = colorAt(...lch);
-			if ((clamped && !cfg.hull) || !cfg.included[color.cell]
+			if ((clamped && !cfg.hull) || !cfg.included[color.cell] || !wantedLch(lch[1], lch[2], cfg)
 					|| errorAt(i, at) > errorAt(i, pos[i])) {
 				++rejected[i];
 				heading[i] = null;
@@ -1327,7 +1342,7 @@ function attempt(rnd, cfg) {
 // Null when the box holds no usable color.
 function generate(cfg) {
 	const sigma = Math.max(cfg.scale, 1);
-	const settings = { ...cfg, sigma, limit: limitDistance(sigma), included: cfg.included ?? ALL_INCLUDED,
+	const settings = { ...cfg, sigma, limit: limitDistance(sigma), included: cfg.included ?? ALL_INCLUDED, preference: cfg.preference ?? true,
 		pushMin: cfg.pushMin ?? PUSH_ANGLE_MIN, pushMax: cfg.pushMax ?? PUSH_ANGLE_MAX };
 	const cells = boxCells(settings);
 	if (!cells.centres.length)
@@ -1554,6 +1569,8 @@ function paintChart(draw) {
 	const w = canvas.width;
 	const ctx = canvas.getContext("2d");
 	ctx.putImageData(image, 0, 0);
+	if (draw.faces)
+		strokeFaces(ctx, draw.faces);
 
 	draw.marks = [];
 	for (const color of colors) {
@@ -1595,9 +1612,37 @@ function drawHCPlane(cfg, colors) {
 	// otherwise. Chroma over lightness peaks at the cusp, so nothing else in the range reaches further.
 	// Not exactly single-peaked near black, but no range picks up more than 0.006 chroma there.
 	const relative = Math.min(cfg.lMax, Math.max(cfg.lMin, CUSP_ANCHOR));
-	hcDraw = { canvas, colors, image: hcField(canvas.width, canvas.height, relative, cfg),
+	hcDraw = { canvas, colors, image: hcField(canvas.width, canvas.height, relative, cfg), faces: faceCurves(canvas.width, canvas.height, cfg),
 		place: (color, c) => ({ x: ridgeWarp(color.lch[2]) / 360 * c.width, y: (1 - color.lch[1] / CHROMA_MAX) * (c.height - 1) }) };
 	paintChart(hcDraw);
+}
+
+// The lightness range's two faces on the hue-chroma chart: per column, the chroma the gamut reaches at
+// the top lightness and at the bottom one, capped at the chroma maximum. A face inside the hatch is
+// under the chroma minimum, so the range keeps nothing there.
+// The vivid slice is drawn at neither face once the range covers the cusp, so the faces are what the
+// lightness sliders move.
+function faceCurves(w, h, cfg) {
+	return [cfg.lMax, cfg.lMin].map(relative => Array.from({ length: w }, (_, x) => {
+		const hue = ridgeUnwarp(x / w * 360);
+		return (1 - Math.min(gamutChroma(absoluteL(relative, hue), hue), absoluteC(cfg.cMax, hue)) / CHROMA_MAX) * (h - 1);
+	}));
+}
+
+// Top face solid, bottom face dashed; a dark halo under a light line reads on any color of the field.
+function strokeFaces(ctx, faces) {
+	faces.forEach((ys, face) => {
+		ctx.beginPath();
+		ys.forEach((y, x) => x ? ctx.lineTo(x + 0.5, y) : ctx.moveTo(0.5, y));
+		ctx.setLineDash(face ? [4, 3] : []);
+		ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+		ctx.lineWidth = 3;
+		ctx.stroke();
+		ctx.strokeStyle = "#ffffff";
+		ctx.lineWidth = 1.2;
+		ctx.stroke();
+	});
+	ctx.setLineDash([]);
 }
 
 function drawHLPlane(cfg, colors) {
