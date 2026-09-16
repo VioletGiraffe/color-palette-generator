@@ -66,6 +66,12 @@ node data/make_cell_deal.js [--sectors 20]    # deal calibrate-cells.html's hue 
 node data/fit_cells.js log.json               # capacity per cell and direction, the metric's correction factors and the same-y ratio, from a calibrate-cells.html log
 node data/make_palette_pairs.js [--seeds 20] [--counts 7,10] [--box 40 60 60 100] [--conditions hue|preference] # deal calibrate-palettes.html's pairs into the page
 node data/fit_palettes.js log.json            # condition strengths and what the eye counted, from a calibrate-palettes.html log
+node data/make_boundary_deal.js [--boundaries red,yellow,green,cyan,blue,magenta] [--turns 10,15,20,30,45,60] [--offsets -1,-0.5,0,0.5,1] [--light 50] [--chroma 85] [--placement shared|own-chroma|own] # deal calibrate-boundaries.html's pairs into the page
+node data/make_boundary_deal.js --sweep 10 [--turns 20,30,45,60,45] [--light 50] [--chroma 85] [--placement shared|own-chroma|own|own-reversed|low|high[,more]] [--ranges 230-340,120-190] # the same, swept around the circle or over hue ranges at even centres; a turn listed twice is dealt again at centres half a step over; several placements deal every pair under each
+node data/make_boundary_deal.js --axis lightness [--hues 30] [--centres 35,50,65] [--turns 10,20,30,45,60] [--chroma 85] # lightness pairs instead: one hue, a turn apart in cusp-relative lightness
+node data/make_boundary_deal.js --axis chroma [--hues 30] [--centres 30,50,70] [--turns 10,20,30,40,50] [--light 50] # chroma pairs: one hue and lightness, a turn apart in chroma share of the reach
+node data/fit_boundaries.js log.json          # grades by turn and offset per boundary hue and the boundary's excess on the metric, from a calibrate-boundaries.html log
+node data/fit_hue_density.js [--p 0.75] [--ridge 2] [--knots 12] [--own-cuts] [--wl 0.35] [--wc 0.6] [--gain 0.5] [--placement own] [--table] log.json [more.json ...] # memory-scale hue density from calibrate-boundaries.html logs, the hue term in the metric's distance form: ranking quality flat, fitted and cross-validated, the density at each knot and the grade cuts on the metric, per log with --own-cuts
 node data/make_member_deal.js [--palettes 120] [--count 8] [--box 20 60 20 100] [--shared 0.5] # deal calibrate-members.html's palettes into the page
 node data/fit_members.js log.json             # where the bad colors live and whether bad is the color or its company, from a calibrate-members.html log
 node data/fit_preference.js log.json          # the draw's preference density from a calibrate-members.html log, as the PREFERENCE constant
@@ -99,10 +105,13 @@ cells against how well each one corresponds to a name a person would actually re
 palette recalls a color with Gaussian memory noise in OKLab and answers with the nearest entry.
 Noise is anisotropic - lightness and chroma differences count by a weight against hue, the hue
 difference is the ab chord less its radial part, taken after each hue moves to its place on the
-respaced circle of `HUE_DENSITY` - and a pair swaps with the chance the noise carries a recall past
-their midpoint. A color's error is the sum over its pairs, the same formula the page optimizes.
-The weights, the noise width and the position terms are fitted on that respaced circle (the fit
-scripts' `--warped`); the raw circle needed a hue trough at blue that the respacing removes. A
+respaced circle of `HUE_DENSITY` and scaled by the pair's mean chroma at `CHROMA_POWER`, the whole
+distance by a lightness gain that is one at the cusps' lightness and rises toward black and toward white - and
+a pair swaps with the chance the noise carries a recall past their midpoint. A color's error is the
+sum over its pairs, the same formula the page optimizes. The lightness weight and the noise width come from the
+recall calibration below and were fitted on the step-round circle (the fit scripts' `--warped`); the
+circle, the chroma weight, the chroma power and the gain come from the hue boundary rounds under the preference question,
+see the boundary logs at the end. A
 palette reports each color's accuracy, the floor (the worst color), and the pair confused most. A
 Monte Carlo (noise drawn per recall, nearest entry answered) was tried in
 four geometries and fitted the calibration verdicts worse than this formula in every one, by 5 to
@@ -155,7 +164,7 @@ three chroma bands; the rest are fillers.
 Fitted: wL 0.35 (0.3 to 0.35), wC 0.6 (0.5 to 0.7), too close below 7 and fine above 9 weighted
 deltaE, softness 2, lapse 0.005. Marked rate over the distance ladder: 21/21 at 4.5, 15/19 at 6,
 13/16 at 7.5, 9/16 at 9, 1/13 at 11, 0/13 at 13. The sigma rule below puts a lone pair's 2% swap
-chance at 13.0 weighted deltaE. Adopted: SIGMA 3, wL 0.35, wC 0.6.
+chance at 13.0 weighted deltaE. Adopted: SIGMA 3, wL 0.35, wC 0.6; the preference rounds later put wC at 1.
 
 The staged fit returns a chroma exponent of -0.2, 4.1 log-likelihood units better than the flat
 metric. Not adopted: the chroma-axis probes are capped at distance 9 and so never leave the middle
@@ -224,3 +233,78 @@ not poolable.
 
 Refit with `node data/fit.js --warped data/calibration-log.json`. A different swatch size needs its own log
 and fit; the thresholds are size-dependent.
+
+### Naming round
+
+`naming-verdicts-16px.json`: 120 colors named by the author on 2026-09-05 at 16 px swatches, one word per color
+from the 36 of `calibrate-names.html`. A record holds the hex, the word, the shortlist the page offered and
+whether the full list was opened. Read by `node data/fit_names.js data/naming-verdicts-16px.json`, which scores
+every pair of answers.
+
+### Hue step logs
+
+Logs of `calibrate-hue-steps.html`: at an anchor color the judge scrubs a run of swatches to each side and picks
+the first that reads as a different color. A record holds the anchor's hue and hex, the hues and hexes picked to
+the left and right, the anchor's lightness and chroma, absolute and cusp-relative, the degrees per swatch, the run's
+reach in swatches, the swatch size and the ground. All the tracked logs step hue alone.
+
+- `ridge-2-steps-log.json`, version 1: two rounds of 51 anchors along the ridge of most saturated colors, the
+  anchor a position along the ridge, 2026-09-07.
+- `hue-1-steps-log.json` and `hue-2-steps-log.json`, version 2: anchors at cusp lightness and 50% of the reach,
+  48 and 96 trials, 2026-09-07.
+- `hue-3-c70-steps-log.json`: the same at 70% of the reach, 48 trials, 2026-09-07. `hue-4-c80-steps-log.json`
+  and `hue-5-c80-steps-log.json`: at 80%, 48 trials each, 2026-09-07 and 2026-09-09.
+
+`node data/fit_hue_steps.js log.json [more.json]` turns them into a hue density against the shipped
+`HUE_DENSITY`; both versions read. `fit_step_weights.js` needs a log with lightness and chroma runs at the
+same anchors, and no tracked log holds them.
+
+### Palette rounds
+
+`palette-pairs-log.json`: 120 pairwise verdicts from `calibrate-palettes.html`, each pair the same seed and
+count generated under two of three hue conditions, shipped, angle and uniform, described in the deal stamp, from the box lightness 40 to 60 and chroma 60 to 100, at counts 7 and 10;
+a record holds both palettes with their hexes, names and condition, and a verdict of a, b, both or neither. The
+deal is stamped in the log. Read by `node data/fit_palettes.js data/palette-pairs-log.json`.
+
+`palette-members-log.json`: 120 palettes of 8 from `calibrate-members.html`, the box lightness 20 to 60 and
+chroma 20 to 100, 60 colors dealt into two palettes each; a record holds the palette's hexes and names, the fixed
+color and the members marked bad. Read by `node data/fit_members.js data/palette-members-log.json` for where
+the bad colors live, and by `node data/fit_preference.js data/palette-members-log.json` for the draw's
+`PREFERENCE` constant.
+
+### Hue boundary logs
+
+`boundary-1-log.json` to `boundary-15-log.json` are the hue boundary rounds from
+`calibrate-boundaries.html`, one pair per trial at the same lightness and chroma, a set hue turn apart, graded
+too close, marginal or fine. Rounds 1 to 3 asked whether one color would be recalled as the other; from round 4
+the question is whether the judge wants both in one palette, a preference, which the judge holds steadier. Each
+record carries the pair's hexes, its turn and centre hue, and for a boundary deal the boundary it was placed around
+and the offset of the turn from it. The `deal` stamp says how the log's
+pairs were placed: version 1 put each color at the centre hue's cusp lightness and its own reach, so round 1's
+pairs differ in chroma within a pair and its yellow pairs are pale; version 2 names its `placement`: `shared` is one
+lightness and one chroma per pair, `own-chroma` one lightness and each color's own reach, `own` each color at its
+own hue's lightness and reach, `own-reversed` each at the other's, `low` and `high` both at the lower or the higher. Rounds 1 and 2 are boundary deals; rounds 3 to 9 the same sweep, rounds 3 and 4
+shared, 5 own-chroma, 6 to 9 own; round 4 onward under the preference question. Rounds 3 to 6 sit at the cusp
+at 85% of the reach; round 7 at the cusp at 50%, round 8 at relative lightness 25, round 9 at 75, both at 85%.
+Round 10 is a lightness deal, `axis` lightness in the stamp: one hue per pair, the colors a turn apart in
+cusp-relative lightness around a centre, twelve hues, centres 35, 50 and 65, turns 10 to 60; it tells absolute
+from cusp-relative lightness. Round 11 is a chroma deal, `axis` chroma: one hue and lightness per pair, the colors a
+turn apart in chroma share of the reach around centres 30, 50 and 70, turns 10 to 50; it measures the chroma weight.
+Rounds 12 and 13 repeat the dark and the pastel sweeps, rounds 8 and 9, pair for pair. Round 14 sweeps violet, 230 to
+340, and green as a control, 120 to 190, every pair dealt under both the shared and the own placement in one
+sitting, each record tagged with its placement. Round 15 deals violet 260 to 340 and red-orange 20 to 80 at turns 30 and 45
+five ways each: one lightness at the mean (`own-chroma`), each at its own cusp (`own`), each at the other's
+(`own-reversed`), both at the lower (`low`), both at the higher (`high`), every color at 85% of its reach there.
+`boundary-1-log.json` to `boundary-15-log.json` follow the same record format.
+
+- `node data/fit_boundaries.js log.json` tables one deal's grades by turn and placement.
+- `node data/fit_hue_density.js data/boundary-1-log.json data/boundary-2-log.json data/boundary-3-log.json` pools every log into the memory-scale hue density; a
+  record's own hexes carry everything the fit reads, so deals of any version pool.
+
+### Archive
+
+`calibration_0409/` is the state of the `calibrate.html` logs on 2026-09-04, before the 28 sessions the
+constants come from were judged: `calibration-log.json` there pools the 78 predecessor sessions with 24 judged
+that morning under the new schedule, and `new-schedule-24.json` holds those 24 alone. None of the sessions is
+in the current `calibration-log.json`, and the predecessor's are not poolable with it (above). Read by
+`node data/fit.js --warped` like any `calibrate.html` log.

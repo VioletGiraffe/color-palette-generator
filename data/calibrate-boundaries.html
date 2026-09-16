@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hue boundary calibration</title>
+<style>
+	/* Dark in either scheme: the page is a grey ground with dark grey panels, nothing bright beside the pair. */
+	:root {
+		color-scheme: dark;
+		--bg: #2a2a2a; --panel: #363636; --ink: #e6e6e6; --ink-dim: #c4c4c4; --line: #4a4a4a; --accent: #6ea0d8; --warn: #e06a5e;
+	}
+	* { box-sizing: border-box; }
+	/* The ground the pair is judged on is the whole page, the Ground field's color; the session panel is open to it. */
+	body { margin: 0; padding: 16px; font: 14px/1.45 system-ui, sans-serif; color: var(--ink); background: #808080; }
+	/* The pair sits centred on the page, above the panels, so the eye rests on it alone while judging. */
+	#session { background: transparent; border: none; padding: 0; text-align: center; }
+	#session .actions { justify-content: center; }
+	h1 { font-size: 18px; margin: 0 0 6px; }
+	h2 { font-size: 14px; margin: 0 0 8px; }
+	p, .hint { margin: 0 0 8px; }
+	.hint { font-size: 12px; color: var(--ink-dim); }
+	#layout { width: 300px; }
+	@media (max-width: 800px) { #layout { width: auto; } }
+	.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+	label.row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+	label.row input[type=number] { width: 70px; }
+	label.row input[type=text] { width: 90px; }
+	textarea { width: 100%; font: 12px/1.4 ui-monospace, monospace; }
+	button { font: inherit; padding: 5px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); cursor: pointer; }
+	button:hover { border-color: var(--accent); }
+	button:disabled { opacity: 0.5; cursor: default; }
+	button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+	.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+	#arena { display: flex; justify-content: center; gap: var(--gap); border-radius: 6px; padding: 20px 16px; user-select: none; }
+	.swatch { width: var(--size); aspect-ratio: 1; border-radius: 4px; }
+	#progress { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+	[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<h1>Hue boundary calibration</h1>
+<p class="hint">Would you want both of these colors in one palette? Grade by preference, not by whether you could
+tell them apart: too close is no, fine is yes.
+Each trial shows one pair, dealt by <code>make_boundary_deal.js</code>: two colors a set turn apart in hue, at the
+lightness and chroma the deal below names, the pair placed so that its turn straddles one of the six
+sRGB primary and secondary hues, touches it, or stays a whole turn to one side, or swept around the whole circle at
+even centres; or two colors of one hue a set turn apart in cusp-relative lightness, or in chroma. Grade the pair alone.
+The pairs come in random order with random sides, so a condition is never judged by its position. The log is
+kept in this browser between visits and can be downloaded and loaded back. Run it through
+<code>node data/fit_boundaries.js log.json</code>.</p>
+
+<div class="panel" id="session" hidden>
+	<h2>Pair <span id="progress"></span></h2>
+	<div id="arena">
+		<div class="swatch" id="side-a"></div>
+		<div class="swatch" id="side-b"></div>
+	</div>
+	<div class="hint">Keys: 1 too close, 2 marginal, 3 fine; Backspace takes the last verdict back and shows its pair again.</div>
+	<div class="actions">
+		<button id="close">Too close</button>
+		<button id="marginal">Marginal</button>
+		<button id="fine">Fine</button>
+		<button id="undo" disabled>Undo</button>
+	</div>
+</div>
+
+<div id="layout">
+<div>
+	<div class="panel" id="setup">
+		<h2>Setup</h2>
+		<label class="row">Swatch, px <input type="number" id="swatch-px" value="80" min="12" max="300"></label>
+		<label class="row">Gap, px <input type="number" id="gap-px" value="40" min="0" max="400"></label>
+		<label class="row">Ground <input type="text" id="ground" value="#808080"></label>
+		<label class="row">Pairs per round <input type="number" id="round-pairs" value="50" min="1" max="1000"></label>
+		<div class="hint">A round is one sitting; the next Start takes the next pairs not yet judged.</div>
+		<div class="hint" id="deal-status"></div>
+		<div class="actions"><button class="primary" id="start">Start</button></div>
+	</div>
+	<div class="panel">
+		<h2>Log</h2>
+		<div id="log-status" class="hint"></div>
+		<div class="actions">
+			<button id="export">Show JSON</button>
+			<button id="download">Download</button>
+			<button id="load">Load JSON</button>
+			<button id="clear">Clear</button>
+		</div>
+		<input type="file" id="file" accept="application/json,.json" hidden>
+		<textarea id="json" rows="6" hidden></textarea>
+	</div>
+</div>
+</div>
+
+<script>
+"use strict";
+// ---------- deal ----------
+const BOUNDARY_PAIRS = {"version":2,"page":"index.html","light":50,"chroma":85,"placement":"own-chroma,own,own-reversed,low,high","turns":[30,45],"sweep":10,"ranges":[[260,340],[20,80]],"pairs":[{"placement":"own-chroma","turn":30,"centre":260,"hues":[245,275],"L":[58.4,58.4],"C":[12.5,19.4],"hexes":["#2c81c0","#5e69ec"]},{"placement":"own","turn":30,"centre":260,"hues":[245,275],"L":[69.1,47.6],"C":[14.8,25.5],"hexes":["#3aa3f1","#4231e7"]},{"placement":"own-reversed","turn":30,"centre":260,"hues":[245,275],"L":[47.6,69.1],"C":[10.2,13.8],"hexes":["#1f6192","#8393f1"]},{"placement":"low","turn":30,"centre":260,"hues":[245,275],"L":[47.6,47.6],"C":[10.2,25.5],"hexes":["#1f6192","#4231e7"]},{"placement":"high","turn":30,"centre":260,"hues":[245,275],"L":[69.1,69.1],"C":[14.8,13.8],"hexes":["#3aa3f1","#8393f1"]},{"placement":"own-chroma","turn":30,"centre":270,"hues":[255,285],"L":[56.4,56.4],"C":[15.8,21.4],"hexes":["#2875cf","#6f56eb"]},{"placement":"own","turn":30,"centre":270,"hues":[255,285],"L":[62.5,50.3],"C":[17.5,25],"hexes":["#2f87ee","#6132e8"]},{"placement":"own-reversed","turn":30,"centre":270,"hues":[255,285],"L":[50.3,62.5],"C":[14.1,18],"hexes":["#2064b2","#8072ee"]},{"placement":"low","turn":30,"centre":270,"hues":[255,285],"L":[50.3,50.3],"C":[14.1,25],"hexes":["#2064b2","#6132e8"]},{"placement":"high","turn":30,"centre":270,"hues":[255,285],"L":[62.5,62.5],"C":[17.5,18],"hexes":["#2f87ee","#8072ee"]},{"placement":"own-chroma","turn":30,"centre":280,"hues":[265,295],"L":[49.4,49.4],"C":[24.2,23.1],"hexes":["#1b49e8","#712dd3"]},{"placement":"own","turn":30,"centre":280,"hues":[265,295],"L":[45.4,53.4],"C":[26.5,24.9],"hexes":["#0d30e6","#7e33ea"]},{"placement":"own-reversed","turn":30,"centre":280,"hues":[265,295],"L":[53.4,45.4],"C":[22,21.2],"hexes":["#2c5ce9","#6427bc"]},{"placement":"low","turn":30,"centre":280,"hues":[265,295],"L":[45.4,45.4],"C":[26.5,21.2],"hexes":["#0d30e6","#6427bc"]},{"placement":"high","turn":30,"centre":280,"hues":[265,295],"L":[53.4,53.4],"C":[22,24.9],"hexes":["#2c5ce9","#7e33ea"]},{"placement":"own-chroma","turn":30,"centre":290,"hues":[275,305],"L":[52.4,52.4],"C":[22.7,23.2],"hexes":["#4d4ee9","#8b2fd2"]},{"placement":"own","turn":30,"centre":290,"hues":[275,305],"L":[47.6,57.2],"C":[25.5,25.3],"hexes":["#4231e7","#9c36eb"]},{"placement":"own-reversed","turn":30,"centre":290,"hues":[275,305],"L":[57.2,47.6],"C":[20.1,21],"hexes":["#5b64eb","#7928b8"]},{"placement":"low","turn":30,"centre":290,"hues":[275,305],"L":[47.6,47.6],"C":[25.5,21],"hexes":["#4231e7","#7928b8"]},{"placement":"high","turn":30,"centre":290,"hues":[275,305],"L":[57.2,57.2],"C":[20.1,25.3],"hexes":["#5b64eb","#9c36eb"]},{"placement":"own-chroma","turn":30,"centre":300,"hues":[285,315],"L":[56.1,56.1],"C":[21.5,23.5],"hexes":["#6f55eb","#a632d0"]},{"placement":"own","turn":30,"centre":300,"hues":[285,315],"L":[50.3,62],"C":[25,26],"hexes":["#6132e8","#be3aee"]},{"placement":"own-reversed","turn":30,"centre":300,"hues":[285,315],"L":[62,50.3],"C":[18.2,21],"hexes":["#7e70ed","#8f2ab4"]},{"placement":"low","turn":30,"centre":300,"hues":[285,315],"L":[50.3,50.3],"C":[25,21],"hexes":["#6132e8","#8f2ab4"]},{"placement":"high","turn":30,"centre":300,"hues":[285,315],"L":[62,62],"C":[18.2,26],"hexes":["#7e70ed","#be3aee"]},{"placement":"own-chroma","turn":30,"centre":310,"hues":[295,325],"L":[60.6,60.6],"C":[20.5,24.1],"hexes":["#8e5fed","#c437cf"]},{"placement":"own","turn":30,"centre":310,"hues":[295,325],"L":[53.4,67.9],"C":[24.9,27],"hexes":["#7e33ea","#e441f0"]},{"placement":"own-reversed","turn":30,"centre":310,"hues":[295,325],"L":[67.9,53.4],"C":[16.2,21.2],"hexes":["#a080f0","#a52dae"]},{"placement":"low","turn":30,"centre":310,"hues":[295,325],"L":[53.4,53.4],"C":[24.9,21.2],"hexes":["#7e33ea","#a52dae"]},{"placement":"high","turn":30,"centre":310,"hues":[295,325],"L":[67.9,67.9],"C":[16.2,27],"hexes":["#a080f0","#e441f0"]},{"placement":"own-chroma","turn":30,"centre":320,"hues":[305,335],"L":[62.9,62.9],"C":[21.4,23.8],"hexes":["#a85bee","#d839c0"]},{"placement":"own","turn":30,"centre":320,"hues":[305,335],"L":[57.2,68.5],"C":[25.3,25.9],"hexes":["#9c36eb","#f241d7"]},{"placement":"own-reversed","turn":30,"centre":320,"hues":[305,335],"L":[68.5,57.2],"C":[17.8,21.6],"hexes":["#b479f0","#bf31a9"]},{"placement":"low","turn":30,"centre":320,"hues":[305,335],"L":[57.2,57.2],"C":[25.3,21.6],"hexes":["#9c36eb","#bf31a9"]},{"placement":"high","turn":30,"centre":320,"hues":[305,335],"L":[68.5,68.5],"C":[17.8,25.9],"hexes":["#b479f0","#f241d7"]},{"placement":"own-chroma","turn":30,"centre":330,"hues":[315,345],"L":[64.3,64.3],"C":[24.1,23.2],"hexes":["#c24def","#e63aad"]},{"placement":"own","turn":30,"centre":330,"hues":[315,345],"L":[62,66.6],"C":[26,24.1],"hexes":["#be3aee","#f23eb5"]},{"placement":"own-reversed","turn":30,"centre":330,"hues":[315,345],"L":[66.6,62],"C":[22.3,22.4],"hexes":["#c65df0","#db37a4"]},{"placement":"low","turn":30,"centre":330,"hues":[315,345],"L":[62,62],"C":[26,22.4],"hexes":["#be3aee","#db37a4"]},{"placement":"high","turn":30,"centre":330,"hues":[315,345],"L":[66.6,66.6],"C":[22.3,24.1],"hexes":["#c65df0","#f23eb5"]},{"placement":"own-chroma","turn":30,"centre":20,"hues":[5,35],"L":[65.1,65.1],"C":[21.3,19.4],"hexes":["#f1437e","#ed5630"]},{"placement":"own","turn":30,"centre":20,"hues":[5,35],"L":[64.3,65.8],"C":[22,19.6],"hexes":["#f13b7b","#f15731"]},{"placement":"own-reversed","turn":30,"centre":20,"hues":[5,35],"L":[65.8,64.3],"C":[20.6,19.2],"hexes":["#f14a81","#ea542f"]},{"placement":"low","turn":30,"centre":20,"hues":[5,35],"L":[64.3,64.3],"C":[22,19.2],"hexes":["#f13b7b","#ea542f"]},{"placement":"high","turn":30,"centre":20,"hues":[5,35],"L":[65.8,65.8],"C":[20.6,19.6],"hexes":["#f14a81","#f15731"]},{"placement":"own-chroma","turn":30,"centre":30,"hues":[15,45],"L":[66.9,66.9],"C":[18.9,16.2],"hexes":["#f2586f","#e36e32"]},{"placement":"own","turn":30,"centre":30,"hues":[15,45],"L":[63.6,70.2],"C":[21.6,17.1],"hexes":["#f03b5f","#f27636"]},{"placement":"own-reversed","turn":30,"centre":30,"hues":[15,45],"L":[70.2,63.6],"C":[16.3,15.4],"hexes":["#f36e7e","#d5672e"]},{"placement":"low","turn":30,"centre":30,"hues":[15,45],"L":[63.6,63.6],"C":[21.6,15.4],"hexes":["#f03b5f","#d5672e"]},{"placement":"high","turn":30,"centre":30,"hues":[15,45],"L":[70.2,70.2],"C":[16.3,17.1],"hexes":["#f36e7e","#f27636"]},{"placement":"own-chroma","turn":30,"centre":40,"hues":[25,55],"L":[68.4,68.4],"C":[17.4,14.4],"hexes":["#f26661","#dc7e35"]},{"placement":"own","turn":30,"centre":40,"hues":[25,55],"L":[63,73.9],"C":[21.7,15.6],"hexes":["#f03b3f","#f48c3b"]},{"placement":"own-reversed","turn":30,"centre":40,"hues":[25,55],"L":[73.9,63],"C":[13.5,13.3],"hexes":["#f4867f","#c5702e"]},{"placement":"low","turn":30,"centre":40,"hues":[25,55],"L":[63,63],"C":[21.7,13.3],"hexes":["#f03b3f","#c5702e"]},{"placement":"high","turn":30,"centre":40,"hues":[25,55],"L":[73.9,73.9],"C":[13.5,15.6],"hexes":["#f4867f","#f48c3b"]},{"placement":"own-chroma","turn":30,"centre":50,"hues":[35,65],"L":[71.6,71.6],"C":[15.3,13.7],"hexes":["#f37c5e","#dd8f39"]},{"placement":"own","turn":30,"centre":50,"hues":[35,65],"L":[65.8,77.3],"C":[19.6,14.7],"hexes":["#f15731","#f59f40"]},{"placement":"own-reversed","turn":30,"centre":50,"hues":[35,65],"L":[77.3,65.8],"C":[11.5,12.6],"hexes":["#f59a83","#c68032"]},{"placement":"low","turn":30,"centre":50,"hues":[35,65],"L":[65.8,65.8],"C":[19.6,12.6],"hexes":["#f15731","#c68032"]},{"placement":"high","turn":30,"centre":50,"hues":[35,65],"L":[77.3,77.3],"C":[11.5,14.7],"hexes":["#f59a83","#f59f40"]},{"placement":"own-chroma","turn":30,"centre":60,"hues":[45,75],"L":[75.5,75.5],"C":[13.3,13.5],"hexes":["#f49265","#e1a23e"]},{"placement":"own","turn":30,"centre":60,"hues":[45,75],"L":[70.2,80.8],"C":[17.1,14.5],"hexes":["#f27636","#f6b144"]},{"placement":"own-reversed","turn":30,"centre":60,"hues":[45,75],"L":[80.8,70.2],"C":[9.9,12.6],"hexes":["#f6ac8a","#cc9237"]},{"placement":"low","turn":30,"centre":60,"hues":[45,75],"L":[70.2,70.2],"C":[17.1,12.6],"hexes":["#f27636","#cc9237"]},{"placement":"high","turn":30,"centre":60,"hues":[45,75],"L":[80.8,80.8],"C":[9.9,14.5],"hexes":["#f6ac8a","#f6b144"]},{"placement":"own-chroma","turn":30,"centre":70,"hues":[55,85],"L":[79.1,79.1],"C":[11.9,13.8],"hexes":["#f6a66e","#e3b342"]},{"placement":"own","turn":30,"centre":70,"hues":[55,85],"L":[73.9,84.4],"C":[15.6,14.7],"hexes":["#f48c3b","#f7c349"]},{"placement":"own-reversed","turn":30,"centre":70,"hues":[55,85],"L":[84.4,73.9],"C":[8.5,12.9],"hexes":["#f8bd97","#d0a33c"]},{"placement":"low","turn":30,"centre":70,"hues":[55,85],"L":[73.9,73.9],"C":[15.6,12.9],"hexes":["#f48c3b","#d0a33c"]},{"placement":"high","turn":30,"centre":70,"hues":[55,85],"L":[84.4,84.4],"C":[8.5,14.7],"hexes":["#f8bd97","#f7c349"]},{"placement":"own-chroma","turn":45,"centre":260,"hues":[237.5,282.5],"L":[61.3,61.3],"C":[11.5,18.4],"hexes":["#318dc0","#776fed"]},{"placement":"own","turn":45,"centre":260,"hues":[237.5,282.5],"L":[72.9,49.6],"C":[13.6,25],"hexes":["#40b3f2","#5a31e8"]},{"placement":"own-reversed","turn":45,"centre":260,"hues":[237.5,282.5],"L":[49.6,72.9],"C":[9.3,12.3],"hexes":["#226990","#9c9df2"]},{"placement":"low","turn":45,"centre":260,"hues":[237.5,282.5],"L":[49.6,49.6],"C":[9.3,25],"hexes":["#226990","#5a31e8"]},{"placement":"high","turn":45,"centre":260,"hues":[237.5,282.5],"L":[72.9,72.9],"C":[13.6,12.3],"hexes":["#40b3f2","#9c9df2"]},{"placement":"own-chroma","turn":45,"centre":270,"hues":[247.5,292.5],"L":[60.1,60.1],"C":[13.6,20.3],"hexes":["#2e86cd","#885fed"]},{"placement":"own","turn":45,"centre":270,"hues":[247.5,292.5],"L":[67.7,52.6],"C":[15.3,24.9],"hexes":["#389df0","#7733e9"]},{"placement":"own-reversed","turn":45,"centre":270,"hues":[247.5,292.5],"L":[52.6,67.7],"C":[11.9,16],"hexes":["#256fab","#9c82f0"]},{"placement":"low","turn":45,"centre":270,"hues":[247.5,292.5],"L":[52.6,52.6],"C":[11.9,24.9],"hexes":["#256fab","#7733e9"]},{"placement":"high","turn":45,"centre":270,"hues":[247.5,292.5],"L":[67.7,67.7],"C":[15.3,16],"hexes":["#389df0","#9c82f0"]},{"placement":"own-chroma","turn":45,"centre":280,"hues":[257.5,302.5],"L":[58.2,58.2],"C":[17.9,23.8],"hexes":["#2877e2","#9944ec"]},{"placement":"own","turn":45,"centre":280,"hues":[257.5,302.5],"L":[60.2,56.2],"C":[18.5,25.2],"hexes":["#2b7dec","#9535eb"]},{"placement":"own-reversed","turn":45,"centre":280,"hues":[257.5,302.5],"L":[56.2,60.2],"C":[17.3,22.5],"hexes":["#2672d8","#9d51ed"]},{"placement":"low","turn":45,"centre":280,"hues":[257.5,302.5],"L":[56.2,56.2],"C":[17.3,25.2],"hexes":["#2672d8","#9535eb"]},{"placement":"high","turn":45,"centre":280,"hues":[257.5,302.5],"L":[60.2,60.2],"C":[18.5,22.5],"hexes":["#2b7dec","#9d51ed"]},{"placement":"own-chroma","turn":45,"centre":290,"hues":[267.5,312.5],"L":[53.3,53.3],"C":[22,22.6],"hexes":["#375ae9","#982fc7"]},{"placement":"own","turn":45,"centre":290,"hues":[267.5,312.5],"L":[45.9,60.7],"C":[26.2,25.8],"hexes":["#2230e6","#b539ed"]},{"placement":"own-reversed","turn":45,"centre":290,"hues":[267.5,312.5],"L":[60.7,45.9],"C":[18,19.5],"hexes":["#5378ed","#7c24a3"]},{"placement":"low","turn":45,"centre":290,"hues":[267.5,312.5],"L":[45.9,45.9],"C":[26.2,19.5],"hexes":["#2230e6","#7c24a3"]},{"placement":"high","turn":45,"centre":290,"hues":[267.5,312.5],"L":[60.7,60.7],"C":[18,25.8],"hexes":["#5378ed","#b539ed"]},{"placement":"own-chroma","turn":45,"centre":300,"hues":[277.5,322.5],"L":[57.3,57.3],"C":[20.2,23.1],"hexes":["#6162eb","#b332c5"]},{"placement":"own","turn":45,"centre":300,"hues":[277.5,322.5],"L":[48.3,66.3],"C":[25.3,26.7],"hexes":["#4b31e7","#da3fef"]},{"placement":"own-reversed","turn":45,"centre":300,"hues":[277.5,322.5],"L":[66.3,48.3],"C":[15.4,19.4],"hexes":["#7e87ef","#8e269d"]},{"placement":"low","turn":45,"centre":300,"hues":[277.5,322.5],"L":[48.3,48.3],"C":[25.3,19.4],"hexes":["#4b31e7","#8e269d"]},{"placement":"high","turn":45,"centre":300,"hues":[277.5,322.5],"L":[66.3,66.3],"C":[15.4,26.7],"hexes":["#7e87ef","#da3fef"]},{"placement":"own-chroma","turn":45,"centre":310,"hues":[287.5,332.5],"L":[60.1,60.1],"C":[19.6,23],"hexes":["#7e65ed","#c935ba"]},{"placement":"own","turn":45,"centre":310,"hues":[287.5,332.5],"L":[51,69.1],"C":[24.9,26.4],"hexes":["#6932e8","#f242e1"]},{"placement":"own-reversed","turn":45,"centre":310,"hues":[287.5,332.5],"L":[69.1,51],"C":[14.6,19.5],"hexes":["#978bf1","#a12995"]},{"placement":"low","turn":45,"centre":310,"hues":[287.5,332.5],"L":[51,51],"C":[24.9,19.5],"hexes":["#6932e8","#a12995"]},{"placement":"high","turn":45,"centre":310,"hues":[287.5,332.5],"L":[69.1,69.1],"C":[14.6,26.4],"hexes":["#978bf1","#f242e1"]},{"placement":"own-chroma","turn":45,"centre":320,"hues":[297.5,342.5],"L":[60.7,60.7],"C":[21,22.2],"hexes":["#935ced","#d435a5"]},{"placement":"own","turn":45,"centre":320,"hues":[297.5,342.5],"L":[54.3,67.1],"C":[25,24.5],"hexes":["#8634ea","#f23ebd"]},{"placement":"own-reversed","turn":45,"centre":320,"hues":[297.5,342.5],"L":[67.1,54.3],"C":[17.1,19.8],"hexes":["#a37af0","#b62d8e"]},{"placement":"low","turn":45,"centre":320,"hues":[297.5,342.5],"L":[54.3,54.3],"C":[25,19.8],"hexes":["#8634ea","#b62d8e"]},{"placement":"high","turn":45,"centre":320,"hues":[297.5,342.5],"L":[67.1,67.1],"C":[17.1,24.5],"hexes":["#a37af0","#f23ebd"]},{"placement":"own-chroma","turn":45,"centre":330,"hues":[307.5,352.5],"L":[62,62],"C":[22.9,21.8],"hexes":["#ab51ee","#e03792"]},{"placement":"own","turn":45,"centre":330,"hues":[307.5,352.5],"L":[58.3,65.6],"C":[25.4,23.1],"hexes":["#a437ec","#f13c9e"]},{"placement":"own-reversed","turn":45,"centre":330,"hues":[307.5,352.5],"L":[65.6,58.3],"C":[20.4,20.5],"hexes":["#b366ef","#ce3287"]},{"placement":"low","turn":45,"centre":330,"hues":[307.5,352.5],"L":[58.3,58.3],"C":[25.4,20.5],"hexes":["#a437ec","#ce3287"]},{"placement":"high","turn":45,"centre":330,"hues":[307.5,352.5],"L":[65.6,65.6],"C":[20.4,23.1],"hexes":["#b366ef","#f13c9e"]},{"placement":"own-chroma","turn":45,"centre":20,"hues":[357.5,42.5],"L":[67.1,67.1],"C":[20.7,17],"hexes":["#f24f96","#e86b33"]},{"placement":"own","turn":45,"centre":20,"hues":[357.5,42.5],"L":[65,69.2],"C":[22.5,17.6],"hexes":["#f13b90","#f26f35"]},{"placement":"own-reversed","turn":45,"centre":20,"hues":[357.5,42.5],"L":[69.2,65],"C":[18.9,16.5],"hexes":["#f2609c","#df6630"]},{"placement":"low","turn":45,"centre":20,"hues":[357.5,42.5],"L":[65,65],"C":[22.5,16.5],"hexes":["#f13b90","#df6630"]},{"placement":"high","turn":45,"centre":20,"hues":[357.5,42.5],"L":[69.2,69.2],"C":[18.9,17.6],"hexes":["#f2609c","#f26f35"]},{"placement":"own-chroma","turn":45,"centre":30,"hues":[7.5,52.5],"L":[68.5,68.5],"C":[18.1,14.9],"hexes":["#f26086","#e07c35"]},{"placement":"own","turn":45,"centre":30,"hues":[7.5,52.5],"L":[64.1,73],"C":[21.8,15.9],"hexes":["#f13b74","#f3873a"]},{"placement":"own-reversed","turn":45,"centre":30,"hues":[7.5,52.5],"L":[73,64.1],"C":[14.8,13.9],"hexes":["#f47d97","#cd712f"]},{"placement":"low","turn":45,"centre":30,"hues":[7.5,52.5],"L":[64.1,64.1],"C":[21.8,13.9],"hexes":["#f13b74","#cd712f"]},{"placement":"high","turn":45,"centre":30,"hues":[7.5,52.5],"L":[73,73],"C":[14.8,15.9],"hexes":["#f47d97","#f3873a"]},{"placement":"own-chroma","turn":45,"centre":40,"hues":[17.5,62.5],"L":[69.9,69.9],"C":[16.4,13.6],"hexes":["#f36d78","#d98937"]},{"placement":"own","turn":45,"centre":40,"hues":[17.5,62.5],"L":[63.4,76.5],"C":[21.6,14.9],"hexes":["#f03b58","#f59b3f"]},{"placement":"own-reversed","turn":45,"centre":40,"hues":[17.5,62.5],"L":[76.5,63.4],"C":[11.9,12.3],"hexes":["#f59296","#bf782f"]},{"placement":"low","turn":45,"centre":40,"hues":[17.5,62.5],"L":[63.4,63.4],"C":[21.6,12.3],"hexes":["#f03b58","#bf782f"]},{"placement":"high","turn":45,"centre":40,"hues":[17.5,62.5],"L":[76.5,76.5],"C":[11.9,14.9],"hexes":["#f59296","#f59b3f"]},{"placement":"own-chroma","turn":45,"centre":50,"hues":[27.5,72.5],"L":[71.4,71.4],"C":[15.3,13],"hexes":["#f3796c","#d49439"]},{"placement":"own","turn":45,"centre":50,"hues":[27.5,72.5],"L":[62.9,79.9],"C":[21.8,14.5],"hexes":["#f03b35","#f6ad43"]},{"placement":"own-reversed","turn":45,"centre":50,"hues":[27.5,72.5],"L":[79.9,62.9],"C":[9.8,11.4],"hexes":["#f6a59b","#b37c2e"]},{"placement":"low","turn":45,"centre":50,"hues":[27.5,72.5],"L":[62.9,62.9],"C":[21.8,11.4],"hexes":["#f03b35","#b37c2e"]},{"placement":"high","turn":45,"centre":50,"hues":[27.5,72.5],"L":[79.9,79.9],"C":[9.8,14.5],"hexes":["#f6a59b","#f6ad43"]},{"placement":"own-chroma","turn":45,"centre":60,"hues":[37.5,82.5],"L":[75.2,75.2],"C":[13,13.2],"hexes":["#f49071","#d7a63d"]},{"placement":"own","turn":45,"centre":60,"hues":[37.5,82.5],"L":[67,83.4],"C":[18.8,14.6],"hexes":["#f16032","#f7bf48"]},{"placement":"own-reversed","turn":45,"centre":60,"hues":[37.5,82.5],"L":[83.4,67],"C":[8,11.7],"hexes":["#f8b7a4","#b88e33"]},{"placement":"low","turn":45,"centre":60,"hues":[37.5,82.5],"L":[67,67],"C":[18.8,11.7],"hexes":["#f16032","#b88e33"]},{"placement":"high","turn":45,"centre":60,"hues":[37.5,82.5],"L":[83.4,83.4],"C":[8,14.6],"hexes":["#f8b7a4","#f7bf48"]},{"placement":"own-chroma","turn":45,"centre":70,"hues":[47.5,92.5],"L":[79.3,79.3],"C":[11,13.8],"hexes":["#f6a57d","#dbb843"]},{"placement":"own","turn":45,"centre":70,"hues":[47.5,92.5],"L":[71.2,87.4],"C":[16.6,15.2],"hexes":["#f37c38","#f9d24d"]},{"placement":"own-reversed","turn":45,"centre":70,"hues":[47.5,92.5],"L":[87.4,71.2],"C":[6.2,12.4],"hexes":["#f9cab3","#bd9f39"]},{"placement":"low","turn":45,"centre":70,"hues":[47.5,92.5],"L":[71.2,71.2],"C":[16.6,12.4],"hexes":["#f37c38","#bd9f39"]},{"placement":"high","turn":45,"centre":70,"hues":[47.5,92.5],"L":[87.4,87.4],"C":[6.2,15.2],"hexes":["#f9cab3","#f9d24d"]}]};
+// ---------- end deal ----------
+// Written by make_boundary_deal.js between the markers above; the page cannot fetch a file when opened from disk.
+
+const $ = id => document.getElementById(id);
+const DEAL = BOUNDARY_PAIRS;
+
+// ---------- log ----------
+
+const LOG_VERSION = 1;
+const STORAGE_KEY = "boundary-pairs-log-1";
+// Stored between visits: a deal takes several rounds. Every record carries its pair, so the fit reads the log
+// alone; the deal's stamp says which deal a round was, and a stored log of another deal is left alone: its pair
+// indices mean other pairs.
+const log = { version: LOG_VERSION, deal: { version: DEAL.version, page: DEAL.page, light: DEAL.light, chroma: DEAL.chroma, placement: DEAL.placement, turns: DEAL.turns, sweep: DEAL.sweep, ranges: DEAL.ranges, offsets: DEAL.offsets, boundaries: DEAL.boundaries, axis: DEAL.axis, hueStep: DEAL.hueStep, centres: DEAL.centres }, records: [] };
+try {
+	const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
+	if (stored && stored.version === LOG_VERSION && JSON.stringify(stored.deal) === JSON.stringify(log.deal))
+		log.records = stored.records;
+} catch {}
+
+const judged = () => new Set(log.records.map(r => r.pair));
+const remaining = () => DEAL.pairs.map((_, i) => i).filter(i => !judged().has(i));
+
+function saveLog() {
+	try { localStorage.setItem(STORAGE_KEY, JSON.stringify(log)); } catch {}
+	$("log-status").textContent = log.records.length + " verdicts recorded, " + remaining().length + " of " + DEAL.pairs.length + " pairs to go.";
+	$("undo").disabled = !log.records.length;
+	if (!$("json").hidden)
+		$("json").value = JSON.stringify(log);
+}
+
+$("export").onclick = () => {
+	$("json").hidden = !$("json").hidden;
+	$("json").value = JSON.stringify(log);
+};
+$("download").onclick = () => {
+	const url = URL.createObjectURL(new Blob([JSON.stringify(log)], { type: "application/json" }));
+	const link = Object.assign(document.createElement("a"), { href: url, download: "boundary-pairs-log.json" });
+	link.click();
+	URL.revokeObjectURL(url);
+};
+$("load").onclick = () => $("file").click();
+$("file").onchange = async () => {
+	const file = $("file").files[0];
+	$("file").value = "";
+	if (!file)
+		return;
+	let loaded;
+	try {
+		loaded = JSON.parse(await file.text());
+	} catch {
+		alert("Not a JSON file.");
+		return;
+	}
+	if (!loaded || loaded.version !== LOG_VERSION || !Array.isArray(loaded.records)) {
+		alert("Not a log of this page.");
+		return;
+	}
+	if (log.records.length && !confirm("Replace the " + log.records.length + " verdicts recorded here with the file's " + loaded.records.length + "?"))
+		return;
+	log.records = loaded.records;
+	saveLog();
+	restart();
+};
+$("clear").onclick = () => {
+	if (confirm("Discard every recorded verdict? Download first if they are wanted.")) {
+		log.records = [];
+		saveLog();
+		restart();
+	}
+};
+
+// ---------- running ----------
+
+let schedule = [], roundSize = 0, trial = null, shownAt = 0;
+
+function shuffled(items) {
+	const out = items.slice();
+	for (let i = out.length - 1; i > 0; --i) {
+		const j = Math.floor(Math.random() * (i + 1));
+		[out[i], out[j]] = [out[j], out[i]];
+	}
+	return out;
+}
+
+function restart() {
+	schedule = shuffled(remaining()).slice(0, +$("round-pairs").value);
+	roundSize = schedule.length;
+	trial = null;
+	if (!$("session").hidden)
+		next();
+}
+
+function next() {
+	if (!schedule.length) {
+		trial = null;
+		$("session").hidden = true;
+		const left = remaining().length;
+		$("deal-status").textContent = (left ? "Round done, " + left + " pairs left for the next. " : "Every pair is judged. ") + "Download the log.";
+		return;
+	}
+	const pair = schedule.pop(), flip = Math.random() < 0.5;
+	const [i, j] = DEAL.pairs[pair].hexes;
+	trial = { pair, a: flip ? j : i, b: flip ? i : j };
+	$("progress").textContent = (roundSize - schedule.length) + " of " + roundSize + " this round, " + log.records.length + " of " + DEAL.pairs.length + " judged";
+	render();
+	shownAt = performance.now();
+}
+
+// The two colors side by side, no other color on the page: the ground is the whole page.
+function render() {
+	document.body.style.background = $("ground").value;
+	$("arena").style.setProperty("--size", $("swatch-px").value + "px");
+	$("arena").style.setProperty("--gap", $("gap-px").value + "px");
+	for (const side of ["a", "b"])
+		$("side-" + side).style.background = trial[side];
+}
+
+function verdict(grade) {
+	if (!trial)
+		return;
+	const dealt = DEAL.pairs[trial.pair];
+	log.records.push({ pair: trial.pair, a: trial.a, b: trial.b, boundary: dealt.boundary, hue: dealt.hue, turn: dealt.turn, offset: dealt.offset, centre: dealt.centre, placement: dealt.placement, hues: dealt.hues, grade,
+		ms: Math.round(performance.now() - shownAt), at: new Date().toISOString() });
+	saveLog();
+	next();
+}
+
+function undo() {
+	const last = log.records.pop();
+	if (!last)
+		return;
+	saveLog();
+	schedule.push(last.pair);
+	$("session").hidden = false;
+	next();
+}
+
+$("close").onclick = () => verdict("close");
+$("marginal").onclick = () => verdict("marginal");
+$("fine").onclick = () => verdict("fine");
+$("undo").onclick = undo;
+$("swatch-px").oninput = $("gap-px").oninput = () => { if (trial) render(); };
+$("ground").oninput = () => { document.body.style.background = $("ground").value; };
+$("start").onclick = () => {
+	$("session").hidden = false;
+	restart();
+};
+
+document.addEventListener("keydown", e => {
+	if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")
+		return;
+	const keys = { "1": "close", "2": "marginal", "3": "fine" };
+	if (e.key === "Backspace")
+		undo();
+	else if ($("session").hidden)
+		return;
+	else if (keys[e.key])
+		verdict(keys[e.key]);
+	else
+		return;
+	e.preventDefault();
+});
+
+$("deal-status").textContent = DEAL.pairs.length + " pairs from " + DEAL.page + ": " + (DEAL.axis === "lightness"
+	? "one hue per pair, turns of " + DEAL.turns.join(", ") + " in cusp-relative lightness at centres " + DEAL.centres.join(", ") + ", hues every " + DEAL.hueStep + " degrees; chroma " + DEAL.chroma + "% of the reach at each color's lightness."
+	: DEAL.axis === "chroma"
+	? "one hue and lightness per pair, turns of " + DEAL.turns.join(", ") + " in chroma share of the reach at centres " + DEAL.centres.join(", ") + ", hues every " + DEAL.hueStep + " degrees; lightness " + DEAL.light + " of the cusp."
+	: "turns of " + DEAL.turns.join(", ") + " degrees "
+		+ (DEAL.sweep ? "at centres every " + DEAL.sweep + " degrees" + (DEAL.ranges ? " over " + DEAL.ranges.map(r => r.join(" to ")).join(", ") : "") : "at offsets " + DEAL.offsets.join(", ") + " of the turn from " + Object.keys(DEAL.boundaries).join(", "))
+		+ "; lightness " + DEAL.light + " of the cusp and chroma " + DEAL.chroma + "% of the reach, " + DEAL.placement.split(",").map(p => ({ shared: "one lightness and chroma per pair", "own-chroma": "one lightness, each color's own reach", own: "each color at its own hue's lightness and reach", "own-reversed": "each at the other's lightness", low: "both at the lower lightness", high: "both at the higher lightness" }[p] ?? p)).join("; ") + ".");
+saveLog();
+</script>
+</body>
+</html>

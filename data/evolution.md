@@ -1191,6 +1191,418 @@ Alternatives noted and not taken, kept in case the plan disappoints:
   off the outermost shell even where the floor cannot be met inside, which prefers a confusable palette to a
   wall-sitting one; the Distinctness slider says the floor comes first, so the two-phase push instead.
 
+## A hue boundary the metric does not see
+
+The judge's palette `v4|14|3|0|360|20|100|23|64|2869410802|1|panel|3c6ea5|hex|f0eae0|5wvrn93|aa6307,d08400`: the
+outlined hardest pair, magenta #fa1d5e against orange #f95d00, is a pair the judge calls completely different,
+and the pairs the judge calls close are, in the judge's words, ten times closer. The metric has them the other
+way round, and within a unit and a half of each other:
+
+| pair | names | metric | warped turn | dL | crosses |
+|---|---|---|---|---|---|
+| #fa1d5e #f95d00 | magenta, orange | 13.1 | 29 | 4 | red, 29 |
+| #56ff91 #00ffe0 | light green, turquoise | 14.4 | 33 | 1 | nothing |
+| #f6a900 #f95d00 | orange, orange | 14.5 | 35 | 11 | nothing |
+| #f6a900 #fff003 | orange, yellow | 14.4 | 30 | 15 | nothing, yellow at 110 just past |
+| #44c6f7 #00ffe0 | light blue, turquoise | 14.7 | 42 | 12 | cyan, 195 |
+| #4d6ff9 #44c6f7 | blue, light blue | 13.6 | 30 | 18 | blue at 264, by five degrees |
+| #b200e4 #fe4bca | purple, magenta | 15.0 | 27 | 13 | magenta, 328 |
+
+The one pair the judge calls far is the one whose turn straddles unique red; the close pairs cross no unique hue,
+or a secondary, or blue by five degrees. The judge's other standing complaint is the same effect from the other
+side: cyan, turquoise and light blue, and their run into light green, come out over-represented, and the judge
+allows that the step rounds may have measured a finer distinctness there than memory keeps. Between two unique
+hues the metric's steps add up to more than a recalled difference; across one they add up to less. The hue density is 1.0 through red because the step rounds measured one
+and two degree steps, and a category boundary is a large-turn effect: a magenta one degree redder is not another
+kind of color. The metric's form can hold the boundary, a bump in the warp at the boundary hue stretches every
+path across it, and the density was fitted at the wrong scale for it. The round to fit it: hue-axis pairs on the
+pair calibration page at cusp chroma and equal lightness, turns of 15 to 45 degrees, straddling and not straddling
+each unique hue and each secondary at equal turn, graded close, marginal or fine. Dealt as
+`data/calibrate-boundaries.html` by `data/make_boundary_deal.js`, the pair's centre at offsets of -1 to 1 turns
+from the boundary; `data/fit_boundaries.js` tables the grades and reads off the turn first graded fine at each
+offset, the boundary's excess being the metric distance the pairs beside it need less the straddling pair's.
+
+The first deal, `data/boundary-1-log.json`: 120 pairs, turns of 5 to 45 degrees around the four primaries, both
+colors at the centre hue's cusp lightness and each at 85% of its own reach. The placement is defective: at yellow's
+cusp every other hue is pale, so the straddling yellow pairs were near-white pastels of chroma 3 to 13 and graded
+close at every turn, and the pairs beside green and blue on the cyan side lost chroma the same way. From the sound
+boundaries, one verdict per cell:
+- Red: the straddling pair is fine at 20 degrees, 8.2 units. A whole turn to either side nothing is fine at 45
+  degrees: magenta-pink against pinkish red, 21.4 units, marginal; peach against mustard, 12.2 units, marginal.
+- Blue: straddling fine at 30 degrees, 9.6 units; a turn to the violet side fine at 45, 17.8 units; sky blue against
+  periwinkle at 45 degrees, 7.9 units, close.
+The second deal, `data/boundary-2-log.json`: 180 pairs, turns of 10 to 60 degrees around all six hues, one lightness
+and one chroma per pair, the mean of the two hues' cusp-relative lightness and 85% of the smaller reach there.
+Read by ranking quality, the AUC of a distance against the grades (not-close against close, fine against the rest),
+which needs no threshold and no fit:
+
+| distance | not close | fine |
+|---|---|---|
+| the metric | 0.924 | 0.942 |
+| plain OKLab distance | 0.947 | 0.953 |
+| mean chroma times the raw OKLab turn | 0.948 | 0.955 |
+| the turn alone | 0.902 | 0.920 |
+| chroma to the 0.5 times the turn | 0.934 | 0.963 |
+
+- The hue density fitted from the step rounds ranks memory-scale verdicts worse than no density at all. The JND
+  steps are real and do not add up to recalled differences.
+- Chroma weighs a turn at about the first power for the not-close line and about the half power for the fine line.
+- Residuals of the chroma-times-turn distance by hue sector of the pair's centre, grade minus the mean grade of the
+  distance's nonile: red straddled +0.29 and beside red -0.18; the sector at 330 -0.40, at 60 -0.16, at 150
+  +0.34; yellow, green, blue and cyan straddled within +0.14 of zero, magenta straddled -0.33.
+- A memory-scale density fitted to the 180 verdicts, ordinal logistic in chroma times the arc integral of a
+  piecewise-linear density at twelve knots, ridged toward flat, 6-fold cross-validated AUC 0.954 and 0.956 against
+  0.948 and 0.955 flat: knots 0:0.73 30:1.81 60:0.80 90:1.10 120:0.95 150:1.03 180:1.38 210:0.87 240:0.94 270:0.99
+  300:1.10 330:0.71. The current table averaged the same way: 0:1.05 30:1.03 60:1.00 90:1.05 120:1.20 150:1.23
+  180:1.06 210:0.84 240:0.70 270:0.83 300:0.99 330:1.02.
+So: red is the one boundary with a bump, near twice the density from 15 to 45 degrees, and the stretches to both
+sides of it, magenta-pink and orange, are compressed to 0.7 and 0.8; the yellow-green stretch the current density
+holds at 1.2 comes out at 1.0; the blue trough the current density holds at 0.7 comes out at 0.9. One verdict per
+cell, so the knots away from red are within the noise; the red bump and the failure of the step density are not.
+The density fit is `data/fit_hue_density.js`; it pools every log given, whatever the deal, since a record carries
+its own hexes. Both rounds pooled, 300 verdicts: cross-validated 0.918 and 0.957 against 0.893 and 0.940 flat,
+red 2.0, the troughs beside it 0.65 and 0.53.
+
+The third deal, a sweep: pair centres every 10 degrees around the circle at turns of 20, 30, 45 and 60, and turn
+45 again at the centres between, 180 pairs; a hypothesis-free tiling for the density fit, no cells spent on turns
+graded close throughout. Same lightness and chroma rule. 27 pairs have chroma under 10, in the yellow-green and
+cyan-blue stretches where sRGB carries little at a lightness both hues share.
+
+Round 3 in, `data/boundary-3-log.json`. The judge doubted the rounds' consistency, round 1 against the other two
+in particular. Measured by fitting one density with a pair of grade cuts per log, the distance in chroma times
+degrees at which marginal and fine begin:
+
+| round | marginal from | fine from |
+|---|---|---|
+| 1 | 305 | 736 |
+| 2 | 454 | 896 |
+| 3 | 396 | 843 |
+
+Round 1 was the laxest by 1.4 on the marginal cut and 1.2 on the fine cut; rounds 2 and 3 agree within 15% and
+6%. The per-log cuts absorb it, so all three pool. The density over the subsets, round 3 alone, 2 and 3, all
+three: red at 30 is 2.0 to 2.1 in every fit, the trough at 60 0.5 to 0.7, at 240 0.7 to 0.8, at 210 0.8, at 0
+0.76 to 0.83; the knots at 90, 120, 180 and 270 wander between 0.7 and 1.4 and are noise. Out of sample the fitted
+density gains next to nothing over flat: rounds 2 and 3, 360 verdicts, cross-validated 0.953 and 0.950 against
+0.949 and 0.947 flat; round 3 alone loses on the not-close line. The step density stays below flat on every
+subset. The reading: at memory scale the hue circle is flat in chroma-scaled OKLab degrees but for one bump at
+red and, less surely, troughs on the orange and the sky-blue side; the metric's warp should be that, not the step
+table.
+
+The judge's own account of the drift: the criterion swung between capability, whether the pair could be
+remembered apart, and preference, whether the judge wants both in a palette, and only preference can be held
+steady. Preference is also the generator's target. From round 4 the page asks it outright: would you want both
+of these in one palette, no, marginal, yes. Round 4 repeats round 3's 180 pairs under that question, so every
+pair carries a grade under each criterion.
+
+Round 4 in, `data/boundary-4-log.json`, against round 3 pair by pair: 126 of 180 the same grade, 41 lower under
+preference, 13 higher, none two grades apart; mean grade 0.77 against 0.92. The drop is largest at centres 120 to
+180, green into cyan, 0.27 to 0.40 of a grade: the stretch the judge can tell apart and does not want two of.
+Cuts with one density over rounds 2, 3 and 4: round 4 marginal from 464 and fine from 976 chroma times degrees,
+round 3 390 and 854, round 2 451 and 902; preference is the strictest by a fifth on the marginal line.
+The density over the three rounds, 540 verdicts, by ridge strength:
+
+| ridge | 0 | 30 | 60 | 90 | 120 | 150 | 180 | 210 | 240 | 270 | 300 | 330 | CV not-close | CV fine |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| flat | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 0.938 | 0.948 |
+| 2 | 0.86 | 2.01 | 0.74 | 0.73 | 1.11 | 0.94 | 1.10 | 0.78 | 0.88 | 1.28 | 1.15 | 0.93 | 0.942 | 0.946 |
+| 10 | 0.93 | 1.70 | 0.83 | 0.78 | 1.04 | 0.98 | 1.03 | 0.84 | 0.89 | 1.21 | 1.13 | 0.91 | 0.945 | 0.948 |
+| 20 | 0.96 | 1.52 | 0.89 | 0.82 | 1.01 | 0.99 | 1.01 | 0.87 | 0.92 | 1.16 | 1.10 | 0.92 | 0.946 | 0.949 |
+| 50 | 1.00 | 1.30 | 0.95 | 0.88 | 0.99 | 0.99 | 0.99 | 0.92 | 0.95 | 1.10 | 1.06 | 0.94 | 0.944 | 0.950 |
+
+The shape that survives every ridge and every subset: a bump at red, a trough from orange to yellow, a shallower
+one at sky blue, a lesser bump at violet. Its size is a few thousandths of AUC, since most pairs cross none of
+them; the step density's range of three is not in the data at all. Whatever is adopted, the hue circle at this
+scale is close to flat in chroma-scaled OKLab degrees.
+
+Two caveats before adopting a table. Only round 4 was asked the preference question, and 180 verdicts cannot
+carry a twelve-knot shape on their own. And the shared placement showed the yellow-to-sky-blue half at about half
+the chroma of the magenta-to-red half, 10 to 14 against 18 to 21, and lighter, because yellow and cyan carry
+chroma only near their high cusps: the density there was measured on pastels, and the judge noticed the vivid
+hues missing. Two more preference sweeps, the same 180 centres and turns:
+- Round 5, placement own-chroma: one lightness per pair, each color at 85% of its own reach there.
+- Round 6, placement own: each color at its own hue's cusp lightness and reach, as palette colors sit; the pair
+  differs in lightness too, so the fit needs the metric's lightness term for this one.
+
+Round 5 in, `data/boundary-5-log.json`, against round 4 pair by pair, the same hues at the new saturation: 110 of
+180 the same grade, 41 higher, 29 lower, 5 two grades apart. The shift by centre: +0.8 of a grade at 90, +0.5 at
+120 and 150, where the pairs went from pastel to saturated; -0.2 to -0.4 at 30, 270 and 330. The density of round
+5 alone has yellow through green at 1.4 where round 4 had 0.56 at 90: the orange-yellow trough was the pastels,
+not the hues. Pooled, the two preference rounds contradict each other there and a fitted density cross-validates
+below flat (0.911 against 0.925 not-close). A higher chroma exponent does not reconcile them: p 1.5, 2 and 3 are
+worse at every line. What the density model lacks is the chroma difference inside a round-5 pair, 4 units on
+average, which the metric counts at W_C and the fit ignored; round 6 adds a lightness difference of 10. The fit
+needs the metric's lightness and chroma terms before the placements can pool.
+
+Done: the fit's distance is now the metric's form, the hue term C times the arc integral of the density in
+radians, the lightness and chroma terms and the gain from `identify.js`, so the cuts read in metric units. Round 5
+alone rises to 0.950 flat on the not-close line from 0.934: the chroma difference inside its pairs was a real part
+of the verdict. Refit:
+
+| verdicts | 0 | 30 | 60 | 90 | 120 | 150 | 180 | 210 | 240 | 270 | 300 | 330 | CV not-close, flat | CV fine, flat |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| round 5, 180 | 0.74 | 1.62 | 0.68 | 1.15 | 1.24 | 1.29 | 0.76 | 0.83 | 1.00 | 0.82 | 1.27 | 1.09 | 0.932, 0.950 | 0.944, 0.935 |
+| rounds 4 and 5, 360 | 0.88 | 1.73 | 0.73 | 0.78 | 1.06 | 0.97 | 0.78 | 0.77 | 1.00 | 1.16 | 1.24 | 1.10 | 0.913, 0.917 | 0.933, 0.937 |
+| rounds 2 to 5, 720, ridge 10 | 0.89 | 1.74 | 0.76 | 0.80 | 0.98 | 0.94 | 0.90 | 0.79 | 0.90 | 1.24 | 1.24 | 0.97 | 0.933, 0.920 | 0.939, 0.933 |
+
+Cuts per round on the metric, marginal and fine: round 2 9.2 and 18.2, round 3 8.2 and 17.3, round 4 9.6 and 19.7,
+round 5 11.2 and 21.1; the metric's limit of 12.3 sits between the two lines in every round, as it was meant to.
+Constant in every fit so far: red at 30 between 1.6 and 2.0, orange at 60 between 0.7 and 0.8, sky blue at 210
+about 0.8; violet at 270 to 300 at 1.2 in the preference rounds. Still open: yellow through green, 0.8 under the
+shared placement and 1.2 to 1.3 under own-chroma; round 6 at full saturation decides it. At 720 verdicts the
+shape earns 0.013 of AUC over flat, its first clear margin.
+
+Round 6 in, `data/boundary-6-log.json`, each color at its own cusp lightness and reach, lightness gaps inside a
+pair of 10 to 24 where the cusp ridge is steep (30 to 90 and 210 to 300). Against round 5: 94 of 180 the same,
+68 higher, 18 lower, mean grade 1.17 against 0.85; the lightness gap makes a pair wanted, most at 240 (+1.2) and
+30 (+0.9). Its own density is the most structured of any round, red 2.4, yellow at 90 0.49, cyan 0.56, violet
+1.6 to 2.1, magenta-pink 0.6, and fitted it beats flat by 0.06 and 0.09 of AUC: with lightness inside the pair
+the hue term is no longer the whole distance, and flat gets it wrong. The lightness weight checked on the three
+preference rounds, 0.35 against 0.5, 0.7, 1.0, 1.4: 0.35 cross-validates best and every larger weight is worse, so
+the metric's W_L holds at this scale and round 6's violet bump is not the weight.
+
+The preference rounds pooled, 540 verdicts, ridge 10, cuts per round:
+
+| 0 | 30 | 60 | 90 | 120 | 150 | 180 | 210 | 240 | 270 | 300 | 330 | CV not-close, flat | CV fine, flat |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0.81 | 1.66 | 0.87 | 0.69 | 0.98 | 1.04 | 0.72 | 0.78 | 1.03 | 1.20 | 1.37 | 0.91 | 0.933, 0.915 | 0.939, 0.916 |
+
+All five rounds since the placement fix, 900 verdicts, ridge 10: 0.88 1.92 0.96 0.72 1.10 1.07 0.89 0.84 1.06
+1.40 1.44 0.94, cross-validated 0.935 and 0.941 against 0.918 and 0.922 flat. Read across every fit: a bump at
+red of 1.7 to 1.9; a trough at yellow itself, 0.7, not at orange, which returns to 0.9 once saturated; a trough
+through cyan and sky blue, 0.7 to 0.8; a bump at violet, 1.2 to 1.4; magenta-pink and green flat. The shape earns
+about 0.02 of AUC over flat.
+
+Every round so far sat at the cusp at 85% of the reach, and the box goes dark and dull. Three more sweeps, the
+same centres and turns, own placement, 80 px swatches kept for comparison with rounds 4 to 6:
+- Round 7: the cusp at 50% of the reach; chroma scaling within a hue, and the circle for dull colors.
+- Round 8: relative lightness 25 at 85%; the dark circle, where yellow is olive.
+- Round 9: relative lightness 75 at 85%; the pastel circle.
+If the shape holds, one table serves the whole box; if it moves, the hue term becomes a surface over lightness or
+chroma, and the build waits for that.
+
+Round 7 in, `data/boundary-7-log.json`, the cusp at 50%. Against round 6 pair by pair: 120 the same, 46 lower, 14
+higher, mean grade 0.99 against 1.17. The shape at half chroma is round 6's: red 2.0 against 2.4, yellow 0.50
+against 0.49, cyan 0.71 against 0.56, sky blue 0.58 against 0.73, violet 1.5 to 2.6 against 1.5 to 2.1,
+magenta-pink 0.5 to 0.9 against 0.6. Chroma does not move the circle. Its scale: with one pair of cuts over both
+rounds, the chroma exponent that ranks best is 0.75 (cross-validated 0.931 and 0.933) against 1 (0.930 and 0.925)
+and 0.5 (0.901 and 0.896); with cuts per round, round 7's sit at 0.75 of round 6's for a chroma ratio of 0.59.
+Both readings say a power near 0.75 over 50% to 85%, the step rounds' 0.7 again, and the difference from linear
+is 0.006 of AUC. Round 8 dealt: relative lightness 25 at 85%, own placement.
+
+Round 8 in, `data/boundary-8-log.json`, the dark circle, lightness 25 to 46. Against round 6: 116 the same, 51
+lower, 13 higher, mean grade 0.95 against 1.17. The shape holds a third time: red 2.9, yellow 0.49, cyan 0.61,
+violet 1.4 to 1.5, sky blue 0.98 the one knot off. The scale does not: with cuts per round the dark round's sit at
+4.6 and 9.1 on the metric against 10.6 and 20.5 at the cusp, less than half, and chroma at the 0.75 power explains
+a fifth of that. The metric's lightness gain, mean lightness over 50 to the 0.5 power, makes dark pairs count as
+closer; the preference verdicts run the other way. The exponent swept with one pair of cuts over rounds 6 and 8
+at chroma power 0.75:
+
+| exponent | -1.5 | -1 | -0.5 | 0 | 0.5, shipped | 1 | 1.5 |
+|---|---|---|---|---|---|---|---|
+| CV not-close | 0.873 | 0.937 | 0.957 | 0.921 | 0.860 | 0.809 | 0.783 |
+| CV fine | 0.843 | 0.920 | 0.952 | 0.910 | 0.851 | 0.812 | 0.792 |
+
+Over rounds 6, 7 and 8 the same: -0.5 at 0.946 and 0.946 against 0.928 and 0.922 for no gain. The recall
+calibration found dark pairs confusable and gave them a gain below one; under preference a dark pair is wanted
+at two thirds of the metric distance a cusp pair needs. The two criteria disagree in the dark, and the sign of the
+gain is a decision for the build. Round 9, the pastel circle, tests the light end of the same exponent.
+
+Round 9 in, `data/boundary-9-log.json`, the pastel circle, lightness 75 to 96, chroma 6 to 12. The judge rejected
+most of it: 97 close, 60 marginal, 23 fine, against 44, 61 and 75 at the cusp; 93 of 180 pairs lower than in
+round 6, 15 by two grades. The judge reports many pairs on the verge between close and marginal. The cuts say
+why: with cuts per round the pastel round's sit at 6.1 and 11.9 on the metric against 6.4 and 11.8 at the cusp
+(chroma power 0.75), the same lines, and pastel pairs at these turns fall around the lower one because their
+chroma is a third of the cusp's. The light end of the gain is flat: the cusp and the pastels share cuts under the
+shipped exponent, and over rounds 6, 8 and 9 with one pair of cuts the exponent -0.5 still ranks best, 0.937 and
+0.933, driven by the dark round alone. So the gain the preference verdicts want is not a power of lightness: about
+1.4 times the cusp's for dark pairs, and the cusp's for light ones. The shape in the pastels: red 1.4, yellow
+0.73, cyan 0.67, violet 2.4; 120 and 150 at 1.46 and 0.56 cancel, the noise of one round.
+
+The six preference rounds pooled, 1080 verdicts, cuts per round, chroma power 0.75, ridge 10:
+
+| 0 | 30 | 60 | 90 | 120 | 150 | 180 | 210 | 240 | 270 | 300 | 330 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1.06 | 2.45 | 0.92 | 0.62 | 1.37 | 1.15 | 0.82 | 0.85 | 1.18 | 1.64 | 2.40 | 1.22 |
+
+The pooled ranking quality is not comparable with the single-round figures, since one AUC over rows graded
+against six different cut pairs mixes their scales. What the nine rounds leave for the build:
+- The hue shape: one table for the whole box, red and violet bumps, yellow and cyan troughs. Violet is 1.2 to 1.4
+  under the shared placement and 1.5 to 2.6 under own, where the cusp ridge puts a lightness gap of 10 to 24
+  inside the pair; part of that bump may be the lightness gap counted short, and the table takes the pooled value.
+- Chroma at the 0.75 power in the hue term.
+- The lightness gain: about 1.4 times the cusp's for dark pairs, the cusp's for light ones, against the shipped
+  0.5 power that runs the other way. Preference and recall disagree in the dark, and which the generator serves is
+  the decision.
+
+The judge asked whether the fit should work in cusp-relative coordinates. In rounds 6 to 9 both colors of a pair
+sit at the same relative lightness and chroma, so the cusp-relative reading is the fit with the absolute lightness
+term at zero. Over the four rounds with cuts per round: weight 0 ranks 0.889 and 0.881, 0.15 0.887 and 0.880, the
+shipped 0.35 0.878 and 0.872, 0.7 0.861 and 0.853; round 6 alone splits, 0.35 better on the not-close line and 0
+on the fine line. The violet bump does not depend on it: 2.4 at weight 0 and 2.8 at 0.35 over the four rounds,
+1.7 and 1.8 on round 6 alone. So violet is a placement effect, purples at their own cusps against purples at a
+shared lightness, not the lightness gap counted short, and the pooled table stands. On the coordinate itself these
+rounds say only that an absolute lightness gap between colors at equal relative position adds little to a
+preference verdict; whether relative or absolute lightness is the coordinate for pairs at different relative
+positions needs pairs of that kind, which no round dealt.
+
+Round 10 deals them: one hue per pair, the two colors a turn of 10 to 60 apart in cusp-relative lightness
+around centres 35, 50 and 65, twelve hues, each color at 85% of the reach at its lightness, 180 pairs. Above
+yellow's cusp a relative turn of 20 is under one unit of absolute lightness, below blue's it is nine, so the two
+coordinates predict opposite verdicts there. The fit that reads it, with rounds 6, 8 and 9 alongside, decides the
+coordinate, the lightness weight and the gain's form together; the lightness side of the metric changes once,
+after it. The hue table, the chroma power and the archive copy do not wait for it.
+
+Round 10 in, `data/boundary-10-log.json`. The judge reports pairs on the verge between marginal and fine this
+time. The grades are nearly the same at every hue for a given relative turn and centre, which reads as
+cusp-relative, but the diagnostic cells read as absolute: at centre 65 and turn 20, above the cusp, the hues from
+60 to 210 carry absolute gaps of 2 to 10 and every one is graded close, while the same relative turn at centre 35,
+gaps of 25 to 38, is marginal or fine. Ranked over a grid of weight and gain exponent, with W_C on the chroma gap:
+
+| distance | best weight | best gain exponent | AUC not-close / fine |
+|---|---|---|---|
+| absolute lightness | 0.35 | 0 | 0.971 / 0.963 |
+| cusp-relative lightness | 0.35 to 1 | -1 to -0.5 | 0.972 / 0.963 |
+| both in quadrature | 0.35 and 0.35 | -0.5 | 0.979 / 0.969 |
+
+A tie between the coordinates, and the hybrid earns under 0.01 on 180 verdicts, not a term. So the metric keeps
+absolute lightness at weight 0.35. The gain's two ends measured apart, each against the cusp round under one pair
+of cuts at chroma power 0.75: the dark round wants the exponent -0.5 (0.957 against 0.860 at the shipped 0.5), the
+pastel round +0.5 (0.939 against 0.935 at -0.5). Not a power of lightness: a gain of one at 50 rising both ways,
+the square root of the ratio to 50 either side, held below lightness 20.
+
+## The preference metric
+
+Built from the ten rounds, the archive of the page before it kept as
+`data/past-experiments/experimental-recall-metric.html`:
+- `HUE_DENSITY` in `index.html` and `data/identify.js` is the pooled preference density, the output of
+  `node data/fit_hue_density.js --own-cuts --ridge 10 --p 0.75 --table` over rounds 4 to 9: red 1.9 at 30, violet
+  1.9 at 300, yellow 0.48 at 95, cyan and sky blue 0.65 from 180 to 230. The step-round table is gone from the
+  metric; `data/hue-density.html` and `fit_hue_steps.js` still compare against whatever the page carries.
+- The hue term is scaled by the pair's mean chroma at `CHROMA_POWER` 0.75, one at `CHROMA_REFERENCE` 15, held
+  below `CHROMA_FLOOR` 1: `hueScaleAt` in both files, a `hueScale` argument on `weightedDistance` that the fit
+  scripts leave at one.
+- The lightness gain is `lightnessGain`: one at 50, the square root of the ratio to 50 either side, held below
+  `LIGHTNESS_FLOOR` 20, on absolute lightness. The 3D metric view, the shadows' hue reach and the pool's volume
+  element take it through the same functions.
+- `W_L`, `SIGMA`, the limit distance and the state string are unchanged: the lightness weight held under the
+  preference rounds. `W_C` is 1 from round 11 and `LIGHTNESS_REFERENCE` 68 from rounds 12 and 13, below; at
+  the cusps the limit of 12.3 then sits at the judge's fine line.
+- `fit_hue_density.js` defaults to the metric's chroma power and gain; `--gain` still fits a plain power for the
+  next gain question.
+The recall calibration's own numbers, in `data/README.md`, describe the archived page.
+
+Three more rounds after the build, the judge finding them quick: chroma pairs, then the dark and the pastel
+sweeps again. Round 11 deals the chroma pairs: one hue at the cusp, the two colors a turn of 10 to 50 points of
+chroma share apart around centres 30, 50 and 70, twelve hues, 180 pairs; the chroma weight of 0.6 is the recall
+calibration's and has no preference measurement but round 5's small in-pair gaps. Its gaps run from 1.4 to 16
+OKLab units, 0.8 to 9.5 on the metric at the shipped weight, under the marginal line throughout, so a weight
+that low would grade the whole round close.
+
+Round 11 in, `data/boundary-11-log.json`: 111 close, 46 marginal, 23 fine. Mean grade by chroma gap in OKLab
+units: 0 up to a gap of 4, 0.2 at 6, 0.75 at 8, 0.9 at 10, 1.2 at 12, 2 at 14. The running mean crosses marginal
+at a gap of 6.8 and fine at 12.7. The cusp rounds put the same lines at 6.2 to 7.4 and 12.5 to 14 on the metric,
+so a chroma gap reads at about the metric's unit: a chroma weight of 1.0, give or take 0.1 for the sitting's
+criterion, against the shipped 0.6. The ranking prefers the gap times the gain (0.931 against 0.921 for the gap
+alone) and, more, the gap over the root of the pair's mean chroma (0.937 and 0.912): a dull pair's chroma gap
+counts more than a vivid pair's, the same sub-linear chroma dependence the hue term got. Not adopted yet: the
+weight change alone is the finding, the dependence is one round's ranking. Round 12 dealt: round 8's dark sweep
+again, the same 180 pairs.
+
+Round 12 in, `data/boundary-12-log.json`, against round 8 pair by pair: 131 of 180 the same, 23 higher, 26 lower,
+none two apart, mean grade 0.93 against 0.95; the judge's retest under one criterion is tight. Its density is
+round 8's within noise, red 1.8, yellow 0.75, cyan 0.86. The dark end of the gain with both dark rounds against the
+cusp round under one pair of cuts: the plain power -0.5 ranks 0.959 and 0.953, and the built gain, one at 50 and
+rising both ways, only 0.921 and 0.917, below even no gain. The reason: the cusp rounds sit at lightness 58 to 93,
+so a minimum at 50 gives the cusp pairs nearly the dark pairs' gain, and the dark pairs need 1.4 times the cusp's.
+The minimum swept, the built form otherwise:
+
+| minimum at | 50 | 60 | 68 | 75 |
+|---|---|---|---|---|
+| dark, rounds 6, 8, 12 | 0.921 / 0.917 | 0.941 / 0.942 | 0.950 / 0.951 | 0.955 / 0.954 |
+| light, rounds 6, 9 | 0.939 / 0.935 | 0.939 / 0.935 | 0.939 / 0.932 | 0.937 / 0.929 |
+
+The minimum belongs near the cusps' own lightness, 68, where the dark end gains 0.03 and the light end loses
+0.003. Moving `LIGHTNESS_REFERENCE` there also moves the scale: the cusp rounds' cuts then read 5.6 and 11 on the
+metric instead of 6.5 and 12.5, so the limit of 12.3 the generator spaces to sits at the fine line for cusp pairs,
+not between the lines. To be applied with the chroma weight after round 13. Round 13 dealt: round 9's pastel
+sweep again.
+
+Round 13 in, `data/boundary-13-log.json`, against round 9: 136 of 180 the same, 31 lower, 13 higher, mean 0.48
+against 0.59. The judge reports leaning to close when in doubt, to steer the metric, and doubting often; the
+lean shows as the 31 against 13 and as a marginal cut of 6.6 against round 9's 6.1, and the cuts per round
+absorb it. The light end with both pastel rounds against the cusp round: plain powers 0 and 0.5 tie at 0.941;
+the built gain's minimum at 50, 68 and 75 ties at 0.941 on the light end, and over all five lightness rounds
+reads 0.908, 0.939 and 0.941. Applied: `W_C` 1 and `LIGHTNESS_REFERENCE` 68 in `index.html` and `identify.js`.
+
+Violet's placement dependence gets its own round. Round 14 sweeps 230 to 340 and, as a control, green 120 to
+190, centres every 10 degrees at turns 20, 30, 45 and 60, every pair dealt under both the shared and the own
+placement into one sitting and shuffled, 144 pairs, each record tagged. One sitting holds the criterion, so the
+density fitted per placement (`fit_hue_density.js --placement`) says whether the violet bump's size is the
+placement or was the sittings: alike under both, and the table takes the shared value near 1.3; still 1.3 against
+2, and purples that differ in lightness and chroma as well as hue read farther than the metric's quadrature adds,
+a term to fit, not a table entry. The green control says whether it is violet's alone.
+
+Round 14 in, `data/boundary-14-log.json`. Own against shared, the same hue pairs in one sitting:
+
+| region, placement | turn 20 | 30 | 45 | 60 | own minus shared per pair |
+|---|---|---|---|---|---|
+| violet, shared | 0.09 at d 8.6 | 0.64 at 12.2 | 1.09 at 16.3 | 1.64 at 19.4 | |
+| violet, own | 1.09 at 11.4 | 1.55 at 16.8 | 2.00 at 22.7 | 2.00 at 27.7 | +0.80: 28 up, 16 same, 0 down |
+| green, shared | 0.00 at 5.3 | 0.14 at 7.5 | 1.14 at 10.1 | 1.43 at 12.4 | |
+| green, own | 0.43 at 7.8 | 0.86 at 10.9 | 1.57 at 14.9 | 2.00 at 17.6 | +0.54: 14 up, 13 same, 1 down |
+
+Mean grade and the metric's distance d for the cell. Own pairs grade higher in both regions, and in green the
+metric accounts for it: at equal distance own and shared green grade alike (shared at 12.4 grades 1.43, own at
+10.9 and 14.9 grade 0.86 and 1.57). In violet it does not: shared at 16.3 grades 1.09, own at 16.8 grades 1.55,
+half a grade the distance does not carry. The density per placement within the sitting: violet at 300 is 1.06
+under shared and 1.61 under own; with the earlier rounds of each placement, 1.14 and 2.17. So the placement
+dependence is real, violet's alone among the two regions, and not the sittings. Purples that differ in lightness
+and chroma as well as hue read farther apart than the metric's quadrature adds; the same lightness gaps at red
+through yellow in round 6 showed no such excess, so it is not the gap size but the region. Nothing in the metric's
+form holds a hue-specific cross term, and one round of 44 own pairs is thin ground for one. The table keeps the
+pooled value at 300, 1.89, which sits between the two readings; a box that pins lightness to a band overrewards
+violet turns by about that ratio.
+
+To find what produces it, round 15 takes the own placement apart. Under it the bluer color of a violet pair is
+always the darker, by 10 to 24, since the cusp climbs from 45 at blue to 65 at magenta, and each color sits at its
+own reach. Three candidates: the lightness gap adding to the hue turn more than at right angles; the gap's
+alignment, darker blue against lighter purple being the order of that stretch; the lightness level, each color at
+its own cusp rather than both at the mean. The deal: violet centres 260 to 330 and, as a control with a cusp ridge
+as steep and no excess in round 6, red-orange 20 to 70, turns 30 and 45, each pair five ways in one sitting: one
+lightness at the mean, own, own reversed, both at the lower, both at the higher, every color at 85% of its reach
+at the lightness it gets. 140 pairs. Own against the mean at equal metric distance repeats the excess; own against
+reversed is the alignment; lower and higher against the mean is the level; violet against the control is the
+region.
+
+Round 15 in, `data/boundary-15-log.json`. Violet at turn 30, mean grade, the metric's distance, and the excess
+over the sitting's own grade-by-distance curve:
+
+| placement | grade | d | excess |
+|---|---|---|---|
+| one lightness at the mean | 0.75 | 15.7 | -0.73 |
+| own | 1.88 | 18.1 | +0.29 |
+| own reversed | 1.75 | 15.0 | +0.34 |
+| both at the lower | 1.00 | 18.6 | -0.62 |
+| both at the higher | 1.00 | 15.2 | -0.41 |
+
+The gap is the cause, and only the gap: own and reversed grade alike (pair by pair, own higher 2, same 14, reversed
+higher 0), so alignment is nothing; both at the lower or the higher lightness grade like the mean, so the level is
+nothing; and a pair with the gap at distance 18.1 grades a whole grade above a pair without it at 18.6. Hue and
+lightness differences add nearly linearly there, not at right angles: the own pair's terms are about 16 and 8.5,
+which read as 24. Red-orange shows a fifth of it at turn 45 and nothing at 30.
+A cross term fitted over every round whose pairs carry lightness gaps, rounds 6 to 9, 12 to 15, 1364 verdicts: the
+squared distance plus 2 rho H L, rho per 30-degree sector of the pair's mean hue, cuts per log, ridged to zero:
+
+| 0 | 30 | 60 | 90 | 120 | 150 | 180 | 210 | 240 | 270 | 300 | 330 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0.11 | 0.47 | 0.22 | 0.02 | 0.63 | -0.13 | -0.03 | 0.45 | 0.66 | 0.51 | 0.63 | -0.50 |
+
+Blue through violet, 210 to 300, at 0.45 to 0.66 is the finding of round 15 in every round's data; red-orange at
+0.47 the fifth seen there; the rest is single-sector noise, magenta's -0.5 included. The ranking gain over no cross
+term is 0.003 cross-validated: few pairs anywhere carry both a hue turn and a lightness gap in that stretch. Not
+built: a rho table would be the correct form, and the case for it is one stretch of the circle and a few
+thousandths of ranking. Recorded here for the day palettes show light purples beside dark blues too often.
+
 ## Files
 
 - `index.html`: step 18 with the calibrated constants, the hue-lightness and hue-chroma charts, the plane
@@ -1209,6 +1621,8 @@ Alternatives noted and not taken, kept in case the plan disappoints:
   - `experimental-clamp-refusal.html`: step 15, exact clamp refusal, the copy that became `index.html`.
   - `experimental-oklch.html`: step 18, the OKLCh box before the calibration. The line the scores above
     stop crossing.
+  - `experimental-recall-metric.html`: the page before the preference metric, its distance the recall
+    calibration's: the step-round hue circle, linear chroma, dark pairs counted closer.
 - `data/identify.js`, `data/fit.js`, `data/calibrate.html`: the metric and its calibration; see `data/README.md`.
 - `data/calibration-log.json`: the verdicts the constants are fitted to.
 - `data/calibrate-chroma.html`, `data/calibrate-hue.html`, `data/calibrate-cusp.html`, `data/fit_hue.js`,
@@ -1224,3 +1638,4 @@ Alternatives noted and not taken, kept in case the plan disappoints:
 - `data/calibrate-members.html`, `data/make_member_deal.js`, `data/fit_members.js`, `data/palette-members-log.json`: the palette member rounds, the bad members of one palette at a time, some colors dealt into two palettes; the deal is written into the page.
 - `data/fit_preference.js`: the draw's preference density from a member log, the PREFERENCE constant in index.html.
 - `data/calibrate-cells.html`, `data/make_cell_deal.js`, `data/fit_cells.js`: the cell capacity rounds, how many distinct and how many not same-y colors a cell of the space holds along each coordinate; the sectors are written into the page.
+- `data/calibrate-boundaries.html`, `data/make_boundary_deal.js`, `data/fit_boundaries.js`, `data/fit_hue_density.js`, `data/boundary-1-log.json` to `data/boundary-15-log.json`: the pair rounds under the preference question, one pair per trial: hue turns straddling or beside each primary and secondary hue or swept around the circle at several lightness and chroma levels and placements, lightness pairs, chroma pairs, and the violet placement rounds; the deal is written into the page, `data/README.md` lists what each round is. The density fit pools the logs; the metric's hue table, chroma power, chroma weight and lightness gain come from them.

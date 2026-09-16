@@ -28,13 +28,13 @@ Two colors can be trivial to tell apart side by side yet impossible to identify 
 pale green in isolation, you cannot say which of two pale greens it was. The generator optimizes
 for that isolated recognition, not just pairwise difference.
 
-- A viewer who learned the palette is modeled as recalling a color with Gaussian memory noise in
-  OKLab and answering with the nearest palette entry. The noise is anisotropic: a lightness
-  difference counts about a third of an equal hue difference, a chroma difference about half. The
-  width and the weights were fitted to the author's judgments of hundreds of color pairs
-  (`data/README.md`, `data/evolution.md`); the Distinctness slider is the width. Hue differences are
-  taken on a respaced circle: OKLab gives red and blue too little of it, so each hue's share is set
-  by a table authored by eye (`data/hue-density.html`).
+- Two colors are as far apart as the author would want them in one palette, measured as a distance in
+  OKLab with a noise width the Distinctness slider sets. The distance is anisotropic: a lightness
+  difference counts about a third of an equal hue difference, a chroma difference as much; a hue
+  difference grows with chroma at the 0.75 power; a pair toward black or toward white needs less
+  distance than one at the lightness of the most saturated colors. Hue differences are taken on a respaced circle, each hue's share
+  measured by the author's verdicts on thousands of pairs: a bump at red and at violet, a trough at
+  yellow and through cyan (`data/README.md`, `data/evolution.md`).
 - A pair's chance of being swapped follows from its weighted distance, and a color's chance of
   being misidentified is the sum over its pairs. The generator keeps every color's chance under a
   limit: the selected range is cut into as many cells as there are colors, each holding an equal

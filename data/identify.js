@@ -28,48 +28,59 @@ const path = require("path");
 // Memory noise, standard deviation in OKLab x100 along hue, for swatches of CALIBRATED_PX.
 // A lightness or chroma difference counts W_L or W_C times its size: below 1 the axis is a weaker
 // cue than hue, so noise along it is wider by the same factor.
-// Fitted by data/fit.js to data/calibration-log.json; see data/README.md.
+// SIGMA and W_L are fitted by data/fit.js to data/calibration-log.json, W_L held under the preference rounds;
+// W_C is the preference rounds' chroma pairs, a chroma gap reading at the metric's unit; see data/README.md.
 const SIGMA = 3;
 const W_L = 0.35;
-const W_C = 0.6;
-// A dark pair needs more distance than the weights alone give it, as a gain on the whole distance
-// by the pair's mean lightness. Fitted by data/fit_hue.js to the light-ground rounds, which the
-// page's `apart2` carries too. The gain is one at lightness 50, 1.41 at white and 0.32 at the floor,
-// so the fine threshold runs from 6 weighted deltaE near white to 27 at the floor. Absolute
-// lightness, not the cusp-relative coordinate: data/calibrate-cusp.html told the two apart.
+const W_C = 1;
+// A hue difference grows with chroma at this power, one at CHROMA_REFERENCE; the preference rounds at
+// 85% and 50% of the reach. Below CHROMA_FLOOR the scale is held.
+const CHROMA_POWER = 0.75;
+const CHROMA_REFERENCE = 15;
+const CHROMA_FLOOR = 1;
+// A gain on the whole distance by the pair's mean lightness: one at LIGHTNESS_REFERENCE, rising
+// toward black and toward white, where a pair is wanted at less distance. The preference rounds at
+// lightness 25, 50 and 75 of the cusp; the recall calibration ran the dark side the other way. Absolute
+// lightness, not the cusp-relative coordinate: a round of lightness pairs ranks the two alike, and
+// data/calibrate-cusp.html chose absolute for recall.
 const LIGHTNESS_EXPONENT = 0.5;
-const LIGHTNESS_REFERENCE = 50;
-// Without a floor the gain reaches zero at black, where every pair would read as confusable. The
-// calibration reaches down to 8, so anything under this is extrapolation either way.
-const LIGHTNESS_FLOOR = 5;
+// The gain's minimum, the cusps' own lightness
+const LIGHTNESS_REFERENCE = 68;
+// The rounds reach down to 25; the gain is held below this.
+const LIGHTNESS_FLOOR = 20;
+function lightnessGain(L) {
+	const l = Math.max(LIGHTNESS_FLOOR, L);
+	return (Math.max(l, LIGHTNESS_REFERENCE) / Math.min(l, LIGHTNESS_REFERENCE)) ** LIGHTNESS_EXPONENT;
+}
+const hueScaleAt = C => (Math.max(CHROMA_FLOOR, C) / CHROMA_REFERENCE) ** (CHROMA_POWER - 1);
 const CALIBRATED_PX = 16;
 // Each hue's share of the circle in the metric, per whole degree at mean 1; the page's copy, which
-// loadPage checks against this one. Measured: the chord density B of the hue step rounds, the output of
-// node data/fit_hue_steps.js --table b over the hue-*-steps-log.json files. See index.html.
-// The constants above were fitted on this circle (the fit scripts' --warped).
+// loadPage checks against this one. Fitted to the hue boundary rounds under the preference question, the
+// output of node data/fit_hue_density.js --own-cuts --ridge 10 --p 0.75 --table over boundary-4-log.json to
+// boundary-9-log.json. See index.html.
 const HUE_DENSITY = [
-	1.082, 1.066, 1.049, 1.033, 1.018, 1.003, 0.989, 0.978, 0.969, 0.963, 0.961, 0.962, 0.967, 0.974, 0.982, 0.991, 0.999,
-	1.006, 1.011, 1.015, 1.018, 1.02, 1.021, 1.023, 1.023, 1.023, 1.022, 1.02, 1.018, 1.017, 1.017, 1.018, 1.02, 1.022,
-	1.026, 1.03, 1.036, 1.043, 1.051, 1.06, 1.069, 1.077, 1.083, 1.089, 1.093, 1.096, 1.097, 1.095, 1.092, 1.086, 1.078,
-	1.07, 1.06, 1.049, 1.037, 1.024, 1.007, 0.988, 0.968, 0.949, 0.933, 0.921, 0.915, 0.916, 0.923, 0.934, 0.949, 0.964,
-	0.978, 0.989, 0.997, 1.002, 1.003, 1.003, 1.001, 0.999, 0.997, 0.994, 0.992, 0.991, 0.991, 0.993, 0.997, 1.003, 1.01,
-	1.019, 1.027, 1.034, 1.038, 1.041, 1.041, 1.041, 1.041, 1.042, 1.046, 1.054, 1.065, 1.078, 1.092, 1.106, 1.119, 1.129,
-	1.137, 1.144, 1.15, 1.155, 1.159, 1.162, 1.164, 1.165, 1.164, 1.163, 1.164, 1.167, 1.173, 1.182, 1.193, 1.204, 1.217,
-	1.228, 1.238, 1.247, 1.253, 1.256, 1.256, 1.252, 1.245, 1.236, 1.226, 1.216, 1.208, 1.202, 1.201, 1.205, 1.214, 1.228,
-	1.246, 1.264, 1.282, 1.296, 1.305, 1.309, 1.308, 1.303, 1.295, 1.285, 1.274, 1.263, 1.251, 1.24, 1.23, 1.221, 1.213,
-	1.207, 1.203, 1.199, 1.195, 1.19, 1.185, 1.179, 1.172, 1.165, 1.16, 1.156, 1.155, 1.156, 1.159, 1.163, 1.166, 1.168,
-	1.169, 1.167, 1.165, 1.161, 1.156, 1.149, 1.139, 1.127, 1.113, 1.097, 1.079, 1.06, 1.041, 1.021, 1.002, 0.985, 0.97,
-	0.958, 0.948, 0.94, 0.932, 0.925, 0.919, 0.912, 0.905, 0.899, 0.894, 0.891, 0.89, 0.891, 0.893, 0.897, 0.9, 0.902,
-	0.902, 0.901, 0.898, 0.894, 0.888, 0.88, 0.87, 0.857, 0.843, 0.828, 0.813, 0.799, 0.786, 0.773, 0.761, 0.75, 0.739,
-	0.729, 0.718, 0.708, 0.699, 0.69, 0.684, 0.679, 0.675, 0.673, 0.673, 0.673, 0.673, 0.674, 0.674, 0.676, 0.678, 0.681,
-	0.684, 0.688, 0.692, 0.696, 0.699, 0.702, 0.705, 0.707, 0.711, 0.716, 0.721, 0.726, 0.731, 0.736, 0.739, 0.742, 0.745,
-	0.748, 0.752, 0.757, 0.762, 0.768, 0.774, 0.779, 0.785, 0.79, 0.795, 0.8, 0.804, 0.809, 0.814, 0.82, 0.827, 0.835,
-	0.844, 0.853, 0.861, 0.87, 0.877, 0.883, 0.889, 0.893, 0.897, 0.901, 0.904, 0.907, 0.91, 0.912, 0.915, 0.917, 0.92,
-	0.924, 0.929, 0.936, 0.943, 0.952, 0.96, 0.968, 0.976, 0.983, 0.991, 1, 1.01, 1.02, 1.03, 1.038, 1.043, 1.045,
-	1.044, 1.039, 1.032, 1.023, 1.015, 1.009, 1.003, 1, 0.999, 1, 1.002, 1.004, 1.005, 1.005, 1.004, 1.001, 0.998,
-	0.993, 0.989, 0.985, 0.983, 0.982, 0.983, 0.986, 0.989, 0.994, 0.999, 1.004, 1.01, 1.017, 1.025, 1.034, 1.045, 1.055,
-	1.065, 1.074, 1.082, 1.088, 1.094, 1.097, 1.099, 1.099, 1.098, 1.097, 1.097, 1.099, 1.101, 1.106, 1.11, 1.113, 1.115,
-	1.112, 1.106, 1.095];
+	0.833, 0.857, 0.881, 0.906, 0.932, 0.958, 0.985, 1.013, 1.042, 1.071, 1.101, 1.133, 1.165, 1.198, 1.231, 1.266, 1.302,
+	1.339, 1.377, 1.416, 1.456, 1.497, 1.539, 1.583, 1.628, 1.674, 1.721, 1.77, 1.82, 1.871, 1.924, 1.863, 1.803, 1.746,
+	1.69, 1.636, 1.584, 1.533, 1.484, 1.437, 1.391, 1.347, 1.304, 1.262, 1.222, 1.183, 1.145, 1.109, 1.073, 1.039, 1.006,
+	0.974, 0.943, 0.913, 0.883, 0.855, 0.828, 0.802, 0.776, 0.751, 0.727, 0.717, 0.708, 0.698, 0.689, 0.679, 0.67, 0.661,
+	0.652, 0.644, 0.635, 0.626, 0.618, 0.61, 0.601, 0.593, 0.585, 0.577, 0.57, 0.562, 0.554, 0.547, 0.54, 0.532, 0.525,
+	0.518, 0.511, 0.504, 0.497, 0.491, 0.484, 0.497, 0.511, 0.524, 0.539, 0.553, 0.568, 0.583, 0.599, 0.615, 0.632, 0.649,
+	0.667, 0.685, 0.703, 0.722, 0.742, 0.762, 0.782, 0.804, 0.825, 0.848, 0.871, 0.894, 0.918, 0.943, 0.969, 0.995, 1.022,
+	1.049, 1.078, 1.072, 1.065, 1.059, 1.053, 1.047, 1.041, 1.035, 1.029, 1.023, 1.017, 1.011, 1.005, 0.999, 0.993, 0.987,
+	0.982, 0.976, 0.97, 0.965, 0.959, 0.953, 0.948, 0.942, 0.937, 0.931, 0.926, 0.92, 0.915, 0.91, 0.904, 0.894, 0.884,
+	0.874, 0.864, 0.855, 0.845, 0.836, 0.826, 0.817, 0.808, 0.799, 0.79, 0.781, 0.772, 0.763, 0.755, 0.746, 0.738, 0.73,
+	0.721, 0.713, 0.705, 0.697, 0.689, 0.682, 0.674, 0.666, 0.659, 0.652, 0.644, 0.645, 0.646, 0.646, 0.647, 0.648, 0.648,
+	0.649, 0.65, 0.65, 0.651, 0.652, 0.652, 0.653, 0.654, 0.654, 0.655, 0.656, 0.656, 0.657, 0.658, 0.658, 0.659, 0.66,
+	0.66, 0.661, 0.662, 0.662, 0.663, 0.664, 0.664, 0.672, 0.679, 0.687, 0.694, 0.702, 0.71, 0.718, 0.726, 0.734, 0.742,
+	0.75, 0.758, 0.767, 0.775, 0.784, 0.793, 0.801, 0.81, 0.819, 0.828, 0.838, 0.847, 0.856, 0.866, 0.875, 0.885, 0.895,
+	0.905, 0.915, 0.925, 0.935, 0.946, 0.956, 0.967, 0.977, 0.988, 0.999, 1.01, 1.021, 1.032, 1.044, 1.055, 1.067, 1.079,
+	1.091, 1.103, 1.115, 1.127, 1.14, 1.152, 1.165, 1.178, 1.191, 1.204, 1.217, 1.231, 1.244, 1.258, 1.272, 1.286, 1.302,
+	1.319, 1.336, 1.353, 1.371, 1.388, 1.406, 1.424, 1.442, 1.461, 1.48, 1.499, 1.518, 1.537, 1.557, 1.577, 1.598, 1.618,
+	1.639, 1.66, 1.681, 1.703, 1.725, 1.747, 1.769, 1.792, 1.815, 1.838, 1.862, 1.886, 1.844, 1.803, 1.763, 1.724, 1.685,
+	1.648, 1.611, 1.575, 1.54, 1.506, 1.473, 1.44, 1.408, 1.377, 1.346, 1.316, 1.287, 1.258, 1.23, 1.203, 1.176, 1.15,
+	1.124, 1.1, 1.075, 1.051, 1.028, 1.005, 0.983, 0.961, 0.956, 0.952, 0.947, 0.943, 0.938, 0.934, 0.929, 0.925, 0.921,
+	0.916, 0.912, 0.908, 0.903, 0.899, 0.895, 0.89, 0.886, 0.882, 0.878, 0.874, 0.87, 0.865, 0.861, 0.857, 0.853, 0.849,
+	0.845, 0.841, 0.837];
 
 // The table authored by eye in data/hue-density.html before the measurement; not in the metric, kept for
 // fit_hue_steps.js to compare against.
@@ -324,18 +335,19 @@ function erfc(x) {
 // Weighted distance of two colors: lightness and radial chroma differences times their weight, the
 // hue difference (the ab chord less its radial part) as is. Never through the neutral axis: a dull
 // color is as far from its opposite hue as the chord says, which is what the calibration verdicts show.
-// The anisotropic part alone, without the gain and the hue warp below: the fit scripts measure
-// against this, so it must stay the raw quantity they were fitted on.
-function weightedDistance(p, q, wL, wC) {
+// The anisotropic part alone, without the gain and the hue warp below, the hue term scaled by hueScale:
+// the fit scripts measure against this at the default, so it must stay the raw quantity they were fitted on.
+function weightedDistance(p, q, wL, wC, hueScale = 1) {
 	const dL = (p[0] - q[0]) * wL, dC = Math.hypot(p[1], p[2]) - Math.hypot(q[1], q[2]);
 	const chord2 = (p[1] - q[1]) ** 2 + (p[2] - q[2]) ** 2;
-	return Math.sqrt(dL * dL + wC * wC * dC * dC + Math.max(0, chord2 - dC * dC));
+	return Math.sqrt(dL * dL + wC * wC * dC * dC + Math.max(0, chord2 - dC * dC) * hueScale * hueScale);
 }
 
-// How far apart a pair reads: the weighted distance of the hue-warped points times the gain for the
-// pair's lightness. This is the metric the generator optimizes and this file scores.
-const recallDistance = (p, q, wL, wC) => weightedDistance(warpedLab(p), warpedLab(q), wL, wC)
-	* (Math.max(LIGHTNESS_FLOOR, (p[0] + q[0]) / 2) / LIGHTNESS_REFERENCE) ** LIGHTNESS_EXPONENT;
+// How far apart a pair reads: the weighted distance of the hue-warped points, the hue term scaled by the
+// pair's mean chroma, times the gain for the pair's lightness. This is the metric the generator optimizes
+// and this file scores.
+const recallDistance = (p, q, wL, wC) => weightedDistance(warpedLab(p), warpedLab(q), wL, wC, hueScaleAt((Math.hypot(p[1], p[2]) + Math.hypot(q[1], q[2])) / 2))
+	* lightnessGain((p[0] + q[0]) / 2);
 
 // Chance a recall of one color of a pair lands nearer the other: noise of width sigma along the
 // pair's line, past the midpoint.
@@ -544,7 +556,7 @@ function main(args) {
 	benchmarkPage(args[0] || defaultPage);
 }
 
-module.exports = { SIGMA, W_L, W_C, LIGHTNESS_EXPONENT, NAME_DECAY, CALIBRATED_PX, HUE_DENSITY, HUE_DENSITY_AUTHORED,
+module.exports = { SIGMA, W_L, W_C, CHROMA_POWER, CHROMA_REFERENCE, CHROMA_FLOOR, LIGHTNESS_EXPONENT, LIGHTNESS_REFERENCE, LIGHTNESS_FLOOR, lightnessGain, hueScaleAt, NAME_DECAY, CALIBRATED_PX, HUE_DENSITY, HUE_DENSITY_AUTHORED,
 	labOf, rgbOf, warpedLab, weightedDistance, recallDistance, swapChance, confusionMatrix, summarize, score, nameCollision,
 	loadPage, gamutChroma, cuspLightness, relativePosition };
 
