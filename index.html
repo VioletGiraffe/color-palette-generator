@@ -402,9 +402,12 @@
 </div>
 
 <div class="panel" id="gamut">
-	<h2>3D gamut</h2>
+	<div class="bar">
+		<h2 style="margin:0; flex:1">3D gamut</h2>
+		<label class="row" style="margin:0"><span>In the metric</span><input type="checkbox" id="metric-3d"></label>
+	</div>
 	<div class="plane" id="gamut-3d"></div>
-	<div class="hint">The sRGB gamut in OKLab, lightness up. Solid body: what the selected ranges allow. Cones: fixed colors. Amber line: hardest pair. Halos reach half the distance the generator keeps colors apart at this Distinctness, so two meeting mark a pair right at its limit; they stand tall since lightness counts for less, and grow toward black. Drag to rotate, double-click to reset.</div>
+	<div class="hint">The sRGB gamut in OKLab, lightness up. Solid body: what the selected ranges allow. Cones: fixed colors. Amber line: hardest pair. Halos reach half the distance the generator keeps colors apart at this Distinctness, so two meeting mark a pair right at its limit; they stand tall since lightness counts for less, and grow toward black. In the metric: the same body as the generator measures it, each hue turned to its calibrated angle, chroma and height scaled by the lightness gain and height by the lightness weight too; only distances straight in or out from the grey axis stay at OKLab scale, so a halo still stretches that way. Drag to rotate, double-click to reset.</div>
 </div>
 
 <div class="panel" id="side">
@@ -2475,7 +2478,24 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 // OKLab (L, a, b) -> scene (x=a, y=L-0.5, z=b). One OKLab unit along every axis, so on-screen
 // proportions are OKLab proportions up to the rotation.
-const toScene = lab => [lab[1], lab[0] - 0.5, lab[2]];
+const oklabScene = lab => [lab[1], lab[0] - 0.5, lab[2]];
+
+// OKLab -> scene as apart2 measures it, as far as three flat axes allow: the hue at its warped
+// angle, the chroma scaled by the lightness gain, the height the gain and W_L summed from black.
+// Steps along and around the grey axis then read at metric length; radial steps stay at OKLab
+// length, W_C being a radial weight no flat picture can carry with the other two.
+const gainAt = L => (Math.max(LIGHTNESS_FLOOR, L * 100) / LIGHTNESS_REFERENCE) ** LIGHTNESS_EXPONENT;
+// Height at every hundredth of lightness, the trapezoid sum of W_L times the gain.
+const METRIC_HEIGHT = [0];
+for (let k = 1; k <= 100; ++k)
+	METRIC_HEIGHT.push(METRIC_HEIGHT[k - 1] + W_L * (gainAt((k - 1) / 100) + gainAt(k / 100)) / 200);
+function metricScene(lab) {
+	const at = Math.min(100, Math.max(0, lab[0] * 100)), k = Math.min(99, Math.floor(at));
+	const height = METRIC_HEIGHT[k] + (METRIC_HEIGHT[k + 1] - METRIC_HEIGHT[k]) * (at - k);
+	const radius = Math.hypot(lab[1], lab[2]) * gainAt(lab[0]), angle = warpedHue(lab[1], lab[2]);
+	return [radius * Math.cos(angle), height - METRIC_HEIGHT[100] / 2, radius * Math.sin(angle)];
+}
+let toScene = oklabScene;
 
 const container = $("gamut-3d");
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -2534,21 +2554,24 @@ const SHELL_STEPS = 48;
 const shellMaterial = new THREE.MeshBasicMaterial({
 	vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0.22, depthWrite: false });
 const shell = new THREE.Group();
-for (let axis = 0; axis < 3; ++axis)
-	for (const side of [0, 1])
-		shell.add(new THREE.Mesh(sheet(SHELL_STEPS, SHELL_STEPS, (u, v) => {
-			const rgb = [];
-			rgb[axis] = side;
-			rgb[(axis + 1) % 3] = u;
-			rgb[(axis + 2) % 3] = v;
-			return rgb;
-		}), shellMaterial));
-scene.add(shell);
-
 // The grey axis: zero chroma at every lightness.
-scene.add(new THREE.Line(
-	new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, -0.5, 0), new THREE.Vector3(0, 0.5, 0)]),
-	new THREE.LineBasicMaterial({ color: 0x9298a4 })));
+const greyAxis = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x9298a4 }));
+scene.add(shell, greyAxis);
+function buildShell() {
+	clearGroup(shell);
+	for (let axis = 0; axis < 3; ++axis)
+		for (const side of [0, 1])
+			shell.add(new THREE.Mesh(sheet(SHELL_STEPS, SHELL_STEPS, (u, v) => {
+				const rgb = [];
+				rgb[axis] = side;
+				rgb[(axis + 1) % 3] = u;
+				rgb[(axis + 2) % 3] = v;
+				return rgb;
+			}), shellMaterial));
+	greyAxis.geometry.dispose();
+	greyAxis.geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...toScene([0, 0, 0])), new THREE.Vector3(...toScene([1, 0, 0]))]);
+}
+buildShell();
 
 const regionGroup = new THREE.Group(), markerGroup = new THREE.Group(),
 	pairGroup = new THREE.Group(), zoneGroup = new THREE.Group();
@@ -2637,14 +2660,14 @@ function pairMesh(pair) {
 }
 
 // The recall metric's reach around a color, centred on the origin: a unit sphere's vertices walked
-// out along their directions until `apart2` reads `radius` deltaE. The
-// metric grows monotonically along a ray, so each crossing brackets and bisects.
+// out along their OKLab directions until `apart2` reads `radius` deltaE, each then placed by the
+// scene mapping. The metric grows monotonically along a ray, so each crossing brackets and bisects.
 function haloGeometry(color, radius) {
 	const geometry = new THREE.SphereGeometry(1, 24, 16);
-	const p = color.lab.map(v => v * 100);
+	const p = color.lab.map(v => v * 100), centre = toScene(color.lab);
 	const target = radius * radius, vertices = geometry.attributes.position;
 	for (let i = 0; i < vertices.count; ++i) {
-		const dir = [vertices.getY(i), vertices.getX(i), vertices.getZ(i)]; // scene axes back to L, a, b
+		const dir = [vertices.getY(i), vertices.getX(i), vertices.getZ(i)]; // sphere axes as L, a, b
 		const reach = t => apart2(p, p.map((x, k) => x + t * dir[k]));
 		let below = 0, above = radius;
 		while (reach(above) < target)
@@ -2653,8 +2676,8 @@ function haloGeometry(color, radius) {
 			const mid = (below + above) / 2;
 			if (reach(mid) < target) below = mid; else above = mid;
 		}
-		const reachInScene = above / 100;
-		vertices.setXYZ(i, vertices.getX(i) * reachInScene, vertices.getY(i) * reachInScene, vertices.getZ(i) * reachInScene);
+		const point = toScene(p.map((x, k) => (x + above * dir[k]) / 100));
+		vertices.setXYZ(i, point[0] - centre[0], point[1] - centre[1], point[2] - centre[2]);
 	}
 	return geometry;
 }
@@ -2736,7 +2759,13 @@ window.addEventListener("resize", resize);
 resize();
 
 // The classic script has already generated and drawn: pick up its state, then follow its hooks.
-window.update3D(lastCfg, palette, lastResult?.pair ?? null);
+const showPageState = () => window.update3D(lastCfg, palette, lastResult?.pair ?? null);
+showPageState();
+$("metric-3d").addEventListener("change", e => {
+	toScene = e.target.checked ? metricScene : oklabScene;
+	buildShell();
+	showPageState();
+});
 
 // The loop runs only while the panel is on screen. A hidden tab needs no handling of its own:
 // the loop is requestAnimationFrame-driven and the browser stalls it there.
