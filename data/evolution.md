@@ -924,13 +924,16 @@ on the charts: the region under the floor is not hatched.
 Excluding names is a family-level exclusion and the preference density a fitted population-level one; the
 judge's third wish is a point-level one: this color and its kin, less of them. index.html takes a list of
 avoided colors beside the fixed ones, from a textarea or a right-click on a palette color, carried in the state
-string. An avoided color is not a gate on the box: a zone wide enough to mean kin covers much of a box, and a
-start that lands inside a gate cannot push its way out, which is what a first gated version did at one color in
-eight. It is a repulsive point instead, a member the palette does not show: the start and the pushes read its
-distance divided by AVOID_REACH, 1.5, so colors settle that many limits away, and the floor and the status
-exclude it. Over 20 default-box seeds with two avoided colors each, no color came within 16.9 of one against a
-limit of 12.3 and a target of 18.5, the palette floor unchanged, generation 157 ms against 45: qualifying draws
-are rarer and restarts more. The reach is unmeasured; the same-y ratio, if the cell round ever runs, would set it.
+string. The first version was an isotropic zone: a gate at twice the limit trapped starts inside it, one color in
+eight, and a repulsive point at 1.5 limits, measured clean, banned the pure version of a color along with the
+dull one. The judge's complaint is never about a point, it is about what the color lacks: too dull, too dark, too
+light. So an avoided color casts a shadow away from the cusp. In the cusp-relative plane of its hue, the cusp at
+(50, 100), the points at least as far from the cusp as the color and within a cone of 20 degrees around its own
+direction are banned, nothing toward the cusp is. The shadow reaches across hues as far as the color's own chroma
+turns one noise width, capped at a half circle, so a grey still shadows every hue and a dull red 16 degrees each side;
+one limit was tried first and read as too aggressive on the chart, 65 degrees each side for a dull red. It
+is a gate in `usableLch` like an excluded name, safe from trapping because a push toward the cusp always leaves
+it, and both charts hatch it. A color at the cusp casts no shadow: too vivid is the chroma maximum's job.
 
 ## Cell capacity rounds
 
@@ -1110,21 +1113,53 @@ the hull estimate being the wrong ceiling there. The decision: keep the rule's e
 push in two phases, interior pushes first, then clamped pushes accepted for the colors still under the floor,
 so a roomy box never changes, a crowded one clamps less than with the rule dropped, and the ring works.
 
-The plan, not yet built:
-- A pool start over cells of equal metric volume. Each attempt draws a pool of a few thousand points through the
-  existing weighted draw, so the hue density, the preference weight and the avoided colors apply, weights each by
-  the metric's volume element, and splits the pool into `count` cells of equal weight by recursive median splits
-  along the widest axis in metric units. One seat per cell, the first candidate clearing the floor from
-  everything placed; a fixed color takes the cell it falls in. Equal weight in a uniform pool is equal available
-  space at any box, with no strata to define. Every seed's palette changes.
-- Pushes confined to the seat's cell, clamped at its bounds as the box clamps now. Without it the pushes drift
-  the seats toward the outer thirds as measured above. Where neighbouring cells are compressed below the limit
-  the floor drops there, and the readout shows it.
+The plan, built the same day, as it stands in `index.html`:
+- A pool start over cells of equal metric volume. A pool of 2000 points per box, drawn through the existing
+  weighted draw so the hue density and the preference weight apply, remembered per box like the hue weight,
+  each point carrying the metric's volume element. Per attempt the pool is cut into `count` cells of equal
+  weight by recursive quantile splits along the cell's longest axis in metric length, the cells sub-boxes in the
+  box's own coordinates. The cells in a random order, each seating the first of its points, taken in an order
+  drawn by weight, that clears the limit from everything placed, else the farthest; a fixed color inside the box
+  takes its cell. Equal weight in a uniform pool is equal available space at any box, with no strata to define.
+- Pushes in three phases, each for the colors still over the limit when the one before is exhausted: within the
+  color's cell, then the cell's walls kept, then the box's walls kept.
 - Restarts stop on a plateau: after the minimum four, only while the best floor improved within the last three.
-- The two-phase push above. A zero-width range then needs no special case.
-- Cost measured after the build: the pool size adjusted if the cells come out ragged.
-Open after it: the reach 1.5 of avoided colors; the preference round dealt in calibrate-palettes.html, shipped
-against plain in the default box, unrun; the cell capacity and direction step rounds, built and shelved.
+
+Measured after the build, the same 40 seeds and thirds as above:
+
+| stage | count | chroma thirds | lightness thirds | floor | ms per palette |
+|---|---|---|---|---|---|
+| uniform by metric volume | | 15/45/40 | 7/47/46 | | |
+| seats alone, no clearance test | 8 | 18/41/41 | 7/47/46 | | |
+| seats alone | 8 | 15/38/47 | 11/41/48 | | |
+| built, seats pushed | 8 | 11/38/51 | 12/36/52 | 0.98 | 55 |
+| before, for reference | 8 | 9/45/46 | 13/33/53 | 0.98 | 44 |
+| seats alone | 16 | 17/30/54 | 13/38/49 | | |
+| built, seats pushed | 16 | 14/22/64 | 23/11/66 | 0.96 | 900 |
+| before, for reference | 16 | 14/19/67 | 21/11/68 | 0.97 | 635 |
+
+Read off it:
+- The seats without the clearance test reproduce the metric reference exactly: the cells and the weighted order
+  do what they were built for.
+- The clearance test is the Poisson-disc bias again at the scale of a cell, four to six points off the reference.
+  Capping it at 4 or 16 candidates or dropping it changes the end result by a point or two: the pushes decide.
+- The pushes still empty the middle third, and the cells do not stop them. A cell's far wall is still a wall:
+  neighbours across a shared wall push each other away from it, to the outer walls of their cells, and at count
+  16 the splits are mostly in hue, the longest axis, so a cell spans the whole lightness range. In a crowded box
+  the emptied middle is the floor's optimum, so any coverage kept there is paid for in floor.
+- Count 40, two seeds: floor 0.55 to 0.60 against 0.68 before, the confinement's price where every cell is
+  compressed; the third phase does not recover it, since the push budget runs out inside the cells.
+- The ring, chroma 100 to 100: count 6 floor 0.97 in 0.5 s against 0.71 in 8 s, count 14 in 0.7 s against 67 s.
+  The wall-phase fix works and the budgets no longer nest.
+- Cost at 8 unchanged within noise, at 16 half again the old.
+The open decision: coverage of the middle at crowded counts is only had by stopping the pushes short of the
+floor's optimum, a margin inside the cell walls or an earlier stop, and the Distinctness slider says the floor
+comes first. The build as it stands keeps the floor; the seats are the coverage and the pushes take back what
+the floor needs. Whether that reads better than before is a pairwise round, dealt against `tmp/index-HEAD.html`
+or the commit before.
+Open after it: the shadow's cone angle, 20 degrees by eye; the cell capacity and direction step rounds, built and
+shelved. The preference pairwise round was started and abandoned at 50 pairs: a palette is not a unit the judge
+can rank, both sides always carried a disliked color, and the verdicts were coin tosses.
 Alternatives noted and not taken, kept in case the plan disappoints:
 - Coverage by usable OKLab volume in place of metric volume: the pool unweighted before the split. The two
   references differ by up to 3x per hue slice and 2.8x per lightness slice, so the choice is visible in a

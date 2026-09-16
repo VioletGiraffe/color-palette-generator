@@ -334,7 +334,7 @@
 		<h2>Avoid colors</h2>
 		<textarea id="avoid-colors" spellcheck="false" placeholder="#8b6b4a&#10;#7f7f7f"></textarea>
 		<div id="avoid-preview"></div>
-		<div class="hint">Six-digit hex, any separator. Generated colors keep away from these, half again the distance they keep from each other. Right-click a color in the palette to add it.</div>
+		<div class="hint">Six-digit hex, any separator. Each bans what it lacks: at its hue, every color at least as far from the most vivid one in the same direction, so a dull color bans duller ones and a dark one darker ones, never the pure version. Hatched on the charts. Right-click a color in the palette to add it.</div>
 	</div>
 
 </div>
@@ -367,10 +367,10 @@
 	</div>
 
 	<div class="plane" id="hl-plane"><canvas id="hl-canvas"></canvas></div>
-	<div class="hint">Hue across, lightness up, each point at the most vivid chroma the ranges allow: the outside of the selected region. Lightness here is plain black to white, so the band the range allows rises and falls with each hue's peak. Hatching is outside the hue or lightness range, or where the chroma minimum leaves nothing. Dots are the generated colors, triangles the fixed ones.</div>
+	<div class="hint">Hue across, lightness up, each point at the most vivid chroma the ranges allow: the outside of the selected region. Lightness here is plain black to white, so the band the range allows rises and falls with each hue's peak. Hatching is outside the hue or lightness range, where the chroma minimum leaves nothing, or in an avoided color's shadow. Dots are the generated colors, triangles the fixed ones.</div>
 
 	<div class="plane" id="hc-plane"><canvas id="hc-canvas"></canvas></div>
-	<div class="hint">Hue across, chroma up. Each hue is drawn at the lightness within the range that makes it most vivid, so the top edge is the most chroma the ranges allow at that hue. Blank above it: no lightness in the range reaches that far. The solid line is the chroma reached at the top of the lightness range, the dashed line at the bottom; between them and the top edge lies what the range gives up. Hatching is outside the hue or chroma range; chroma here is absolute, so the band the range allows rises and falls with each hue's peak. Dots are the generated colors, triangles the fixed ones.</div>
+	<div class="hint">Hue across, chroma up. Each hue is drawn at the lightness within the range that makes it most vivid, so the top edge is the most chroma the ranges allow at that hue. Blank above it: no lightness in the range reaches that far. The solid line is the chroma reached at the top of the lightness range, the dashed line at the bottom; between them and the top edge lies what the range gives up. Hatching is outside the hue or chroma range, or in an avoided color's shadow; chroma here is absolute, so the band the range allows rises and falls with each hue's peak. Dots are the generated colors, triangles the fixed ones.</div>
 
 	<hr>
 
@@ -828,7 +828,8 @@ function mulberry32(seed) {
 const ALL_INCLUDED = Array.from({ length: NAME_SLOTS }, () => true);
 
 // Whether a generated color may sit at the point: sRGB shows it and its name is in use.
-const usableLch = (L, C, h, cfg) => showsLch(L, C, h) && wantedLch(C, h, cfg) && cfg.included[cellOf(oklabToRgb(...labOfLch(L, C, h))).cell];
+const usableLch = (L, C, h, cfg) => showsLch(L, C, h) && wantedLch(C, h, cfg) && !shadowed(L, C, h, cfg)
+	&& cfg.included[cellOf(oklabToRgb(...labOfLch(L, C, h))).cell];
 
 // A draw is uniform over the box's OKLab volume: lightness and hue evenly, chroma by its square so
 // the sector's outer arc is not thinned, and unusable draws rejected. A box usable almost nowhere -
@@ -1114,9 +1115,11 @@ function hueMarginal(rnd, cfg) {
 }
 // The chance a draw over the box is kept, per whole degree of its hue, peak 1. One box is remembered:
 // the sliders change one box at a time and the benchmark runs its seeds per box.
+const hueWeightKey = cfg => [cfg.hMin, cfg.hMax, cfg.lMin, cfg.lMax, cfg.cMin, cfg.cMax, cfg.preference, cfg.included.map(Number).join(""),
+	(cfg.avoid ?? []).map(color => color.hex).join(",")].join(" ");
 let hueWeightCache = { key: null, weight: null };
 function hueWeightFor(cfg) {
-	const key = [cfg.hMin, cfg.hMax, cfg.lMin, cfg.lMax, cfg.cMin, cfg.cMax, cfg.preference, cfg.included.map(Number).join("")].join(" ");
+	const key = hueWeightKey(cfg);
 	if (hueWeightCache.key !== key) {
 		const marginal = hueMarginal(mulberry32(424242), cfg);
 		const weight = HUE_DENSITY.map((d, h) => d / marginal[Math.floor(h / HUE_BIN)]);
@@ -1140,11 +1143,35 @@ function preferenceOf(C, h) {
 const PREFERENCE_FLOOR = 0.5;
 const wantedLch = (C, h, cfg) => !cfg.preference || preferenceOf(C, h) >= PREFERENCE_FLOOR;
 
-// An avoided color repels like a palette member it is not: the start and the pushes read its distance divided by
-// AVOID_REACH, so colors settle that many limits away from it. More than one: a color one limit away is merely
-// distinguishable, and an avoided color is unwanted with its kin. Not a gate on the box: a zone that wide covers
-// much of a box, and a start that lands inside a gate cannot push its way out.
-const AVOID_REACH = 1.5;
+// An avoided color bans what it lacks. In the cusp-relative plane of a hue (lightness relative to the cusp, chroma
+// as a share of the cusp's, the cusp at (CUSP_ANCHOR, 100)) it casts a shadow away from the cusp: the points at
+// least as far from the cusp as it is, within AVOID_CONE degrees of the color's direction, so a dull color bans duller
+// ones, a dark one darker ones, and nothing toward the cusp. The shadow reaches across hues as far as the color's
+// own chroma turns one noise width, the turn within which a recalled color is the avoided one, capped at a half
+// circle: a dull color's hue is barely defined.
+// A shadow is a gate like an excluded name, not a repulsion: a push toward the cusp always leaves it.
+const AVOID_CONE = 20;
+const COS_AVOID_CONE = Math.cos(AVOID_CONE * Math.PI / 180);
+const warpOfHue = h => warpedHue(Math.cos(h * Math.PI / 180), Math.sin(h * Math.PI / 180));
+function shadowsOf(colors, sigma) {
+	return colors.map(color => {
+		const [L, C, h] = color.lch;
+		const away = [relativeL(L, h) - CUSP_ANCHOR, relativeC(C, h) - 100], length = Math.hypot(...away);
+		const gain = (Math.max(LIGHTNESS_FLOOR, L) / LIGHTNESS_REFERENCE) ** LIGHTNESS_EXPONENT;
+		return { hue: warpOfHue(h), reach: Math.min(Math.PI, sigma / Math.max(C * gain, 1e-6)), away: away.map(v => v / length), length };
+	}).filter(shadow => shadow.length > 1e-6);
+}
+const shadowsFor = cfg => shadowsOf(cfg.avoid ?? [], Math.max(cfg.scale, 1));
+function shadowed(L, C, h, cfg) {
+	if (!cfg.shadows.length)
+		return false;
+	const away = [relativeL(L, h) - CUSP_ANCHOR, relativeC(C, h) - 100], length = Math.hypot(...away), hue = warpOfHue(h);
+	return cfg.shadows.some(shadow => {
+		const turn = Math.abs(hue - shadow.hue);
+		return Math.min(turn, 2 * Math.PI - turn) <= shadow.reach && length >= shadow.length
+			&& away[0] * shadow.away[0] + away[1] * shadow.away[1] >= length * COS_AVOID_CONE;
+	});
+}
 
 // A box draw kept with its hue's chance and, with preference on, the color's own; the last draw stands after WEIGHTED_TRIES.
 const WEIGHTED_TRIES = 400;
@@ -1158,41 +1185,130 @@ function sampleWeighted(rnd, cfg) {
 	return draw;
 }
 
-// Draws the start spends on one color at most.
-const START_DRAWS = 1500;
 // Restarts always made, and the most made while the result's floor stays under RESTART_TARGET or more
-// than RESTART_SHORTFALL below the floor the box allows.
-const RESTARTS = 4, MAX_RESTARTS = 16, RESTART_TARGET = 0.9, RESTART_SHORTFALL = 0.02;
+// than RESTART_SHORTFALL below the floor the box allows, and the best improved within the last
+// RESTART_PLATEAU attempts.
+const RESTARTS = 4, MAX_RESTARTS = 16, RESTART_TARGET = 0.9, RESTART_SHORTFALL = 0.02, RESTART_PLATEAU = 3;
 const positionsOf = colors => colors.map(color => color.lab.map(v => v * 100));
 
-// The fixed colors, then for each color the first hue-weighted draw at least the limit distance from
-// every color chosen so far and AVOID_REACH limits from every avoided color. When none of the draws
-// qualifies, the farthest of them: the box is too full for the limit, and the draws are then spread as
-// well as draws can be.
-function dartStart(rnd, cfg) {
-	const colors = cfg.fixed.slice();
-	const pos = positionsOf(colors);
-	const limit2 = cfg.limit * cfg.limit;
-	for (let i = 0; i < cfg.count; ++i) {
-		let pick = null, clearest = -1;
-		for (let n = 0; n < START_DRAWS && clearest < limit2; ++n) {
-			const draw = sampleWeighted(rnd, cfg);
-			const at = positionOf(draw);
-			let nearest = Infinity;
-			for (let k = 0; k < pos.length; ++k)
-				nearest = Math.min(nearest, apart2(at, pos[k]));
-			for (const p of cfg.avoidAt)
-				nearest = Math.min(nearest, apart2(at, p) / (AVOID_REACH * AVOID_REACH));
-			if (nearest > clearest) {
-				pick = draw;
-				clearest = nearest;
-			}
-		}
-		const kept = positionOf(pick);
-		colors.push(colorAt(...pick));
-		pos.push(kept);
+// The metric's volume per OKLab volume at a point: sqrt(det G) of apart2's quadratic form there, by finite differences.
+function volumeElement(p) {
+	const d = 0.01, e = [[d, 0, 0], [0, d, 0], [0, 0, d]], q = v => apart2(p, p.map((x, k) => x + v[k]));
+	const G = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+	for (let i = 0; i < 3; ++i) {
+		G[i][i] = q(e[i]) / (d * d);
+		for (let j = i + 1; j < 3; ++j)
+			G[i][j] = G[j][i] = (q(e[i].map((x, k) => x + e[j][k])) - q(e[i]) - q(e[j])) / (2 * d * d);
 	}
-	return colors;
+	const det = G[0][0] * (G[1][1] * G[2][2] - G[1][2] * G[2][1]) - G[0][1] * (G[1][0] * G[2][2] - G[1][2] * G[2][0])
+		+ G[0][2] * (G[1][0] * G[2][1] - G[1][1] * G[2][0]);
+	return Math.sqrt(Math.max(det, 0));
+}
+
+// The start covers the box by metric volume: a pool of weighted draws, each carrying the metric's volume element,
+// is cut into as many cells of equal weight as there are seats, and every cell seats one color. The cells are
+// sub-boxes in the box's own coordinates, so a cell clamps a push the way the box does.
+// One pool per box, remembered like the hue weight: the seats vary by seed, the pool need not.
+const POOL_DRAWS = 2000;
+let poolCache = { key: null, pool: null };
+function poolFor(cfg) {
+	const key = hueWeightKey(cfg);
+	if (poolCache.key !== key) {
+		const rnd = mulberry32(31337), pool = [];
+		for (let n = 0; n < POOL_DRAWS; ++n) {
+			const lch = sampleWeighted(rnd, cfg);
+			pool.push({ lch, at: [relativeL(lch[0], lch[2]), relativeC(lch[1], lch[2]), lch[2]], weight: volumeElement(positionOf(lch)) });
+		}
+		poolCache = { key, pool };
+	}
+	return poolCache.pool;
+}
+const boxOf = cfg => ({ lMin: cfg.lMin, lMax: cfg.lMax, cMin: cfg.cMin, cMax: cfg.cMax, hMin: cfg.hMin, hMax: cfg.hMax });
+// A point's coordinate along a cell's axis: relative lightness, relative chroma, or the hue's offset from the cell's start.
+const cellCoordinate = (at, cell, axis) => axis === 2 ? (at[2] - cell.hMin + 360) % 360 : at[axis];
+const inCell = (at, cell) => at[0] >= cell.lMin && at[0] <= cell.lMax && at[1] >= cell.cMin && at[1] <= cell.cMax && hueInRange(at[2], cell.hMin, cell.hMax);
+// The metric length of a cell along an axis through the middle of the other two, the hue as chords of at most 45 degrees.
+function cellLength(cell, axis) {
+	const span = hueSpan(cell.hMin, cell.hMax);
+	const mid = [(cell.lMin + cell.lMax) / 2, (cell.cMin + cell.cMax) / 2, (cell.hMin + span / 2) % 360];
+	const pointAt = at => positionOf([absoluteL(at[0], at[2]), absoluteC(at[1], at[2]), at[2]]);
+	if (axis < 2) {
+		const lo = mid.slice(), hi = mid.slice();
+		[lo[axis], hi[axis]] = axis === 0 ? [cell.lMin, cell.lMax] : [cell.cMin, cell.cMax];
+		return Math.sqrt(apart2(pointAt(lo), pointAt(hi)));
+	}
+	const chords = Math.max(1, Math.ceil(span / 45));
+	let length = 0, prev = pointAt([mid[0], mid[1], cell.hMin]);
+	for (let n = 1; n <= chords; ++n) {
+		const next = pointAt([mid[0], mid[1], (cell.hMin + span * n / chords) % 360]);
+		length += Math.sqrt(apart2(prev, next));
+		prev = next;
+	}
+	return length;
+}
+// The cell cut into `parts` cells of equal weight, each cut at the weight quantile along the cell's longest axis.
+// A cell of a single point is not cut: its seats are filled by revisiting it.
+function splitCells(cell, points, parts) {
+	if (parts === 1 || points.length < 2)
+		return [{ cell, points }];
+	const axis = [0, 1, 2].map(a => cellLength(cell, a)).reduce((best, length, a, all) => length > all[best] ? a : best, 0);
+	const sorted = points.slice().sort((p, q) => cellCoordinate(p.at, cell, axis) - cellCoordinate(q.at, cell, axis));
+	const total = sorted.reduce((sum, p) => sum + p.weight, 0), lower = Math.floor(parts / 2);
+	let i = 1;
+	for (let acc = sorted[0].weight; i < sorted.length - 1 && acc + sorted[i].weight <= total * lower / parts; ++i)
+		acc += sorted[i].weight;
+	const cut = (cellCoordinate(sorted[i - 1].at, cell, axis) + cellCoordinate(sorted[i].at, cell, axis)) / 2;
+	const [low, high] = axis === 0 ? [{ ...cell, lMax: cut }, { ...cell, lMin: cut }]
+		: axis === 1 ? [{ ...cell, cMax: cut }, { ...cell, cMin: cut }]
+		: [{ ...cell, hMax: (cell.hMin + cut) % 360 }, { ...cell, hMin: (cell.hMin + cut) % 360 }];
+	return [...splitCells(low, sorted.slice(0, i), lower), ...splitCells(high, sorted.slice(i), parts - lower)];
+}
+
+// The fixed colors, then the seats: the cells in a random order, each seating the first of its points, taken in
+// an order drawn by weight, at least the limit distance from every color placed so far, else the farthest of
+// them; a fixed color inside the box takes the cell it falls in; further rounds over the cells while seats
+// remain. Returns the colors and, per color, the cell it may move in, null for a fixed color.
+function poolStart(rnd, cfg) {
+	const colors = cfg.fixed.slice(), pos = positionsOf(colors), cells = colors.map(() => null);
+	const limit2 = cfg.limit * cfg.limit;
+	const fixedAt = cfg.fixed.map(color => [relativeL(color.lch[0], color.lch[2]), relativeC(color.lch[1], color.lch[2]), color.lch[2]]);
+	const box = boxOf(cfg);
+	const free = splitCells(box, poolFor(cfg), cfg.count + fixedAt.filter(at => inCell(at, box)).length)
+		.filter(({ cell }) => !fixedAt.some(at => inCell(at, cell)));
+	const clearance = at => {
+		let nearest = Infinity;
+		for (let k = 0; k < pos.length; ++k)
+			nearest = Math.min(nearest, apart2(at, pos[k]));
+		return nearest;
+	};
+	for (let seated = 0; seated < cfg.count;) {
+		const order = free.map((_, i) => i);
+		for (let i = order.length - 1; i > 0; --i) {
+			const j = Math.floor(rnd() * (i + 1));
+			[order[i], order[j]] = [order[j], order[i]];
+		}
+		for (const c of order) {
+			if (seated === cfg.count)
+				break;
+			let pick = null, clearest = -1;
+			// Weighted sampling without replacement: a key of u^(1/w) per point, largest first.
+			const candidates = free[c].points.map(point => ({ point, key: Math.pow(rnd(), 1 / point.weight) })).sort((p, q) => q.key - p.key);
+			for (const { point } of candidates) {
+				const nearest = clearance(positionOf(point.lch));
+				if (nearest > clearest) {
+					pick = point;
+					clearest = nearest;
+				}
+				if (nearest >= limit2)
+					break;
+			}
+			colors.push(colorAt(...pick.lch));
+			pos.push(positionOf(pick.lch));
+			cells.push(free[c].cell);
+			++seated;
+		}
+	}
+	return { colors, cells };
 }
 
 // A color's chance of being misidentified may not exceed this: the start spaces every pair at it,
@@ -1241,82 +1357,86 @@ function withinCone(rnd, axis, cfg) {
 // how steeply its swap chance falls with distance; the heading lasts while the color keeps being
 // pushed and its steps keep being accepted, and is redrawn otherwise. A push is dropped when it
 // raises the color's chance of being misidentified, when its target carries an excluded name, or
-// when the box or the gamut had to pull its target back: the pushes otherwise walk colors onto the
-// walls and leave them there. `cfg.hull` keeps the pulled-back pushes instead, for the floor the
-// box allows when its walls may be used.
+// when the bounds or the gamut had to pull its target back: the pushes otherwise walk colors onto
+// the walls and leave them there. Three phases, each for the colors still over the limit when the
+// one before is exhausted: within the color's cell of the start, then the cell's walls kept, then
+// the box's walls kept, so coverage yields to the floor only where the cell cannot hold the floor.
+// `cfg.hull` keeps the box's walls from the outset, for the floor the box allows when its walls may
+// be used.
 // Returns the state with the highest floor seen, the start included; equal floors go to the one
 // whose closest pair sits furthest apart, the only thing separating states above a sigma where
 // every color is confused and every floor is zero. That distance is `identification`'s `apart`.
-function pushApart(rnd, colors, cfg) {
+function pushApart(rnd, colors, cells, cfg) {
 	colors = colors.slice();
 	const pos = positionsOf(colors);
 	const rejected = pos.map(() => 0);
 	const heading = pos.map(() => null);
-	// The chance color `i` standing at `at` is recalled as another color, summed over the others and
-	// the avoided colors, an avoided color at its scaled distance.
+	// The chance color `i` standing at `at` is recalled as another color, summed over the others.
 	const errorAt = (i, at) => {
 		let error = 0;
 		for (let j = 0; j < pos.length; ++j)
 			if (j !== i)
 				error += swapChance(Math.sqrt(apart2(at, pos[j])), cfg.sigma);
-		for (const p of cfg.avoidAt)
-			error += swapChance(Math.sqrt(apart2(at, p)) / AVOID_REACH, cfg.sigma);
 		return error;
 	};
 	// The push on color `i` away from a point, by the pair's distance in noise widths, added to its shift.
-	const pushAway = (shift, i, other, reach) => {
+	const pushAway = (shift, i, other) => {
 		// Coincident colors have no line; they part along a.
 		const between = pos[i].map((v, k) => v - other[k]);
 		const length = Math.hypot(...between);
 		const away = length > 1e-6 ? between.map(v => v / length) : [0, 1, 0];
-		const x = Math.sqrt(apart2(pos[i], other)) / reach / (2 * cfg.sigma);
+		const x = Math.sqrt(apart2(pos[i], other)) / (2 * cfg.sigma);
 		const weight = Math.exp(-x * x / 2);
 		for (let k = 0; k < 3; ++k)
 			shift[i][k] += away[k] * weight;
 	};
 	let best = colors.slice(), bestScore = identification(colors, cfg, pos);
-	for (let n = 0, proposed = true; n < MAX_PUSHES && proposed; ++n) {
-		proposed = false;
-		const shift = pos.map(() => [0, 0, 0]);
-		for (let i = 0; i < pos.length; ++i) {
-			if (colors[i].fixed || errorAt(i, pos[i]) <= ERROR_LIMIT)
-				continue;
-			for (let j = 0; j < pos.length; ++j)
-				if (j !== i)
-					pushAway(shift, i, pos[j], 1);
-			for (const p of cfg.avoidAt)
-				pushAway(shift, i, p, AVOID_REACH);
-		}
-
-		for (let i = 0; i < pos.length; ++i) {
-			const length = Math.hypot(...shift[i]);
-			if (colors[i].fixed || rejected[i] >= STALL_PUSHES)
-				continue;
-			if (length === 0) {
-				heading[i] = null;
-				continue;
+	let n = 0;
+	const phases = cfg.hull ? [[() => cfg, true]] : [[i => cells[i], false], [i => cells[i], true], [() => cfg, true]];
+	for (const [boundsOf, keepClamped] of phases) {
+		rejected.fill(0);
+		heading.fill(null);
+		for (let proposed = true; n < MAX_PUSHES && proposed; ++n) {
+			proposed = false;
+			const shift = pos.map(() => [0, 0, 0]);
+			for (let i = 0; i < pos.length; ++i) {
+				if (colors[i].fixed || errorAt(i, pos[i]) <= ERROR_LIMIT)
+					continue;
+				for (let j = 0; j < pos.length; ++j)
+					if (j !== i)
+						pushAway(shift, i, pos[j]);
 			}
 
-			proposed = true;
-			heading[i] ??= withinCone(rnd, shift[i].map(v => v / length), cfg);
-			const target = pos[i].map((v, k) => v + heading[i][k] * PUSH_STEP);
-			const { lch, clamped } = pointInBox(target[0], target[1], target[2], cfg);
-			const at = positionOf(lch);
-			const color = colorAt(...lch);
-			if ((clamped && !cfg.hull) || !cfg.included[color.cell] || !wantedLch(lch[1], lch[2], cfg)
-					|| errorAt(i, at) > errorAt(i, pos[i])) {
-				++rejected[i];
-				heading[i] = null;
-				continue;
+			for (let i = 0; i < pos.length; ++i) {
+				const length = Math.hypot(...shift[i]);
+				if (colors[i].fixed || rejected[i] >= STALL_PUSHES)
+					continue;
+				if (length === 0) {
+					heading[i] = null;
+					continue;
+				}
+
+				proposed = true;
+				heading[i] ??= withinCone(rnd, shift[i].map(v => v / length), cfg);
+				const target = pos[i].map((v, k) => v + heading[i][k] * PUSH_STEP);
+				const { lch, clamped } = pointInBox(target[0], target[1], target[2], boundsOf(i));
+				const at = positionOf(lch);
+				const color = colorAt(...lch);
+				if ((clamped && !keepClamped) || !cfg.included[color.cell] || !wantedLch(lch[1], lch[2], cfg) || shadowed(...lch, cfg)
+						|| errorAt(i, at) > errorAt(i, pos[i])) {
+					++rejected[i];
+					heading[i] = null;
+					continue;
+				}
+				colors[i] = color;
+				pos[i] = at;
+				rejected[i] = 0;
 			}
-			colors[i] = color;
-			pos[i] = at;
-			rejected[i] = 0;
-		}
-		const score = identification(colors, cfg, pos);
-		if (score.floor > bestScore.floor || (score.floor === bestScore.floor && score.apart > bestScore.apart)) {
-			best = colors.slice();
-			bestScore = score;
+			const score = identification(colors, cfg, pos);
+			if (score.floor > bestScore.floor || (score.floor === bestScore.floor && score.apart > bestScore.apart)) {
+				best = colors.slice();
+				bestScore = score;
+			}
 		}
 	}
 	return best;
@@ -1357,31 +1477,35 @@ function identification(colors, cfg, pos = positionsOf(colors)) {
 
 // One start pushed apart, with its scores.
 function attempt(rnd, cfg) {
-	const colors = pushApart(rnd, dartStart(rnd, cfg), cfg);
+	const start = poolStart(rnd, cfg);
+	const colors = pushApart(rnd, start.colors, start.cells, cfg);
 	return { colors, ...identification(colors, cfg),
 		named: new Set(colors.map(color => color.cell)).size };
 }
 
 // The best of the restarts by floor, then gap. `reachable` is a floor the box allows for this many
 // colors: one attempt free to use the walls, from its own seed so a poor start is not shared. The
-// restarts continue past the first RESTARTS while the best falls short of it or of RESTART_TARGET.
-// Null when the box holds no usable color.
+// restarts continue past the first RESTARTS while the best falls short of it or of RESTART_TARGET
+// and a recent attempt still improved it. Null when the box holds no usable color.
 function generate(cfg) {
 	const sigma = Math.max(cfg.scale, 1);
 	const settings = { ...cfg, sigma, limit: limitDistance(sigma), included: cfg.included ?? ALL_INCLUDED, preference: cfg.preference ?? true,
 		pushMin: cfg.pushMin ?? PUSH_ANGLE_MIN, pushMax: cfg.pushMax ?? PUSH_ANGLE_MAX };
-	settings.avoidAt = positionsOf(cfg.avoid ?? []);
+	settings.shadows = shadowsFor(cfg);
 	const cells = boxCells(settings);
 	if (!cells.centres.length)
 		return null;
 	settings.cells = cells.fraction < SPARSE_FRACTION ? cells : null;
 	settings.hueWeight = hueWeightFor(settings);
 	const reachable = attempt(mulberry32(settings.seed + 104729), { ...settings, hull: true }).floor;
-	let best = null;
-	for (let n = 0; n < MAX_RESTARTS && (n < RESTARTS || best.floor < Math.max(RESTART_TARGET, reachable - RESTART_SHORTFALL)); ++n) {
+	let best = null, bestAt = 0;
+	for (let n = 0; n < MAX_RESTARTS && (n < RESTARTS
+			|| (best.floor < Math.max(RESTART_TARGET, reachable - RESTART_SHORTFALL) && n - bestAt <= RESTART_PLATEAU)); ++n) {
 		const made = attempt(mulberry32(settings.seed + n * 7919), settings);
-		if (!best || made.floor > best.floor || (made.floor === best.floor && made.apart > best.apart))
+		if (!best || made.floor > best.floor || (made.floor === best.floor && made.apart > best.apart)) {
 			best = made;
+			bestAt = n;
+		}
 	}
 	return { ...best, reachable };
 }
@@ -1489,12 +1613,13 @@ function drawMarker(ctx, x, y, color) {
 // Hue across, chroma up to CHROMA_MAX, at one cusp-relative lightness, so every column is drawn at
 // its own absolute lightness; pixels sRGB cannot show are left transparent.
 // The lightness bound is not hatched: the caller picks a lightness the range allows, so every pixel
-// is already inside it.
+// is already inside it. The avoided colors' shadows are hatched.
 // The mask is per-pixel because a wrapped hue range is two segments, which overlay bands would
 // have to cross, doubling the hatch where they met.
 function hcField(w, h, relative, cfg) {
 	const image = new ImageData(w, h);
 	const data = image.data;
+	const shade = { shadows: shadowsFor(cfg) };
 
 	for (let x = 0; x < w; ++x) {
 		const hue = ridgeUnwarp(x / w * 360);
@@ -1510,7 +1635,7 @@ function hcField(w, h, relative, cfg) {
 			let r = rgb[0] * 255, g = rgb[1] * 255, b = rgb[2] * 255;
 
 			// Same hatch as the CSS masks: 5px of black at 70%, then 5px of white at 32%.
-			if (!inHue || C < cLow || C > cHigh) {
+			if (!inHue || C < cLow || C > cHigh || shadowed(lightness, C, hue, shade)) {
 				if ((x + y) % 10 < 5) {
 					r *= .3; g *= .3; b *= .3;
 				} else {
@@ -1554,9 +1679,11 @@ function reachAt(table, x, y, w, h) {
 
 // Hue across, lightness up, each pixel at the box's chroma cap for that hue and lightness: the
 // most vivid color the ranges allow there, the outside of the selected region. Hatched outside
-// the hue and lightness ranges and where the gamut stays below the chroma minimum.
+// the hue and lightness ranges, where the gamut stays below the chroma minimum, and in an avoided
+// color's shadow.
 function hlField(canvas, cfg) {
 	const w = canvas.width, h = canvas.height;
+	const shade = { shadows: shadowsFor(cfg) };
 	// The table is the palette chart's; before its first layout the caller's own size serves.
 	const main = $("hl-canvas"), table = gamutTable(main.clientWidth || w, main.clientHeight || h);
 	const exact = table.w === w && table.h === h;
@@ -1570,9 +1697,10 @@ function hlField(canvas, cfg) {
 			const L = 100 * (1 - y / (h - 1)), reach = exact ? table.reach[y * w + x] : reachAt(table, x, y, w, h);
 			if (reach === 0)
 				continue;
-			const rgb = oklabToRgb(...labOfLch(L, Math.min(reach, cHigh), hue)).map(v => Math.min(1, Math.max(0, v)));
+			const C = Math.min(reach, cHigh);
+			const rgb = oklabToRgb(...labOfLch(L, C, hue)).map(v => Math.min(1, Math.max(0, v)));
 			let r = rgb[0] * 255, g = rgb[1] * 255, b = rgb[2] * 255;
-			if (!inHue || !withinLightness(L, hue, cfg) || reach < cLow) {
+			if (!inHue || !withinLightness(L, hue, cfg) || reach < cLow || shadowed(L, C, hue, shade)) {
 				if ((x + y) % 10 < 5) {
 					r *= .3; g *= .3; b *= .3;
 				} else {
