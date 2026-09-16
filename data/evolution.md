@@ -1152,6 +1152,18 @@ Read off it:
 - The ring, chroma 100 to 100: count 6 floor 0.97 in 0.5 s against 0.71 in 8 s, count 14 in 0.7 s against 67 s.
   The wall-phase fix works and the budgets no longer nest.
 - Cost at 8 unchanged within noise, at 16 half again the old.
+Hue, measured after the build in a saturated ring of a box (L 30-70, C 70-95), 60 sectors of 6 degrees, each
+sector's share of the generated colors over its share of the metric volume (uniform reads 1, counting noise
+0.14 at count 8):
+- With the cells cut deterministically, the same equal-weight wedges every seed, the colors settled at the same
+  eight hues palette after palette: sector ratios 0.3 to 2.7, sd 0.41 at count 8, sd 1.2 at 16 with one sector
+  at 8.9. A pool per attempt did not help, its quantiles land within a few degrees of the cached pool's, and it
+  doubled the cost.
+- With the partition drawn per attempt, a random origin for the full hue circle and the split axis drawn by
+  length among those within 0.7 of the longest: sd 0.24 at count 8, 0.70 at 16. What remains at 16 is the
+  wall: 39% of the colors on the chroma maximum, 37% on the minimum, 23% on a lightness wall, and the busiest
+  sectors at the sRGB primaries, blue at 264-270 five times its share, where a color sliding along the wall
+  stops in the corner. At count 8 the same corners show at up to 1.9.
 The open decision: coverage of the middle at crowded counts is only had by stopping the pushes short of the
 floor's optimum, a margin inside the cell walls or an earlier stop, and the Distinctness slider says the floor
 comes first. The build as it stands keeps the floor; the seats are the coverage and the pushes take back what

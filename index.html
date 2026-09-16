@@ -1208,7 +1208,8 @@ function volumeElement(p) {
 // The start covers the box by metric volume: a pool of weighted draws, each carrying the metric's volume element,
 // is cut into as many cells of equal weight as there are seats, and every cell seats one color. The cells are
 // sub-boxes in the box's own coordinates, so a cell clamps a push the way the box does.
-// One pool per box, remembered like the hue weight: the seats vary by seed, the pool need not.
+// One pool per box, remembered like the hue weight: the seats vary by seed, the pool need not. Measured: a pool
+// per attempt spreads the hues no more evenly and costs twice the time.
 const POOL_DRAWS = 2000;
 let poolCache = { key: null, pool: null };
 function poolFor(cfg) {
@@ -1224,8 +1225,8 @@ function poolFor(cfg) {
 	return poolCache.pool;
 }
 const boxOf = cfg => ({ lMin: cfg.lMin, lMax: cfg.lMax, cMin: cfg.cMin, cMax: cfg.cMax, hMin: cfg.hMin, hMax: cfg.hMax });
-// A point's coordinate along a cell's axis: relative lightness, relative chroma, or the hue's offset from the cell's start.
-const cellCoordinate = (at, cell, axis) => axis === 2 ? (at[2] - cell.hMin + 360) % 360 : at[axis];
+// A point's coordinate along a cell's axis: relative lightness, relative chroma, or the hue's offset from `origin`.
+const cellCoordinate = (at, axis, origin) => axis === 2 ? (at[2] - origin + 360) % 360 : at[axis];
 const inCell = (at, cell) => at[0] >= cell.lMin && at[0] <= cell.lMax && at[1] >= cell.cMin && at[1] <= cell.cMax && hueInRange(at[2], cell.hMin, cell.hMax);
 // The metric length of a cell along an axis through the middle of the other two, the hue as chords of at most 45 degrees.
 function cellLength(cell, axis) {
@@ -1246,22 +1247,30 @@ function cellLength(cell, axis) {
 	}
 	return length;
 }
-// The cell cut into `parts` cells of equal weight, each cut at the weight quantile along the cell's longest axis.
-// A cell of a single point is not cut: its seats are filled by revisiting it.
-function splitCells(cell, points, parts) {
+// The cell cut into `parts` cells of equal weight, each cut at the weight quantile along an axis drawn among
+// those within SPLIT_SLACK of the cell's longest, by length; a full hue circle is cut from a random origin.
+// Equal-weight cells of a fixed box are otherwise the same for every seed, and colors settle at the same
+// places in them palette after palette. A cell of a single point is not cut: its seats are filled by revisiting it.
+const SPLIT_SLACK = 0.7;
+function splitCells(rnd, cell, points, parts) {
 	if (parts === 1 || points.length < 2)
 		return [{ cell, points }];
-	const axis = [0, 1, 2].map(a => cellLength(cell, a)).reduce((best, length, a, all) => length > all[best] ? a : best, 0);
-	const sorted = points.slice().sort((p, q) => cellCoordinate(p.at, cell, axis) - cellCoordinate(q.at, cell, axis));
+	const lengths = [0, 1, 2].map(a => cellLength(cell, a)), longest = Math.max(...lengths);
+	const chances = lengths.map(length => length >= SPLIT_SLACK * longest ? length : 0);
+	let draw = rnd() * chances.reduce((sum, c) => sum + c, 0), axis = 0;
+	for (; axis < 2 && draw >= chances[axis]; ++axis)
+		draw -= chances[axis];
+	const span = hueSpan(cell.hMin, cell.hMax), origin = span === 360 ? rnd() * 360 : cell.hMin;
+	const sorted = points.slice().sort((p, q) => cellCoordinate(p.at, axis, origin) - cellCoordinate(q.at, axis, origin));
 	const total = sorted.reduce((sum, p) => sum + p.weight, 0), lower = Math.floor(parts / 2);
 	let i = 1;
 	for (let acc = sorted[0].weight; i < sorted.length - 1 && acc + sorted[i].weight <= total * lower / parts; ++i)
 		acc += sorted[i].weight;
-	const cut = (cellCoordinate(sorted[i - 1].at, cell, axis) + cellCoordinate(sorted[i].at, cell, axis)) / 2;
+	const cut = (cellCoordinate(sorted[i - 1].at, axis, origin) + cellCoordinate(sorted[i].at, axis, origin)) / 2;
 	const [low, high] = axis === 0 ? [{ ...cell, lMax: cut }, { ...cell, lMin: cut }]
 		: axis === 1 ? [{ ...cell, cMax: cut }, { ...cell, cMin: cut }]
-		: [{ ...cell, hMax: (cell.hMin + cut) % 360 }, { ...cell, hMin: (cell.hMin + cut) % 360 }];
-	return [...splitCells(low, sorted.slice(0, i), lower), ...splitCells(high, sorted.slice(i), parts - lower)];
+		: [{ ...cell, hMin: origin, hMax: (origin + cut) % 360 }, { ...cell, hMin: (origin + cut) % 360, hMax: (origin + span) % 360 }];
+	return [...splitCells(rnd, low, sorted.slice(0, i), lower), ...splitCells(rnd, high, sorted.slice(i), parts - lower)];
 }
 
 // The fixed colors, then the seats: the cells in a random order, each seating the first of its points, taken in
@@ -1273,7 +1282,7 @@ function poolStart(rnd, cfg) {
 	const limit2 = cfg.limit * cfg.limit;
 	const fixedAt = cfg.fixed.map(color => [relativeL(color.lch[0], color.lch[2]), relativeC(color.lch[1], color.lch[2]), color.lch[2]]);
 	const box = boxOf(cfg);
-	const free = splitCells(box, poolFor(cfg), cfg.count + fixedAt.filter(at => inCell(at, box)).length)
+	const free = splitCells(rnd, box, poolFor(cfg), cfg.count + fixedAt.filter(at => inCell(at, box)).length)
 		.filter(({ cell }) => !fixedAt.some(at => inCell(at, cell)));
 	const clearance = at => {
 		let nearest = Infinity;
@@ -2623,7 +2632,8 @@ function metricScene(lab) {
 	const radius = Math.hypot(lab[1], lab[2]) * gainAt(lab[0]), angle = warpedHue(lab[1], lab[2]);
 	return [radius * Math.cos(angle), height - METRIC_HEIGHT[100] / 2, radius * Math.sin(angle)];
 }
-let toScene = oklabScene;
+// The checkbox survives a reload in some browsers, so the mapping starts from it.
+let toScene = $("metric-3d").checked ? metricScene : oklabScene;
 
 const container = $("gamut-3d");
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
