@@ -1031,28 +1031,70 @@ that a family's second and third members are over-abundant and appear before eve
 brown and grey by name did not help much: the freed seats went to blues and magentas. A quota per family was
 considered and rejected: nothing should be forbidden, the order of arrival is what is wrong.
 
-The measured mechanism. The pushes do not spread for spread's sake: a color is pushed only while its confusion
-chance is above the limit, then it stops. The start does the filling: draws are uniform over the box's volume,
-hue-corrected by the density, and a draw is kept if it clears the floor from everything placed, so a region with
-more perceptual room accepts more. That is a Poisson-disc sample in the metric's measure, uniform in how many
-distinguishable colors fit, not in the box's coordinates. Over 40 seeds in the default box, by terciles of the
-draws' own relative chroma and lightness (uniform reads 33/33/33):
+The measured mechanism. "Uniform over the available space" has two defensible measures, and both were
+computed for the default box (L 20-60, C 20-100) from a pool of 20000 plain draws, the draws as `sampleWeighted`
+makes them, chroma by area, gamut and preference gate applied: the box's usable OKLab volume is the pool as it
+is, the metric's volume is the pool weighted by sqrt(det G), G the local quadratic form of `apart2` at the point.
+Neither is uniform in the box's coordinates: the dark third of the lightness range is mostly outside sRGB at
+chroma 20% and up, and the preference gate empties the dull third. Against them, every stage of the generator over
+40 seeds, thirds of the box's relative coordinates (an earlier table here, in a tercile definition that could not
+be reproduced, is withdrawn):
 
-| stage | count | chroma terciles | lightness terciles | floor |
-|---|---|---|---|---|
-| plain draws, no rejection, no pushes | 8 | 32/30/38 | 31/27/43 | 0.86 |
-| start only, rejection, no pushes | 8 | 18/28/54 | 24/29/48 | 0.97 |
-| start and pushes, shipped | 8 | 18/32/50 | 26/31/43 | 0.98 |
-| start only | 16 | 20/22/58 | 25/18/57 | 0.92 |
-| start and pushes | 16 | 16/16/68 | 25/7/68 | 0.97 |
+| reference or stage | count | chroma thirds | lightness thirds | floor | ms per attempt |
+|---|---|---|---|---|---|
+| uniform by usable OKLab volume | | 21/45/34 | 14/48/38 | | |
+| uniform by metric volume | | 15/45/40 | 7/47/46 | | |
+| dart start alone | 8 | 15/40/45 | 14/38/48 | 0.97 | 0 |
+| best of 4 dart starts by floor, no pushes | 8 | 12/42/46 | 12/38/51 | 0.98 | |
+| plain draws pushed apart, best of 4 | 8 | 14/35/52 | 19/35/46 | 0.98 | 3 |
+| shipped: dart start pushed, best of 4 | 8 | 9/45/46 | 13/33/53 | 0.98 | 1 |
+| dart start alone | 16 | 16/31/53 | 17/25/58 | 0.89 | 63 |
+| best of 4 dart starts by floor, no pushes | 16 | 17/30/53 | 17/22/61 | 0.91 | |
+| plain draws pushed apart, best of 4 | 16 | 15/21/64 | 22/13/65 | 0.96 | 42 |
+| shipped: dart start pushed, best of 4 | 16 | 14/19/67 | 21/11/68 | 0.97 | 91 |
 
-The start's rejection is the bias at every count; the pushes add to it only when crowded. Which measure "uniform
-over the available space" means is open, the metric being uneven in the space; the decision taken is that the
-start covers the box in its own coordinates and the metric decides only whether a seat can be filled. Draws per
-family, uniform over the box: default box off white 1 in 426, lime green 1 in 196, purple 10%, blue 9%; tight box
-beige 1 in 20000, maroon 1 in 1176; pastel box grey 1 in 1538, light blue 30%. So a start that rejects draws
-until one lands in a target family would spend its cap on every rare family every round: a pool per attempt
-instead, a few thousand weighted draws bucketed by stratum.
+Read off it:
+- The dart start is a Poisson-disc sample in the metric's measure: a draw is kept if it clears the floor from
+  everything placed, and the exclusion ball around a placed color is small in box units where the metric is
+  roomy, large where colors look alike. At count 8 it lands near the metric reference.
+- Restart selection by floor moves a share by two or three points at most.
+- The pushes empty the middle third under either reference, mildly at 8, to a quarter of its share at 16:
+  mutually repelling points in a bounded region settle toward the boundary, and the error-limit stop only delays
+  it until the box is crowded. From plain draws the pushes land where the dart start's pushes land, so the
+  distancing stage, not the start, is the larger term. The wall rule below counts colors clamped on a wall; this
+  starvation happens inside the walls.
+- The dart start at 16 costs 63 ms because its draw budget runs out; plain draws pushed apart reach floor 0.95
+  in 42 ms against the shipped 0.96 in 91.
+- Purple and magenta are the cheapest hues in the metric (below), so metric seating gives them fewer seats than
+  volume seating would: their over-abundance is the pushes' doing, not the hue density's.
+
+How far the metric departs from OKLab: each axis of the same pool cut into twelve slices of equal usable volume,
+the slice's metric volume over its OKLab volume (1.0 where they agree; hue with a flat draw weight, slice bounds
+in the box's relative coordinates and degrees):
+
+| lightness slice | 20-29 | 29-34 | 34-37 | 37-40 | 40-42 | 42-44 | 44-46 | 46-47 | 47-49 | 49-51 | 51-55 | 55-60 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| metric / volume | 0.46 | 0.66 | 0.79 | 0.91 | 0.98 | 1.08 | 1.14 | 1.22 | 1.26 | 1.28 | 1.07 | 1.13 |
+
+| chroma slice | 20-34 | 34-41 | 41-47 | 47-52 | 52-57 | 57-62 | 62-66 | 66-71 | 71-76 | 76-81 | 81-87 | 87-100 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| metric / volume | 0.73 | 0.78 | 0.84 | 0.91 | 0.95 | 0.97 | 1.06 | 1.08 | 1.13 | 1.15 | 1.19 | 1.22 |
+
+| hue slice | 0-29 | 29-109 | 109-143 | 143-171 | 171-197 | 197-222 | 222-246 | 246-268 | 268-289 | 289-311 | 311-334 | 334-360 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| metric / volume | 0.86 | 1.25 | 1.70 | 1.52 | 1.32 | 1.01 | 0.70 | 0.56 | 0.54 | 0.70 | 0.88 | 0.95 |
+
+A 3x range in hue, 2.8x in lightness, 1.7x in chroma, each shaped: a ramp in chroma, a rise to the cusp in
+lightness then flat, a green peak and a blue-purple trough in hue. The 80-degree second hue slice is orange
+through yellow-green holding almost no usable volume in this box once the preference gate has taken the dull part.
+Reds hold 8 to 10% of the usable volume under every hue weighting: the red shortage is not in the draw either.
+
+The decisions: the metric is significant enough that everything is done in its measure unless there is a
+concrete reason not to, so the start covers the box by metric volume, the hue density stays in the draw, the
+metric decides whether a seat can be filled, and the pushes may not undo the coverage. Draws per family, uniform
+over the box: default box off white 1 in 426, lime green 1 in 196, purple 10%, blue 9%; tight box beige 1 in
+20000, maroon 1 in 1176; pastel box grey 1 in 1538, light blue 30%. So a start that rejects draws until one lands
+in a target family would spend its cap on every rare family every round: a pool per attempt instead, partitioned.
 
 The wall rule, clamped pushes rejected so colors stay off the box's walls. Measured over 40 seeds, colors within
 1% of a wall: default box at 8, none on the chroma wall and 3% on a lightness wall with the rule or without, the
@@ -1068,22 +1110,29 @@ the hull estimate being the wrong ceiling there. The decision: keep the rule's e
 push in two phases, interior pushes first, then clamped pushes accepted for the colors still under the floor,
 so a roomy box never changes, a crowded one clamps less than with the rule dropped, and the ring works.
 
-The plan agreed, not yet built:
-- A pool start in rounds over strata: strata are name cell by cusp-relative lightness third by chroma third of
-  the gamut's reach; the unnamed slot is no stratum. Each attempt draws a pool of a few thousand points through
-  the existing weighted draw, so the hue density, the preference weight and the avoided colors apply, and
-  buckets them by stratum. Round one visits every non-empty stratum in a fresh random order and seats the first
-  candidate clearing the floor from everything placed, fixed colors counting as seats taken; round two seats a
-  second per stratum, and so on until the count is met or a round seats nobody; the existing draw loop with its
-  farthest-draw fallback fills what remains. Every seed's palette changes.
+The plan, not yet built:
+- A pool start over cells of equal metric volume. Each attempt draws a pool of a few thousand points through the
+  existing weighted draw, so the hue density, the preference weight and the avoided colors apply, weights each by
+  the metric's volume element, and splits the pool into `count` cells of equal weight by recursive median splits
+  along the widest axis in metric units. One seat per cell, the first candidate clearing the floor from
+  everything placed; a fixed color takes the cell it falls in. Equal weight in a uniform pool is equal available
+  space at any box, with no strata to define. Every seed's palette changes.
+- Pushes confined to the seat's cell, clamped at its bounds as the box clamps now. Without it the pushes drift
+  the seats toward the outer thirds as measured above. Where neighbouring cells are compressed below the limit
+  the floor drops there, and the readout shows it.
 - Restarts stop on a plateau: after the minimum four, only while the best floor improved within the last three.
 - The two-phase push above. A zero-width range then needs no special case.
-- Cost measured after the build: the pool size adjusted if rare reachable strata come up empty too often.
-Open after it: whether uniform coverage in the box's coordinates under-uses the vivid colors the judge likes,
-which would be a stratum weighting, not a metric change; the reach 1.5 of avoided colors; the preference round
-dealt in calibrate-palettes.html, shipped against plain in the default box, unrun; the cell capacity and
-direction step rounds, built and shelved.
+- Cost measured after the build: the pool size adjusted if the cells come out ragged.
+Open after it: the reach 1.5 of avoided colors; the preference round dealt in calibrate-palettes.html, shipped
+against plain in the default box, unrun; the cell capacity and direction step rounds, built and shelved.
 Alternatives noted and not taken, kept in case the plan disappoints:
+- Coverage by usable OKLab volume in place of metric volume: the pool unweighted before the split. The two
+  references differ by up to 3x per hue slice and 2.8x per lightness slice, so the choice is visible in a
+  palette; it is one switch in the pool and can be dealt as a pairwise condition if the metric coverage
+  disappoints. The same for a flat hue weight in the draw, the existing `uniform` condition.
+- Strata by name cell by lightness third by chroma third of the box, a seat each in rounds, the first plan:
+  coverage by coordinates, which seats the dark third at a third of the count where it holds 15% of the space
+  and gives off white a seat where it holds 1 in 426.
 - Family as the naming overlap with a longer fade: the generator already places colors by name overlap between
   cells fading past about 8 weighted units; lengthening the fade makes same-named colors repel while
   distinguishable, graded by the survey's overlap, one constant and no table of ours. Not taken because the
