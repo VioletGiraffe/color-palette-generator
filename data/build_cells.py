@@ -7,7 +7,7 @@ that the ones already there match what this script produces. The page defaults t
     python data/build_cells.py
     python data/build_cells.py --check [page.html]
 
-See data/README.md for what the model is and where it came from.
+See data/scripts.md for what the model is and where it came from.
 """
 
 import argparse

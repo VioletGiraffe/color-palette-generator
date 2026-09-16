@@ -311,7 +311,7 @@ letters, answer letter by letter, dozens of palettes) was dropped: it measured m
 while the real task is one palette after a week of use. The question answered for each pair was "would I
 still confuse these two after learning the palette for a while".
 
-Data: `data/calibration-verdicts-16px.json`, 78 palettes at 16 px (details in `data/README.md`). The table
+Data: `data/calibration-verdicts-16px.json`, 78 palettes at 16 px (details in `data/scripts.md`). The table
 below is fitted on 40 of them, the axes and validation rounds; the 38 region palettes came later. Result:
 
 | | hue | chroma | lightness |
@@ -1489,7 +1489,7 @@ Built from the ten rounds, the archive of the page before it kept as
   the cusps the limit of 12.3 then sits at the judge's fine line.
 - `fit_hue_density.js` defaults to the metric's chroma power and gain; `--gain` still fits a plain power for the
   next gain question.
-The recall calibration's own numbers, in `data/README.md`, describe the archived page.
+The recall calibration's own numbers, in `data/scripts.md`, describe the archived page.
 
 Three more rounds after the build, the judge finding them quick: chroma pairs, then the dark and the pastel
 sweeps again. Round 11 deals the chroma pairs: one hue at the cusp, the two colors a turn of 10 to 50 points of
@@ -1603,6 +1603,43 @@ term is 0.003 cross-validated: few pairs anywhere carry both a hue turn and a li
 built: a rho table would be the correct form, and the case for it is one stretch of the circle and a few
 thousandths of ranking. Recorded here for the day palettes show light purples beside dark blues too often.
 
+## Live palettes under the preference metric
+
+The first palettes generated on the built metric came out pale: the state
+`v4|14|3|0|360|26|100|23|60|2891266137|1|panel|3c6ea5|hex||vkhsvlr|` (14 colors, chroma 26 to 100, lightness 23
+to 60) gives a mean chroma of 77% of the reach at the color's lightness, one color at 34%, where the archived
+recall page gives 93% on the same state. It also puts 7 of 14 colors in hue 250 to 330 and none in 30 to 120.
+Four seeds, the same box, each of the built constants reverted alone (`tmp/pastel3.js`):
+
+| variant | share mean | share min | mean L | colors in 250 to 330 |
+|---|---|---|---|---|
+| the preference metric | 80% | 36% | 53 | 6.8 |
+| W_C back to 0.6 | 90% | 49% | 53 | 6.0 |
+| lightness gain off | 87% | 35% | 57 | 5.5 |
+| chroma power back to 1 | 82% | 36% | 54 | 7.0 |
+| flat hue density | 83% | 36% | 59 | 4.3 |
+| the recall page | 93 to 98% | 41 to 89% | 69 | 2 to 3 |
+
+No single constant is the cause; each makes a pale or a dark placement pay a little, and together they tip the
+packer. The generator maximizes the smallest pairwise distance, so colors go where the metric makes distance
+cheap: under the recall metric that was the vivid cusps; under the preference metric a chroma step is worth a
+lightness step (W_C 1), a pale color keeps most of its hue separation (power 0.75), and a dark pair is far
+apart at less OKLab distance (the gain), so the dark corner fills. Violet compounds: its cusps are the darkest
+and its density is 1.9. Yellow, at 0.48 with bright cusps, is expensive and gets one or two colors instead of
+three to five. The pair rounds are not wrong about any of this: a pale red and a vivid red are fine together.
+What the objective lacks is a term for wanting the color itself; `preferenceOf` only gates the draw and the
+floor, so once the pushes run, chroma and lightness are free currency.
+
+Raising the chroma floor restores the vividness: at cMin 60 the share mean is 91 to 96%, at 85 it is 99%; the
+violet clumping stays, 6 to 7 of 14. Open, none built:
+
+- a per-color desirability term in the objective, or pushes biased toward the reach, so a pale placement has to
+  earn its separation;
+- softening the density toward flat, capping the gain, or fitting the density on the shared-placement rounds
+  only: the violet bump is the hue-by-lightness cross effect of round 15, placement-dependent (1.1 shared against
+  1.6 to 2.2 own), and building it into the density inflates violet everywhere; the dark gain, measured on dark
+  pairs, applied to the whole distance rewards packing darks.
+
 ## Files
 
 - `index.html`: step 18 with the calibrated constants, the hue-lightness and hue-chroma charts, the plane
@@ -1623,7 +1660,8 @@ thousandths of ranking. Recorded here for the day palettes show light purples be
     stop crossing.
   - `experimental-recall-metric.html`: the page before the preference metric, its distance the recall
     calibration's: the step-round hue circle, linear chroma, dark pairs counted closer.
-- `data/identify.js`, `data/fit.js`, `data/calibrate.html`: the metric and its calibration; see `data/README.md`.
+- `data/README.md`: the engineering overview of the page, its coordinates, the metric and the generator; `data/scripts.md`: every script, log and fit here.
+- `data/identify.js`, `data/fit.js`, `data/calibrate.html`: the metric and its calibration; see `data/scripts.md`.
 - `data/calibration-log.json`: the verdicts the constants are fitted to.
 - `data/calibrate-chroma.html`, `data/calibrate-hue.html`, `data/calibrate-cusp.html`, `data/fit_hue.js`,
   `data/fit_chroma.js`: the position-term rounds; their logs are `data/light-calibration-log.json`,
@@ -1638,4 +1676,4 @@ thousandths of ranking. Recorded here for the day palettes show light purples be
 - `data/calibrate-members.html`, `data/make_member_deal.js`, `data/fit_members.js`, `data/palette-members-log.json`: the palette member rounds, the bad members of one palette at a time, some colors dealt into two palettes; the deal is written into the page.
 - `data/fit_preference.js`: the draw's preference density from a member log, the PREFERENCE constant in index.html.
 - `data/calibrate-cells.html`, `data/make_cell_deal.js`, `data/fit_cells.js`: the cell capacity rounds, how many distinct and how many not same-y colors a cell of the space holds along each coordinate; the sectors are written into the page.
-- `data/calibrate-boundaries.html`, `data/make_boundary_deal.js`, `data/fit_boundaries.js`, `data/fit_hue_density.js`, `data/boundary-1-log.json` to `data/boundary-15-log.json`: the pair rounds under the preference question, one pair per trial: hue turns straddling or beside each primary and secondary hue or swept around the circle at several lightness and chroma levels and placements, lightness pairs, chroma pairs, and the violet placement rounds; the deal is written into the page, `data/README.md` lists what each round is. The density fit pools the logs; the metric's hue table, chroma power, chroma weight and lightness gain come from them.
+- `data/calibrate-boundaries.html`, `data/make_boundary_deal.js`, `data/fit_boundaries.js`, `data/fit_hue_density.js`, `data/boundary-1-log.json` to `data/boundary-15-log.json`: the pair rounds under the preference question, one pair per trial: hue turns straddling or beside each primary and secondary hue or swept around the circle at several lightness and chroma levels and placements, lightness pairs, chroma pairs, and the violet placement rounds; the deal is written into the page, `data/scripts.md` lists what each round is. The density fit pools the logs; the metric's hue table, chroma power, chroma weight and lightness gain come from them.

@@ -8,7 +8,7 @@ Use live online in your browser: https://violetgiraffe.github.io/color-palette-g
 ## What you can do
 
 - **Choose how many colors** you need, from 1 to 40.
-- **Set how distinct they have to be**: the Distinctness slider is the width of the memory noise the colors are spread against, in OKLab ΔE. The default comes from a calibration run (see `data/README.md`); raise it for palettes that survive a longer gap between seeing a color and naming it, lower it to fit more colors into a narrow range.
+- **Set how distinct they have to be**: the Distinctness slider is the width of the memory noise the colors are spread against, in OKLab ΔE. The default comes from a calibration run (see `data/scripts.md`); raise it for palettes that survive a longer gap between seeing a color and naming it, lower it to fit more colors into a narrow range.
 - **See what each color is called**: every swatch carries the name people most often give that color, from the [xkcd color survey](https://blog.xkcd.com/2010/05/03/color-survey-results/). A tilde marks a color people never settled a name for - as usable as any other, just harder to call something. The names panel shows every name's territory; switching a name off keeps the generated colors out of it.
 - **Restrict the color space**: min and max sliders for hue, chroma and lightness in OKLCh. Both chroma and lightness are relative to each hue's own peak, so one setting selects the same standing in every hue's gamut. Lightness: 50 is the most vivid sRGB reaches at that hue, 0 is black and 100 is white - yellow peaks near absolute lightness 97 and blue near 45, so one absolute range would clip the first and admit only washed-out colors at the second. Chroma: 100 is all the hue has - teal peaks at absolute chroma 14.5 and magenta at 32.2, so an absolute floor above 14.5 drops teal from the palette while leaving magenta almost untouched. The hue range wraps around, so 300-60 covers magenta through orange. Any value some sRGB color reaches is selectable; where a range runs past what sRGB can show, the gamut is the limit, and a range that holds no sRGB color at all says so instead of generating.
 - **Generate around colors you already have**: paste any number of hex values as fixed colors. New colors are kept distinct from them. They are shown alongside the result but not counted in Colors and not exported.
@@ -34,7 +34,7 @@ for that isolated recognition, not just pairwise difference.
   difference grows with chroma at the 0.75 power; a pair toward black or toward white needs less
   distance than one at the lightness of the most saturated colors. Hue differences are taken on a respaced circle, each hue's share
   measured by the author's verdicts on thousands of pairs: a bump at red and at violet, a trough at
-  yellow and through cyan (`data/README.md`, `data/evolution.md`).
+  yellow and through cyan (`data/scripts.md`, `data/evolution.md`).
 - A pair's chance of being swapped follows from its weighted distance, and a color's chance of
   being misidentified is the sum over its pairs. The generator keeps every color's chance under a
   limit: the selected range is cut into as many cells as there are colors, each holding an equal
@@ -44,7 +44,7 @@ for that isolated recognition, not just pairwise difference.
 - The selected range is a box in OKLCh, cut by the sRGB gamut and by the excluded names: draws
   outside it are discarded, and a step that would leave it is refused.
 - Names are looked up in a partition of color space derived from the xkcd survey's millions of
-  votes (see `data/README.md` for the derivation). They label the result; beyond an exclusion
+  votes (see `data/scripts.md` for the derivation). They label the result; beyond an exclusion
   they do not steer it.
 
 You always get the best palette found; nothing fails outright short of an empty range. The pair
@@ -52,6 +52,7 @@ likeliest to be mixed up is reported above the swatches with its weighted distan
 chance, and outlined; the worst color's identification rate is given with the best this range can
 reach for the count, so a forced palette is visible as such.
 
-`data/evolution.md` is the design history behind all of this: every generator tried and the numbers
-it produced, the negative results, the calibration that fixed the constants, and the gamut and
-lightness work that followed.
+`data/README.md` is the engineering overview: the page's layout, its coordinates, the metric and the
+generator's pipeline. `data/evolution.md` is the design history behind all of this: every generator tried
+and the numbers it produced, the negative results, the calibration that fixed the constants, and the gamut
+and lightness work that followed.

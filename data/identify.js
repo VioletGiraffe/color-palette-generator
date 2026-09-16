@@ -19,7 +19,7 @@
 //
 // The identification constants are measured with data/calibrate.html and data/fit.js, the lightness
 // gain with the light-ground rounds (data/calibrate-hue.html, data/calibrate-cusp.html) and data/fit_hue.js,
-// and the naming ones with data/calibrate-names.html and data/fit_names.js; see data/README.md.
+// and the naming ones with data/calibrate-names.html and data/fit_names.js; see data/scripts.md.
 
 "use strict";
 const fs = require("fs");
@@ -29,7 +29,7 @@ const path = require("path");
 // A lightness or chroma difference counts W_L or W_C times its size: below 1 the axis is a weaker
 // cue than hue, so noise along it is wider by the same factor.
 // SIGMA and W_L are fitted by data/fit.js to data/calibration-log.json, W_L held under the preference rounds;
-// W_C is the preference rounds' chroma pairs, a chroma gap reading at the metric's unit; see data/README.md.
+// W_C is the preference rounds' chroma pairs, a chroma gap reading at the metric's unit; see data/scripts.md.
 const SIGMA = 3;
 const W_L = 0.35;
 const W_C = 1;
