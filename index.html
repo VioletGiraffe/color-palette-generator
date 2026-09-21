@@ -1031,6 +1031,23 @@ function apart2(p, q) {
 	return (dL * dL + W_C * W_C * dC * dC + Math.max(0, da * da + db * db - dC * dC) * hueScale * hueScale) * gain * gain;
 }
 
+// The packing metric, apart2 times the pair's chroma shares of their reach to this power. The generator spreads
+// colors evenly in the metric it packs on, so the seat density goes as the share to three times the power and a
+// pale placement has to earn its separation; the report stays on apart2. Measured at 1 against 1/3 and against
+// the member-round preference as the weight, see data/evolution.md.
+const VIVIDNESS_POWER = 1;
+// A grey's share is held above zero: at zero its packing distances vanish and its pushes never settle.
+const REACH_SHARE_FLOOR = 0.05;
+// A color's chroma as a share of the reach at its lightness.
+function reachShare([L, C, h]) {
+	const reach = gamutChroma(L, h);
+	return reach > 0 ? Math.max(REACH_SHARE_FLOOR, Math.min(1, C / reach)) : REACH_SHARE_FLOOR;
+}
+// The share relative to the box's most vivid draw (see generate): an absolute share on a pastel box scales every
+// packing distance down, the error limit is never met and the floor collapses.
+const packShare = (lch, cfg) => Math.min(1, reachShare(lch) / cfg.topShare);
+const packed2 = (p, q, pShare, qShare) => apart2(p, q) * (pShare * qShare) ** VIVIDNESS_POWER;
+
 // The hue control's coordinate: the metric's length along the ridge, the sRGB cube's six saturated
 // edges walked code by code, per whole degree of OKLab hue, as a running integral normalized to 360.
 // Unlike HUE_WARP it carries the lightness and chroma the ridge moves through at a vertex: blue's
@@ -1218,8 +1235,9 @@ function volumeElement(p) {
 	return Math.sqrt(Math.max(det, 0));
 }
 
-// The start covers the box by metric volume: a pool of weighted draws, each carrying the metric's volume element,
-// is cut into as many cells of equal weight as there are seats, and every cell seats one color. The cells are
+// The start covers the box by packing volume: a pool of weighted draws, each carrying the metric's volume element
+// times its share of reach to three times VIVIDNESS_POWER, is cut into as many cells of equal weight as there are
+// seats, and every cell seats one color. The share is the draw's own: the box's scale cancels between cells. The cells are
 // sub-boxes in the box's own coordinates, so a cell clamps a push the way the box does.
 // One pool per box, remembered like the hue weight: the seats vary by seed, the pool need not. Measured: a pool
 // per attempt spreads the hues no more evenly and costs twice the time.
@@ -1230,8 +1248,8 @@ function poolFor(cfg) {
 	if (poolCache.key !== key) {
 		const rnd = mulberry32(31337), pool = [];
 		for (let n = 0; n < POOL_DRAWS; ++n) {
-			const lch = sampleWeighted(rnd, cfg);
-			pool.push({ lch, at: [relativeL(lch[0], lch[2]), relativeC(lch[1], lch[2]), lch[2]], weight: volumeElement(positionOf(lch)) });
+			const lch = sampleWeighted(rnd, cfg), share = reachShare(lch);
+			pool.push({ lch, at: [relativeL(lch[0], lch[2]), relativeC(lch[1], lch[2]), lch[2]], share, weight: volumeElement(positionOf(lch)) * share ** (3 * VIVIDNESS_POWER) });
 		}
 		poolCache = { key, pool };
 	}
@@ -1241,21 +1259,23 @@ const boxOf = cfg => ({ lMin: cfg.lMin, lMax: cfg.lMax, cMin: cfg.cMin, cMax: cf
 // A point's coordinate along a cell's axis: relative lightness, relative chroma, or the hue's offset from `origin`.
 const cellCoordinate = (at, axis, origin) => axis === 2 ? (at[2] - origin + 360) % 360 : at[axis];
 const inCell = (at, cell) => at[0] >= cell.lMin && at[0] <= cell.lMax && at[1] >= cell.cMin && at[1] <= cell.cMax && hueInRange(at[2], cell.hMin, cell.hMax);
-// The metric length of a cell along an axis through the middle of the other two, the hue as chords of at most 45 degrees.
+// The packing length of a cell along an axis through the middle of the other two, the hue as chords of at most
+// 45 degrees. The shares are the points' own: only the axes' lengths against each other count.
 function cellLength(cell, axis) {
 	const span = hueSpan(cell.hMin, cell.hMax);
 	const mid = [(cell.lMin + cell.lMax) / 2, (cell.cMin + cell.cMax) / 2, (cell.hMin + span / 2) % 360];
-	const pointAt = at => positionOf([absoluteL(at[0], at[2]), absoluteC(at[1], at[2]), at[2]]);
+	const pointAt = at => { const lch = [absoluteL(at[0], at[2]), absoluteC(at[1], at[2]), at[2]]; return { pos: positionOf(lch), share: reachShare(lch) }; };
+	const packedApart = (a, b) => Math.sqrt(packed2(a.pos, b.pos, a.share, b.share));
 	if (axis < 2) {
 		const lo = mid.slice(), hi = mid.slice();
 		[lo[axis], hi[axis]] = axis === 0 ? [cell.lMin, cell.lMax] : [cell.cMin, cell.cMax];
-		return Math.sqrt(apart2(pointAt(lo), pointAt(hi)));
+		return packedApart(pointAt(lo), pointAt(hi));
 	}
 	const chords = Math.max(1, Math.ceil(span / 45));
 	let length = 0, prev = pointAt([mid[0], mid[1], cell.hMin]);
 	for (let n = 1; n <= chords; ++n) {
 		const next = pointAt([mid[0], mid[1], (cell.hMin + span * n / chords) % 360]);
-		length += Math.sqrt(apart2(prev, next));
+		length += packedApart(prev, next);
 		prev = next;
 	}
 	return length;
@@ -1291,16 +1311,16 @@ function splitCells(rnd, cell, points, parts) {
 // them; a fixed color inside the box takes the cell it falls in; further rounds over the cells while seats
 // remain. Returns the colors and, per color, the cell it may move in, null for a fixed color.
 function poolStart(rnd, cfg) {
-	const colors = cfg.fixed.slice(), pos = positionsOf(colors), cells = colors.map(() => null);
+	const colors = cfg.fixed.slice(), pos = positionsOf(colors), shares = colors.map(color => packShare(color.lch, cfg)), cells = colors.map(() => null);
 	const limit2 = cfg.limit * cfg.limit;
 	const fixedAt = cfg.fixed.map(color => [relativeL(color.lch[0], color.lch[2]), relativeC(color.lch[1], color.lch[2]), color.lch[2]]);
 	const box = boxOf(cfg);
 	const free = splitCells(rnd, box, poolFor(cfg), cfg.count + fixedAt.filter(at => inCell(at, box)).length)
 		.filter(({ cell }) => !fixedAt.some(at => inCell(at, cell)));
-	const clearance = at => {
+	const clearance = (at, share) => {
 		let nearest = Infinity;
 		for (let k = 0; k < pos.length; ++k)
-			nearest = Math.min(nearest, apart2(at, pos[k]));
+			nearest = Math.min(nearest, packed2(at, pos[k], share, shares[k]));
 		return nearest;
 	};
 	for (let seated = 0; seated < cfg.count;) {
@@ -1316,7 +1336,7 @@ function poolStart(rnd, cfg) {
 			// Weighted sampling without replacement: a key of u^(1/w) per point, largest first.
 			const candidates = free[c].points.map(point => ({ point, key: Math.pow(rnd(), 1 / point.weight) })).sort((p, q) => q.key - p.key);
 			for (const { point } of candidates) {
-				const nearest = clearance(positionOf(point.lch));
+				const nearest = clearance(positionOf(point.lch), point.share / cfg.topShare);
 				if (nearest > clearest) {
 					pick = point;
 					clearest = nearest;
@@ -1326,6 +1346,7 @@ function poolStart(rnd, cfg) {
 			}
 			colors.push(colorAt(...pick.lch));
 			pos.push(positionOf(pick.lch));
+			shares.push(pick.share / cfg.topShare);
 			cells.push(free[c].cell);
 			++seated;
 		}
@@ -1378,7 +1399,7 @@ function withinCone(rnd, axis, cfg) {
 // heading drawn within the band off straight away from its neighbors, each neighbor weighing by
 // how steeply its swap chance falls with distance; the heading lasts while the color keeps being
 // pushed and its steps keep being accepted, and is redrawn otherwise. A push is dropped when it
-// raises the color's chance of being misidentified, when its target carries an excluded name, or
+// raises the color's chance of being misidentified on the packing metric (see `packed2`), when its target carries an excluded name, or
 // when the bounds or the gamut had to pull its target back: the pushes otherwise walk colors onto
 // the walls and leave them there. Three phases, each for the colors still over the limit when the
 // one before is exhausted: within the color's cell of the start, then the cell's walls kept, then
@@ -1388,9 +1409,12 @@ function withinCone(rnd, axis, cfg) {
 // Returns the state with the highest floor seen, the start included; equal floors go to the one
 // whose closest pair sits furthest apart, the only thing separating states above a sigma where
 // every color is confused and every floor is zero. That distance is `identification`'s `apart`.
+// A color is pushed while its error on apart2 is over the limit, and the floor is apart2's; the push weights and
+// the acceptance of a step are on the packing metric, so a step toward pale has to lower the error more than it
+// lowers the share. The limit itself on the packing metric is out of reach on a pastel box.
 function pushApart(rnd, colors, cells, cfg) {
 	colors = colors.slice();
-	const pos = positionsOf(colors);
+	const pos = positionsOf(colors), shares = colors.map(color => packShare(color.lch, cfg));
 	const rejected = pos.map(() => 0);
 	const heading = pos.map(() => null);
 	// The chance color `i` standing at `at` is recalled as another color, summed over the others.
@@ -1401,13 +1425,21 @@ function pushApart(rnd, colors, cells, cfg) {
 				error += swapChance(Math.sqrt(apart2(at, pos[j])), cfg.sigma);
 		return error;
 	};
-	// The push on color `i` away from a point, by the pair's distance in noise widths, added to its shift.
-	const pushAway = (shift, i, other) => {
+	// The same on the packing metric, `share` the share at `at`.
+	const packedErrorAt = (i, at, share) => {
+		let error = 0;
+		for (let j = 0; j < pos.length; ++j)
+			if (j !== i)
+				error += swapChance(Math.sqrt(packed2(at, pos[j], share, shares[j])), cfg.sigma);
+		return error;
+	};
+	// The push on color `i` away from color `j`, by the pair's packing distance in noise widths, added to its shift.
+	const pushAway = (shift, i, j) => {
 		// Coincident colors have no line; they part along a.
-		const between = pos[i].map((v, k) => v - other[k]);
+		const between = pos[i].map((v, k) => v - pos[j][k]);
 		const length = Math.hypot(...between);
 		const away = length > 1e-6 ? between.map(v => v / length) : [0, 1, 0];
-		const x = Math.sqrt(apart2(pos[i], other)) / (2 * cfg.sigma);
+		const x = Math.sqrt(packed2(pos[i], pos[j], shares[i], shares[j])) / (2 * cfg.sigma);
 		const weight = Math.exp(-x * x / 2);
 		for (let k = 0; k < 3; ++k)
 			shift[i][k] += away[k] * weight;
@@ -1426,7 +1458,7 @@ function pushApart(rnd, colors, cells, cfg) {
 					continue;
 				for (let j = 0; j < pos.length; ++j)
 					if (j !== i)
-						pushAway(shift, i, pos[j]);
+						pushAway(shift, i, j);
 			}
 
 			for (let i = 0; i < pos.length; ++i) {
@@ -1442,16 +1474,17 @@ function pushApart(rnd, colors, cells, cfg) {
 				heading[i] ??= withinCone(rnd, shift[i].map(v => v / length), cfg);
 				const target = pos[i].map((v, k) => v + heading[i][k] * PUSH_STEP);
 				const { lch, clamped } = pointInBox(target[0], target[1], target[2], boundsOf(i));
-				const at = positionOf(lch);
+				const at = positionOf(lch), share = packShare(lch, cfg);
 				const color = colorAt(...lch);
 				if ((clamped && !keepClamped) || !cfg.included[color.cell] || !wantedLch(lch[1], lch[2], cfg) || shadowed(...lch, cfg)
-						|| errorAt(i, at) > errorAt(i, pos[i])) {
+						|| packedErrorAt(i, at, share) > packedErrorAt(i, pos[i], shares[i])) {
 					++rejected[i];
 					heading[i] = null;
 					continue;
 				}
 				colors[i] = color;
 				pos[i] = at;
+				shares[i] = share;
 				rejected[i] = 0;
 			}
 			const score = identification(colors, cfg, pos);
@@ -1519,6 +1552,7 @@ function generate(cfg) {
 		return null;
 	settings.cells = cells.fraction < SPARSE_FRACTION ? cells : null;
 	settings.hueWeight = hueWeightFor(settings);
+	settings.topShare = Math.max(...poolFor(settings).map(point => point.share));
 	const reachable = attempt(mulberry32(settings.seed + 104729), { ...settings, hull: true }).floor;
 	let best = null, bestAt = 0;
 	for (let n = 0; n < MAX_RESTARTS && (n < RESTARTS

@@ -1640,6 +1640,77 @@ violet clumping stays, 6 to 7 of 14. Open, none built:
   1.6 to 2.2 own), and building it into the density inflates violet everywhere; the dark gain, measured on dark
   pairs, applied to the whole distance rewards packing darks.
 
+The shared-placement density, tried first (`tmp/density-shared-4-14.txt`, `tmp/pastel4.js`, `tmp/pastel5.js`):
+`fit_hue_density.js --own-cuts --ridge 10 --placement shared` over round 4 and the shared half of round 14, 252
+verdicts, cross-validated AUC 0.942 and 0.944. Its knots: red 30 at 1.48, yellow 90 at 0.72, cyan 180 at 0.83,
+violet 270 to 330 at 1.14 to 1.16, the rest near 0.9; pooling the capability rounds 2 and 3 with their own cuts
+moves red to 1.9 and violet to 1.2 and nothing else. The same box, four seeds, that table in the metric and the
+draw:
+
+| variant | share mean | share min | mean L | colors in 250 to 330 | in 30 to 120 |
+|---|---|---|---|---|---|
+| the built density | 80% | 36% | 53 | 6.8 | 1.5 |
+| shared density | 82% | 46% | 56 | 4.5 | 1.8 |
+| shared density, gain off | 87% | 38% | 59 | 4.0 | 2.0 |
+| shared density, W_C 0.6 | 91% | 65% | 55 | 5.0 | 2.5 |
+| shared density, power 1 | 84% | 41% | 56 | 4.3 | 1.8 |
+
+The density is a part of the violet clumping, not its driver: the shared table takes it from 6.8 to 4.5 of 14
+and no combination with one other constant reverted reaches the recall page's 2 to 3, nor its 3 to 5 in the
+yellows. The pale placements it does not touch at all. Not built.
+
+Whether the output is uniform in metric volume, the start's design: the same box's OKLab volume and metric
+volume per bin, from 20000 uniform box draws weighted by the metric's volume element, against the generated
+colors of four seeds, all as counts of 14 (`tmp/volume.js`):
+
+| bin | OKLab volume | metric volume | generated |
+|---|---|---|---|
+| hue 330 to 30 | 2.6 | 2.6 | 2.5 |
+| hue 30 to 120 | 1.7 | 1.4 | 1.5 |
+| hue 120 to 200 | 3.4 | 2.4 | 2.3 |
+| hue 200 to 250 | 2.4 | 1.8 | 1.0 |
+| hue 250 to 330 | 3.8 | 5.9 | 6.8 |
+| chroma under 50% of the reach | 1.7 | 1.8 | 1.3 |
+| 50 to 75% | 4.7 | 5.0 | 3.0 |
+| 75 to 90% | 4.2 | 4.1 | 4.5 |
+| 90% and over | 3.3 | 3.1 | 5.3 |
+| lightness under 40 | 1.2 | 2.9 | 3.5 |
+| 40 to 55 | 3.6 | 4.6 | 4.5 |
+| 55 to 70 | 4.9 | 3.8 | 3.5 |
+| 70 and over | 4.3 | 2.8 | 2.5 |
+
+The generator delivers the metric's volume shares, a little past them where the pushes reach a wall: the
+violets and the darks are where the preference metric puts the volume, and the chroma wall gets 5.3 of 14
+against 3.1 by volume, so the palette is more vivid than a uniform sample of the box, not less. The box itself
+is most of the pale reading: chroma 26 to 100 of the cusp's below the cusp holds most of its volume at 50 to
+90% of the reach, and under the recall metric that same box came out at 93% because its volume element, linear
+in chroma and smaller toward black, leaned vivid and light by itself. Yellow's 1.5 of 14 is the box's OKLab
+volume already (1.7): the cusp-relative box gives a hue volume by the square of its cusp chroma, 21 at yellow
+against 32 at magenta.
+
+Desirability as a weight, tried (`tmp/make-pack.js`, `tmp/pastel6.js`): a packer spreads colors evenly in the
+metric it packs on, so a density proportional to a weight w takes a packing metric of the distance times w to
+the 1/3 (the volume goes as the cube); the report stays on the true metric. Four page variants, the squared
+distance times (w(p) w(q)) to the e, w either `preferenceOf` (the member-round model) or the color's chroma as
+a share of its reach, e 1/3 (volume times w) or 1 (volume times w cubed). The same box, four seeds, the floor
+recomputed on the true metric:
+
+| variant | share mean | share min | mean L | true floor | in 250 to 330 | in 30 to 120 |
+|---|---|---|---|---|---|---|
+| built | 80% | 36% | 53 | 0.981 | 6.8 | 1.5 |
+| preference, e 1/3 | 86% | 43% | 53 | 0.983 | 7.3 | 1.8 |
+| preference, e 1 | 88% | 50% | 54 | 0.983 | 7.8 | 0.8 |
+| share of reach, e 1/3 | 88% | 60% | 54 | 0.983 | 6.0 | 2.0 |
+| share of reach, e 1 | 96% | 84% | 54 | 0.983 | 6.3 | 2.5 |
+
+The share weight at e 1 gives the recall page's vividness back at no cost in the true floor: the box has the
+slack, the packer just spent it elsewhere. The member-round model as the weight makes the hue balance worse:
+it dislikes moderate-chroma yellows and greens and likes blues and violets at any chroma, `preferenceOf` at
+chroma 8 being 0.16 at hue 90 and 0.84 at 270, at chroma 12 0.48 and 0.94, and even at 16 0.81 against 0.98.
+That is the member rounds' verdict on pale yellows and olives, and as a packing weight it empties the yellows.
+Neither weight moves the violet count, which is the metric's volume: 5.9 of 14 by the density and the gain
+against 3.8 by OKLab. Not built; the share weight is the candidate.
+
 ## Files
 
 - `index.html`: step 18 with the calibrated constants, the hue-lightness and hue-chroma charts, the plane
