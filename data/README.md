@@ -20,8 +20,6 @@ the generator or the metric: most of the obvious alternatives have been measured
 - `calibrate-*.html` are the calibration pages, `make_*_deal.js` the dealers that write a deal into a page,
   `fit_*.js` the fits, `*-log.json` the judged logs. `past-experiments/` keeps one working page per step of
   `evolution.md`. `scripts.md` lists all of them.
-- `generator-next.html` at the root is a clone of the page with the generation stage rebuilt from the end state;
-  `generator-next.md` here is its spec and its measurements against this page. The sections below describe `index.html`.
 - `tmp/` at the project root is gitignored scratch for experiment scripts and pages; `exp.html` at the root is
   a gitignored live scratch copy of the page. `demo.html` is untracked and not part of the project.
 
@@ -31,75 +29,92 @@ Five conventions coexist. Which one a number is in is the first thing to check.
 
 | where | lightness | chroma | hue |
 |---|---|---|---|
-| range controls, state string, cells, shadows | relative to the cusp: 50 is the hue's cusp lightness, 0 black, 100 white, linear on each side (`absoluteL`, `relativeL`, `CUSP_ANCHOR`) | share of the cusp's chroma: 100 is `cuspChroma(h)`, whatever the color's lightness (`absoluteC`, `relativeC`); a share the lightness cannot reach is cut to the gamut in `pointInBox` | degrees of OKLab hue; the hue sliders alone run in the ridge coordinate (`ridgeWarp`, `ridgeUnwarp`) |
+| range controls, state string, cells, shadows | relative to the cusp: 50 is the hue's cusp lightness, 0 black, 100 white, linear on each side (`absoluteL`, `relativeL`, `CUSP_ANCHOR`) | share of the cusp's chroma: 100 is `cuspChroma(h)`, whatever the color's lightness (`absoluteC`, `relativeC`); a share the lightness cannot reach is cut to the gamut (`rawDraw`, `insideBox`) | degrees of OKLab hue; the hue sliders alone run in the ridge coordinate (`ridgeWarp`, `ridgeUnwarp`) |
 | a color's `lch` | absolute OKLab L, 0 to 100 | absolute, 0 to about 32 | degrees |
 | metric positions (`positionsOf`, `apart2`), every distance and deltaE | OKLab times 100 | | |
 | a color's `lab` and `rgb` | OKLab and sRGB in 0 to 1 | | |
 | `make_boundary_deal.js` | cusp-relative as above | share of the reach at the color's own lightness (`gamutChroma`), not of the cusp's | degrees |
 
 The cusp of a hue is the lightness at which sRGB reaches the hue's highest chroma (`cuspLightness`,
-`cuspChroma`, from a smoothed table). Two warps of the hue circle exist: `HUE_WARP`, the running integral of
-`HUE_DENSITY`, is the metric's; `RIDGE_WARP`, the metric's length along the sRGB cube's saturated edges, is the
-hue control's only.
+`cuspChroma`, from a smoothed table). The hue circle is warped twice over: the metric's warps, `HUE_LEVELS`, the running integrals of a hue
+density per lightness level (`HUE_DENSITY_AT_30`, `_58`, `_85`), mixed by lightness (`hueLevelAt`, `warpedHue`);
+`RIDGE_WARP`, the metric's length along the sRGB cube's saturated edges, is the hue control's only. `HUE_DENSITY`,
+the one table over every lightness, is not in the metric and not in use in the page; `identify.js` still exports it for
+the archived generator and the scripts.
 
 ## The metric
 
 `apart2(p, q)` is the squared distance between two metric positions, in deltaE:
 
 - the lightness difference times `W_L` (0.46);
-- the radial chroma difference times `W_C` (0.86);
-- the tangential part, the ab chord after both hues move to their warped angle less the radial part, times
+- the radial chroma difference times `W_C` (0.83);
+- the tangential part, the ab chord after both hues move to their warped angle at the pair's mean lightness, the
+  mix of the two levels around it, less the radial part, times
   `hueScaleAt` of the pair's mean chroma, `(C / CHROMA_REFERENCE) ^ (CHROMA_POWER - 1)`, so a hue turn grows with
   chroma at the 0.75 power;
 - the sum times the square of `lightnessGain` of the pair's mean lightness, one at `LIGHTNESS_REFERENCE` (68) and
-  rising as the ratio to `LIGHTNESS_EXPONENT` (0.19) toward black (floored at 20) and toward white.
+  rising as the ratio to `LIGHTNESS_EXPONENT` (0.21) toward black (floored at 20) and toward white.
 
 The Distinctness control is the noise width `sigma`; a pair at distance `d` swaps with `swapChance(d, sigma)`,
 half the complementary error function of `d / (2 sigma)` in standard units, and `limitDistance(sigma)` is where
 that chance falls to `ERROR_LIMIT` (0.02). `sigma` comes from the recall calibration (`calibrate.html`,
-`fit.js`); `HUE_DENSITY`, `W_L`, `W_C` and the gain's exponent are one fit to the pair rounds under the preference
+`fit.js`); the level densities, `W_L`, `W_C` and the gain's exponent are one fit to the pair rounds under the preference
 question (`calibrate-boundaries.html`, `fit_hue_density.js`), the chroma power from the same rounds; the sources and numbers are in `scripts.md` and `evolution.md`.
 The metric measures how far apart two colors read as members of one palette. It carries no term for a color on
 its own.
 
 ## The generator
 
-The objective: every color's error, the sum of its swap chances with the others, under `ERROR_LIMIT`. An attempt
-is scored by its floor, the worst color's chance of being identified, then by `apart`, the closest pair's
-distance (`identification`). Pairs of two fixed colors are skipped. Nothing in the score values a color for
-itself: where a pale or a dark placement buys distance, the generator takes it (see `evolution.md`, "Live
-palettes under the preference metric").
+A palette is `count` colors that are, in this order of priority: distinct, every color's error, the sum of its
+swap chances with the others on `apart2`, at most `ERROR_LIMIT`, or where the box cannot hold that the highest floor
+found; a sample of one stated density over the usable part of the box; evenly spread in that density; different for
+every seed. An attempt is scored by its floor, the worst color's chance of being identified, then by `apart`, the
+closest pair's distance (`identification`); pairs of two fixed colors are skipped.
 
-`generate` runs `attempt` several times; an attempt is a start and the pushes:
+The density carries every preference about where colors sit:
 
-1. **The box** (`pointInBox`, `usableLch`): the cusp-relative ranges, cut by the sRGB gamut, by the excluded names
-   (a color's cell against `cfg.included`), by the preference floor (`wantedLch`: `preferenceOf` at least
-   `PREFERENCE_FLOOR`) and by the shadows of avoided colors (`shadowed`). `boxCells` grids it 25 by 25 by 90; a box
-   whose usable cells are under `SPARSE_FRACTION` of the grid is sampled from those cells, else by rejection.
-2. **The pool** (`poolFor`, one per box, cached): `POOL_DRAWS` draws by `sampleWeighted`, a box draw accepted with
-   the chance `hueWeight[h]` times `preferenceOf(C, h)`. `hueWeightFor` is `HUE_DENSITY` over the box's own
-   uniform hue marginal, so draws land with the density's hue distribution whatever the box's shape. Each draw
-   carries `volumeElement`, the metric's volume per OKLab volume at the point.
-3. **The cells** (`splitCells`): the pool cut into as many cells of equal metric volume as there are seats,
-   sub-boxes in the box's own coordinates, split axes and hue origin drawn per attempt.
-4. **The seats** (`poolStart`): the fixed colors, then the cells in random order, each seating the first of its
-   points in weighted order that is at least the limit distance from every color placed, else the farthest of
-   them; a fixed color inside the box takes the cell it falls in; further rounds over the cells while seats remain.
-5. **The pushes** (`pushApart`): a color whose error is over the limit is pushed by every other, along the OKLab
-   line between them, weighted by their distance in noise widths; it steps `PUSH_STEP` in a direction
-   `pushMin` to `pushMax` degrees off that resultant, kept until a step is refused. A step is refused when it
-   leaves the box, a name, the preference floor or enters a shadow, or raises the color's own error;
-   `STALL_PUSHES` refusals in a row park the color. Three phases: within its cell refusing clamped steps, within
-   its cell keeping them, within the whole box. The best state by floor then `apart` is kept across all pushes.
-6. **The restarts** (`generate`): `reachable` is one attempt free of cells from its own seed, the floor the box
-   allows; then `RESTARTS` attempts, up to `MAX_RESTARTS` while the best is under `RESTART_TARGET` or under
-   `reachable` by more than `RESTART_SHORTFALL` and a recent attempt still improved it.
+- `metricVolume(L, C, h)`: the metric's volume per OKLab volume, in closed form, the product of the metric's scale on
+  each axis: `W_L * W_C * density(h, L) * hueScaleAt(C) * lightnessGain(L)^3`, the density the level tables mixed at `L`.
+- `vividness(C, h)`: the chroma as a share of the hue's cusp chroma, floored at `VIVIDNESS_FLOOR`: a dark or a pale
+  color on the gamut's surface is not vivid. A color's packing scale is its vividness to `VIVIDNESS_POWER`, relative to
+  the pool's largest, so a pastel box ranks its own colors.
+- The density is the volume times the cube of the scale, on usable points (`insideBox`, `usableLch`: inside the ranges and sRGB, a
+  name in use, at or above the preference floor `PREFERENCE_FLOOR` of `preferenceOf`, outside every avoided color's
+  shadow, `shadowed`), zero elsewhere.
+- The packing distance, `packed2`, is `apart2` times the pair's scales. A sample of the density is uniform in the
+  packing distance's volume, so even spacing in it is even spread in the density: a pale placement has to buy more
+  distance than a vivid one. Which colors are confusable, which state is best and what is reported stay on `apart2`.
 
-Where the metric enters, so a change to it moves all of these: `volumeElement` (pool weights, so the cells'
-sizes and where the seats go), the seating clearance, the push weights and the error a step is judged by,
-`identification`, the shadows' hue reach, `RIDGE_WARP` (the hue control's coordinate), and the 3D module's
-metric view. `HUE_DENSITY` enters once more, as the draw acceptance in `hueWeightFor`. The preference model (`PREFERENCE`, from the palette member rounds) enters only as the draw acceptance
-and the floor; above the floor it does not steer a push.
+`generate` runs up to `ATTEMPTS` attempts, stopping at the first with no confusable color, and keeps the best by floor
+then `apart`; an attempt is a throw and a relaxation:
+
+1. **The pool** (`poolFor`, one per box, cached): raw draws (`rawDraw`) cover the box without rejection by the gamut,
+   hue evenly over the range, lightness evenly over the hue's interval, chroma by its square over the interval the
+   ranges and the gamut leave at that lightness; a draw's weight is the density times `slab`, the OKLab volume it
+   stands for, which undoes the uneven raw cover. `POOL_SIZE` points are kept by rejection against the density's peak
+   over a survey of `RAW_SURVEY` usable draws. Where a range has no thickness, a lightness of one value or a chroma
+   range beyond the gamut, the draw sits on the gamut's surface in a shell `SHELL` thick.
+2. **The throw** (`throwAt`, `widestThrow`): the pool in a seeded random order; a point is seated when its packing
+   distance to every seated color, the fixed ones included, is at least `r`, and `r` is the largest that seats
+   `count`, by bisection to `THROW_PRECISION`. A maximal Poisson-disc sample: random, evenly spread, following the density.
+3. **The relaxation** (`relax`), only while some color's error is over the limit: the confusable colors, worst first,
+   each try up to `PROPOSALS` positions a step away in a random direction; an unusable proposal is dropped, nothing is
+   clamped; a proposal is kept when it lowers the color's error on the packing distance. A sweep with nothing kept
+   halves the step, from `STEP_START`; the relaxation ends when no color is confusable, the step is under `STEP_MIN`
+   or `SWEEPS_MAX` sweeps are spent. The best state by floor, then `apart`, is kept.
+
+Where the metric enters, so a change to it moves all of these: `metricVolume` (the density, so the pool and the
+throw), the packing distance (the throw's spacing and a proposal's acceptance), `identification`, the shadows' hue
+reach, `RIDGE_WARP` (the hue control's coordinate), and the 3D module's metric view. The preference model
+(`PREFERENCE`, from the palette member rounds) enters only as the floor.
+
+Not in the generator, and why (measured in `evolution.md`): descent toward the best spacing puts every seed on the
+same corners of the box; cells and their split geometry did not stop the pushes emptying the middle and cost floor at
+40 colors; push direction rules, stall counts, clamping and phases never moved the floor by a point, and clamping is
+what parks colors on walls; the hue marginal as a draw acceptance and a hue target toward `HUE_DENSITY`'s hue line
+put colors into hues with little room, and the table by lightness balances the hues on its own; the preference model
+as a draw weight dislikes yellows at any weight. Known gaps: a box flat in lightness or in hue gets no relaxation, a
+random step never lands inside it; the pool is shared by every seed of a box, so two palettes of one box can share a hex.
 
 ## The state string
 

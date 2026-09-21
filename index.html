@@ -272,13 +272,6 @@
 			<input type="range" id="strict" min="1" max="10" step="0.5" value="3">
 		</div>
 		<div class="hint">Width of the memory noise the colors are spread against, in ΔE. Low pushes only the closest pairs apart; high trades that for an even spread.</div>
-
-		<div class="range-pair" style="margin-top:12px; margin-bottom:0">
-			<div class="caption"><span>Randomization angle</span><span class="value" id="push-value"></span></div>
-			<label class="end"><span class="edge">min</span><input type="range" id="push-min" min="0" max="180" step="5" value="15"></label>
-			<label class="end"><input type="range" id="push-max" min="0" max="180" step="5" value="120"><span class="edge">max</span></label>
-		</div>
-		<div class="hint">A color confused too often steps off in a random direction this far from straight away from its neighbors.</div>
 	</div>
 
 	<hr>
@@ -827,70 +820,11 @@ function mulberry32(seed) {
 // The name table when none is chosen: every name usable.
 const ALL_INCLUDED = Array.from({ length: NAME_SLOTS }, () => true);
 
-// Whether a generated color may sit at the point: sRGB shows it and its name is in use.
-const usableLch = (L, C, h, cfg) => showsLch(L, C, h) && wantedLch(C, h, cfg) && !shadowed(L, C, h, cfg)
-	&& cfg.included[cellOf(oklabToRgb(...labOfLch(L, C, h))).cell];
-
-// A draw is uniform over the box's OKLab volume: lightness and hue evenly, chroma by its square so
-// the sector's outer arc is not thinned, and unusable draws rejected. A box usable almost nowhere -
-// high chroma at an extreme lightness - accepts rarely, so the tries are capped and the last draw
-// stands, its chroma pulled into the gamut.
-// The hue is drawn first: both the lightness and the chroma bounds are relative to its cusp, and
-// drawing evenly between them in absolute units is what keeps the draw uniform over the volume.
-const UNIFORM_TRIES = 256;
-
-function sampleLch(rnd, cfg) {
-	const span = hueSpan(cfg.hMin, cfg.hMax);
-	let L = 0, C = 0, h = 0;
-	for (let n = 0; n < UNIFORM_TRIES; ++n) {
-		h = (cfg.hMin + rnd() * span) % 360;
-		const low = absoluteL(cfg.lMin, h), high = absoluteL(cfg.lMax, h);
-		L = low + rnd() * (high - low);
-		const c2Min = absoluteC(cfg.cMin, h) ** 2, c2Max = absoluteC(cfg.cMax, h) ** 2;
-		C = Math.sqrt(c2Min + rnd() * (c2Max - c2Min));
-		if (usableLch(L, C, h, cfg))
-			return [L, C, h];
-	}
-	return [L, Math.min(C, gamutChroma(L, h)), h];
-}
-
-// The box on a grid: the centres of its usable cells, and the fraction of all cells they are. A box
-// below SPARSE_FRACTION is sampled from its cells (see sampleLch); at zero it is empty.
-// A centre carries its lightness and chroma relative to the cusp, the coordinates the ranges are
-// stated in, so a cell is the same size at every hue and a jitter within one cannot leave the range.
-const CELL_STEPS = { L: 25, C: 25, h: 90 };
-const SPARSE_FRACTION = 1 / 32;
-const absoluteLch = cell => [absoluteL(cell[0], cell[2]), absoluteC(cell[1], cell[2]), cell[2]];
-function boxCells(cfg) {
-	const span = hueSpan(cfg.hMin, cfg.hMax);
-	const step = [(cfg.lMax - cfg.lMin) / CELL_STEPS.L, (cfg.cMax - cfg.cMin) / CELL_STEPS.C, span / CELL_STEPS.h];
-	const centres = [];
-	for (let li = 0; li < CELL_STEPS.L; ++li)
-		for (let ci = 0; ci < CELL_STEPS.C; ++ci)
-			for (let hi = 0; hi < CELL_STEPS.h; ++hi) {
-				const cell = [cfg.lMin + (li + 0.5) * step[0], cfg.cMin + (ci + 0.5) * step[1], (cfg.hMin + (hi + 0.5) * step[2]) % 360];
-				if (usableLch(...absoluteLch(cell), cfg))
-					centres.push(cell);
-			}
-	return { centres, step, fraction: centres.length / (CELL_STEPS.L * CELL_STEPS.C * CELL_STEPS.h) };
-}
-
-// A point of a sparse box: a random cell, jittered within it while the result stays usable.
-const CELL_TRIES = 8;
-function sampleCell(rnd, cfg) {
-	const cells = cfg.cells;
-	const centre = cells.centres[Math.floor(rnd() * cells.centres.length)];
-	for (let n = 0; n < CELL_TRIES; ++n) {
-		const cell = centre.map((v, k) => v + (rnd() - 0.5) * cells.step[k]);
-		cell[2] = (cell[2] + 360) % 360;
-		const lch = absoluteLch(cell);
-		if (usableLch(...lch, cfg))
-			return lch;
-	}
-	return absoluteLch(centre);
-}
-
-const samplePoint = (rnd, cfg) => cfg.cells ? sampleCell(rnd, cfg) : sampleLch(rnd, cfg);
+// Whether a point inside the gamut may hold a generated color: its name in use, at or above the preference floor,
+// outside every shadow.
+const allowedLch = (L, C, h, cfg) => wantedLch(C, h, cfg) && !shadowed(L, C, h, cfg) && cfg.included[cellOf(oklabToRgb(...labOfLch(L, C, h))).cell];
+// The same for any point: sRGB has to show it.
+const usableLch = (L, C, h, cfg) => showsLch(L, C, h) && allowedLch(L, C, h, cfg);
 
 // OKLab in deltaE units (x100) of an OKLCh point.
 const positionOf = lch => labOfLch(...lch).map(v => v * 100);
@@ -919,10 +853,10 @@ function parseHexColors(text) {
 
 // Distance model, as in data/identify.js: how far apart two colors read as palette members, in
 // units of the noise width the Distinctness slider sets. A lightness or chroma difference counts W_L or
-// W_C times its size against a hue difference, hues first respaced by HUE_DENSITY. W_L, W_C,
-// LIGHTNESS_EXPONENT and HUE_DENSITY are one fit to the preference rounds; see HUE_DENSITY and data/scripts.md.
+// W_C times its size against a hue difference, hues first respaced by the level densities, HUE_LEVELS. W_L, W_C,
+// LIGHTNESS_EXPONENT and the level densities are one fit to the preference rounds; see HUE_DENSITY_AT_30 and data/scripts.md.
 const W_L = 0.46;
-const W_C = 0.86;
+const W_C = 0.83;
 // A hue difference grows with chroma at this power, not linearly: the same turn at half the chroma
 // reads at 0.6 of the distance, not half. The scale is one at CHROMA_REFERENCE.
 const CHROMA_POWER = 0.75;
@@ -934,7 +868,7 @@ const CHROMA_FLOOR = 1;
 // the recall calibration ran the dark side the other way, dark pairs confusing in memory. The gain is
 // on the whole distance, not on the lightness weight, and on absolute lightness, not the cusp-relative
 // coordinate of the range controls: a round of lightness pairs ranks the two coordinates alike.
-const LIGHTNESS_EXPONENT = 0.19;
+const LIGHTNESS_EXPONENT = 0.21;
 // The lightness at which the gain is one, its minimum: the cusps' own lightness, where the rounds put the
 // limit distance at the line between marginal and fine.
 const LIGHTNESS_REFERENCE = 68;
@@ -952,8 +886,8 @@ const hueScaleAt = C => (Math.max(CHROMA_FLOOR, C) / CHROMA_REFERENCE) ** (CHROM
 // degree at mean 1: OKLab's hue circle is not evenly spaced to the eye. A bump at red and at violet, a
 // trough at yellow and at cyan. Fitted to the pair rounds under the preference question, the output of
 // node data/fit_hue_density.js --own-cuts --ridge 10 --free wl,wc,gain --table over data/boundary-4-log.json
-// to boundary-20-log.json; a retune is a new paste here and in data/identify.js, which must match. Also the
-// acceptance density of the starting draws, see hueWeightFor.
+// to boundary-20-log.json; a retune is a new paste here and in data/identify.js, which must match. The one table
+// over every lightness, not in use here: the metric's are the levels below. Kept as the copy data/identify.js checks.
 const HUE_DENSITY = [
 	0.842, 0.861, 0.881, 0.902, 0.922, 0.943, 0.965, 0.987, 1.01, 1.033, 1.057, 1.081, 1.106, 1.132, 1.158, 1.184, 1.212,
 	1.24, 1.268, 1.297, 1.327, 1.358, 1.389, 1.421, 1.454, 1.487, 1.521, 1.556, 1.592, 1.629, 1.666, 1.63, 1.596, 1.561,
@@ -977,6 +911,78 @@ const HUE_DENSITY = [
 	0.986, 0.972, 0.958, 0.944, 0.93, 0.917, 0.904, 0.891, 0.889, 0.887, 0.886, 0.884, 0.882, 0.881, 0.879, 0.877, 0.876,
 	0.874, 0.873, 0.871, 0.869, 0.868, 0.866, 0.864, 0.863, 0.861, 0.86, 0.858, 0.856, 0.855, 0.853, 0.852, 0.85, 0.848,
 	0.847, 0.845, 0.844];
+// The density at lightness 30, 58 and 85, the metric's: a pair's is the mix of the two around its mean lightness. One fit with
+// W_L, W_C and LIGHTNESS_EXPONENT, the output of node data/fit_hue_density.js --own-cuts --ridge 10 --free wl,wc,gain
+// --levels 30,58,85 --table over data/boundary-4-log.json to boundary-20-log.json; pasted here and in data/identify.js.
+const HUE_DENSITY_AT_30 = [
+	1.014, 1.039, 1.064, 1.09, 1.117, 1.144, 1.173, 1.201, 1.231, 1.261, 1.292, 1.324, 1.357, 1.39, 1.424, 1.459, 1.495,
+	1.532, 1.569, 1.608, 1.648, 1.688, 1.73, 1.772, 1.816, 1.86, 1.906, 1.953, 2.001, 2.05, 2.101, 2.036, 1.974, 1.914,
+	1.856, 1.799, 1.744, 1.691, 1.639, 1.589, 1.541, 1.494, 1.448, 1.404, 1.361, 1.319, 1.279, 1.24, 1.202, 1.166, 1.13,
+	1.096, 1.062, 1.03, 0.998, 0.968, 0.938, 0.91, 0.882, 0.855, 0.829, 0.817, 0.805, 0.794, 0.783, 0.772, 0.761, 0.75,
+	0.739, 0.729, 0.718, 0.708, 0.698, 0.688, 0.679, 0.669, 0.659, 0.65, 0.641, 0.632, 0.623, 0.614, 0.605, 0.597, 0.588,
+	0.58, 0.572, 0.564, 0.556, 0.548, 0.54, 0.549, 0.559, 0.569, 0.579, 0.589, 0.599, 0.61, 0.62, 0.631, 0.642, 0.654,
+	0.665, 0.677, 0.689, 0.701, 0.713, 0.725, 0.738, 0.751, 0.764, 0.778, 0.791, 0.805, 0.819, 0.833, 0.848, 0.863, 0.878,
+	0.893, 0.909, 0.909, 0.909, 0.909, 0.909, 0.909, 0.909, 0.909, 0.909, 0.909, 0.909, 0.909, 0.909, 0.909, 0.909, 0.909,
+	0.909, 0.909, 0.909, 0.909, 0.909, 0.909, 0.909, 0.909, 0.909, 0.909, 0.909, 0.909, 0.909, 0.909, 0.91, 0.902, 0.894,
+	0.886, 0.878, 0.87, 0.863, 0.855, 0.848, 0.84, 0.833, 0.826, 0.819, 0.811, 0.804, 0.797, 0.79, 0.783, 0.777, 0.77,
+	0.763, 0.756, 0.75, 0.743, 0.737, 0.73, 0.724, 0.718, 0.711, 0.705, 0.699, 0.709, 0.719, 0.729, 0.739, 0.75, 0.76,
+	0.771, 0.782, 0.793, 0.804, 0.816, 0.827, 0.839, 0.851, 0.863, 0.875, 0.887, 0.9, 0.912, 0.925, 0.938, 0.951, 0.965,
+	0.978, 0.992, 1.006, 1.02, 1.035, 1.049, 1.064, 1.059, 1.054, 1.049, 1.044, 1.039, 1.034, 1.029, 1.025, 1.02, 1.015,
+	1.01, 1.005, 1.001, 0.996, 0.991, 0.986, 0.982, 0.977, 0.972, 0.968, 0.963, 0.959, 0.954, 0.95, 0.945, 0.941, 0.936,
+	0.932, 0.927, 0.923, 0.931, 0.938, 0.946, 0.954, 0.962, 0.97, 0.978, 0.986, 0.994, 1.003, 1.011, 1.019, 1.028, 1.036,
+	1.045, 1.054, 1.062, 1.071, 1.08, 1.089, 1.098, 1.107, 1.116, 1.126, 1.135, 1.144, 1.154, 1.163, 1.173, 1.183, 1.183,
+	1.183, 1.182, 1.182, 1.182, 1.182, 1.182, 1.182, 1.182, 1.182, 1.182, 1.182, 1.182, 1.181, 1.181, 1.181, 1.181, 1.181,
+	1.181, 1.181, 1.181, 1.181, 1.181, 1.18, 1.18, 1.18, 1.18, 1.18, 1.18, 1.18, 1.168, 1.156, 1.145, 1.133, 1.122,
+	1.111, 1.1, 1.089, 1.078, 1.067, 1.056, 1.046, 1.035, 1.025, 1.014, 1.004, 0.994, 0.984, 0.974, 0.965, 0.955, 0.945,
+	0.936, 0.926, 0.917, 0.908, 0.899, 0.89, 0.881, 0.872, 0.876, 0.881, 0.885, 0.89, 0.894, 0.899, 0.903, 0.908, 0.912,
+	0.917, 0.921, 0.926, 0.931, 0.935, 0.94, 0.945, 0.95, 0.954, 0.959, 0.964, 0.969, 0.974, 0.979, 0.984, 0.988, 0.993,
+	0.998, 1.003, 1.009];
+const HUE_DENSITY_AT_58 = [
+	0.746, 0.767, 0.788, 0.81, 0.832, 0.855, 0.879, 0.903, 0.928, 0.953, 0.98, 1.007, 1.034, 1.063, 1.092, 1.122, 1.153,
+	1.185, 1.218, 1.251, 1.286, 1.321, 1.358, 1.395, 1.434, 1.473, 1.514, 1.556, 1.598, 1.642, 1.688, 1.654, 1.622, 1.589,
+	1.558, 1.527, 1.497, 1.467, 1.438, 1.409, 1.381, 1.354, 1.327, 1.301, 1.275, 1.25, 1.225, 1.201, 1.177, 1.154, 1.131,
+	1.108, 1.086, 1.065, 1.044, 1.023, 1.003, 0.983, 0.963, 0.944, 0.926, 0.91, 0.895, 0.881, 0.866, 0.852, 0.838, 0.824,
+	0.811, 0.797, 0.784, 0.771, 0.759, 0.746, 0.734, 0.722, 0.71, 0.698, 0.687, 0.676, 0.665, 0.654, 0.643, 0.632, 0.622,
+	0.612, 0.602, 0.592, 0.582, 0.573, 0.563, 0.578, 0.594, 0.61, 0.626, 0.643, 0.661, 0.678, 0.697, 0.715, 0.735, 0.755,
+	0.775, 0.796, 0.817, 0.839, 0.862, 0.885, 0.909, 0.933, 0.959, 0.984, 1.011, 1.038, 1.066, 1.095, 1.124, 1.155, 1.186,
+	1.218, 1.251, 1.254, 1.257, 1.26, 1.264, 1.267, 1.27, 1.273, 1.277, 1.28, 1.283, 1.287, 1.29, 1.293, 1.297, 1.3,
+	1.303, 1.307, 1.31, 1.314, 1.317, 1.32, 1.324, 1.327, 1.331, 1.334, 1.338, 1.341, 1.345, 1.348, 1.352, 1.33, 1.309,
+	1.288, 1.268, 1.248, 1.228, 1.208, 1.189, 1.17, 1.152, 1.134, 1.116, 1.098, 1.081, 1.063, 1.047, 1.03, 1.014, 0.998,
+	0.982, 0.966, 0.951, 0.936, 0.921, 0.906, 0.892, 0.878, 0.864, 0.85, 0.837, 0.844, 0.851, 0.859, 0.866, 0.874, 0.881,
+	0.889, 0.897, 0.904, 0.912, 0.92, 0.928, 0.936, 0.944, 0.953, 0.961, 0.969, 0.978, 0.986, 0.995, 1.003, 1.012, 1.021,
+	1.03, 1.039, 1.048, 1.057, 1.066, 1.075, 1.085, 1.073, 1.062, 1.051, 1.04, 1.029, 1.018, 1.007, 0.997, 0.986, 0.976,
+	0.966, 0.955, 0.945, 0.935, 0.926, 0.916, 0.906, 0.897, 0.887, 0.878, 0.869, 0.859, 0.85, 0.841, 0.833, 0.824, 0.815,
+	0.807, 0.798, 0.79, 0.794, 0.799, 0.804, 0.808, 0.813, 0.818, 0.823, 0.827, 0.832, 0.837, 0.842, 0.847, 0.852, 0.857,
+	0.862, 0.867, 0.872, 0.877, 0.882, 0.887, 0.892, 0.897, 0.903, 0.908, 0.913, 0.919, 0.924, 0.929, 0.935, 0.94, 0.948,
+	0.956, 0.963, 0.971, 0.979, 0.987, 0.995, 1.003, 1.011, 1.02, 1.028, 1.036, 1.045, 1.053, 1.062, 1.07, 1.079, 1.088,
+	1.097, 1.105, 1.114, 1.124, 1.133, 1.142, 1.151, 1.16, 1.17, 1.179, 1.189, 1.199, 1.185, 1.171, 1.157, 1.143, 1.13,
+	1.116, 1.103, 1.09, 1.077, 1.064, 1.052, 1.039, 1.027, 1.015, 1.003, 0.991, 0.98, 0.968, 0.957, 0.945, 0.934, 0.923,
+	0.912, 0.901, 0.891, 0.88, 0.87, 0.86, 0.849, 0.839, 0.836, 0.833, 0.83, 0.826, 0.823, 0.82, 0.817, 0.814, 0.81,
+	0.807, 0.804, 0.801, 0.798, 0.795, 0.792, 0.788, 0.785, 0.782, 0.779, 0.776, 0.773, 0.77, 0.767, 0.764, 0.761, 0.758,
+	0.755, 0.752, 0.749];
+const HUE_DENSITY_AT_85 = [
+	0.812, 0.825, 0.838, 0.852, 0.865, 0.879, 0.893, 0.907, 0.922, 0.937, 0.952, 0.967, 0.982, 0.998, 1.014, 1.03, 1.047,
+	1.064, 1.081, 1.098, 1.115, 1.133, 1.151, 1.17, 1.189, 1.208, 1.227, 1.247, 1.266, 1.287, 1.307, 1.288, 1.268, 1.249,
+	1.23, 1.212, 1.194, 1.176, 1.158, 1.141, 1.123, 1.107, 1.09, 1.074, 1.057, 1.042, 1.026, 1.01, 0.995, 0.98, 0.966,
+	0.951, 0.937, 0.923, 0.909, 0.895, 0.882, 0.868, 0.855, 0.842, 0.83, 0.823, 0.816, 0.809, 0.802, 0.795, 0.788, 0.781,
+	0.774, 0.768, 0.761, 0.755, 0.748, 0.742, 0.735, 0.729, 0.723, 0.716, 0.71, 0.704, 0.698, 0.692, 0.686, 0.68, 0.674,
+	0.669, 0.663, 0.657, 0.652, 0.646, 0.64, 0.654, 0.668, 0.683, 0.697, 0.712, 0.728, 0.743, 0.759, 0.776, 0.792, 0.809,
+	0.827, 0.845, 0.863, 0.881, 0.9, 0.92, 0.94, 0.96, 0.981, 1.002, 1.023, 1.045, 1.068, 1.091, 1.114, 1.138, 1.163,
+	1.188, 1.213, 1.203, 1.192, 1.182, 1.171, 1.161, 1.151, 1.141, 1.131, 1.121, 1.111, 1.102, 1.092, 1.082, 1.073, 1.064,
+	1.054, 1.045, 1.036, 1.027, 1.018, 1.009, 1, 0.991, 0.983, 0.974, 0.966, 0.957, 0.949, 0.941, 0.932, 0.924, 0.916,
+	0.907, 0.899, 0.891, 0.883, 0.875, 0.867, 0.859, 0.851, 0.844, 0.836, 0.829, 0.821, 0.814, 0.806, 0.799, 0.792, 0.785,
+	0.778, 0.771, 0.764, 0.757, 0.75, 0.743, 0.736, 0.73, 0.723, 0.717, 0.71, 0.715, 0.719, 0.723, 0.728, 0.732, 0.737,
+	0.741, 0.746, 0.75, 0.755, 0.759, 0.764, 0.769, 0.773, 0.778, 0.783, 0.788, 0.792, 0.797, 0.802, 0.807, 0.812, 0.817,
+	0.822, 0.827, 0.832, 0.837, 0.842, 0.847, 0.852, 0.854, 0.855, 0.856, 0.858, 0.859, 0.861, 0.862, 0.863, 0.865, 0.866,
+	0.868, 0.869, 0.87, 0.872, 0.873, 0.874, 0.876, 0.877, 0.879, 0.88, 0.882, 0.883, 0.884, 0.886, 0.887, 0.889, 0.89,
+	0.892, 0.893, 0.894, 0.9, 0.906, 0.912, 0.917, 0.923, 0.929, 0.935, 0.941, 0.947, 0.953, 0.959, 0.965, 0.972, 0.978,
+	0.984, 0.99, 0.997, 1.003, 1.009, 1.016, 1.022, 1.029, 1.035, 1.042, 1.049, 1.055, 1.062, 1.069, 1.076, 1.083, 1.108,
+	1.135, 1.162, 1.189, 1.218, 1.247, 1.276, 1.307, 1.338, 1.37, 1.402, 1.436, 1.47, 1.505, 1.541, 1.578, 1.615, 1.654,
+	1.693, 1.733, 1.775, 1.817, 1.86, 1.904, 1.95, 1.996, 2.044, 2.092, 2.142, 2.193, 2.121, 2.051, 1.983, 1.917, 1.854,
+	1.793, 1.734, 1.676, 1.621, 1.567, 1.515, 1.465, 1.417, 1.37, 1.325, 1.281, 1.239, 1.198, 1.158, 1.12, 1.083, 1.047,
+	1.013, 0.979, 0.947, 0.915, 0.885, 0.856, 0.828, 0.8, 0.801, 0.801, 0.801, 0.802, 0.802, 0.803, 0.803, 0.803, 0.804,
+	0.804, 0.805, 0.805, 0.805, 0.806, 0.806, 0.807, 0.807, 0.807, 0.808, 0.808, 0.808, 0.809, 0.809, 0.81, 0.81, 0.81,
+	0.811, 0.811, 0.812];
 
 // The table authored by eye in data/hue-density.html before the measurement, kept for reference; nothing
 // reads it.
@@ -1004,48 +1010,61 @@ const HUE_DENSITY_AUTHORED = [
 	0.42, 0.416, 0.411, 0.402, 0.391, 0.377, 0.362, 0.349, 0.337, 0.328, 0.321, 0.314, 0.308, 0.306, 0.311, 0.325, 0.348,
 	0.373, 0.395, 0.411, 0.423, 0.438, 0.455];
 
-// The warped hue of each whole degree, 0 to 360: the running integral of HUE_DENSITY.
-const HUE_WARP = (() => {
+// The warped hue of each whole degree, 0 to 360, by lightness in rising order: the running integral of the level's density.
+const HUE_LEVEL_DENSITIES = [[30, HUE_DENSITY_AT_30], [58, HUE_DENSITY_AT_58], [85, HUE_DENSITY_AT_85]];
+const HUE_LEVELS = HUE_LEVEL_DENSITIES.map(([L, density]) => {
 	const warp = [0];
 	for (let h = 0; h < 360; ++h)
-		warp.push(warp[h] + HUE_DENSITY[h]);
-	return warp.map(v => v * 360 / warp[360]);
-})();
-// The warped hue of an ab pair, in radians.
-function warpedHue(a, b) {
-	const h = (Math.atan2(b, a) * 180 / Math.PI + 360) % 360;
-	const at = Math.floor(h);
-	return (HUE_WARP[at] + (HUE_WARP[at + 1] - HUE_WARP[at]) * (h - at)) * Math.PI / 180;
+		warp.push(warp[h] + density[h]);
+	return { L, warp: warp.map(v => v * 360 / warp[360]) };
+});
+// A lightness among the levels: the index of the level below it plus the share of the way to the next, the first
+// or the last level beyond them.
+function hueLevelAt(L) {
+	let k = 0;
+	while (k < HUE_LEVELS.length - 2 && L >= HUE_LEVELS[k + 1].L)
+		++k;
+	return k + Math.min(1, Math.max(0, (L - HUE_LEVELS[k].L) / (HUE_LEVELS[k + 1].L - HUE_LEVELS[k].L)));
 }
+// A value per level mixed at a level of hueLevelAt
+const mixedAt = (perLevel, level) => { const k = Math.min(HUE_LEVELS.length - 2, Math.floor(level)), t = level - k; return perLevel[k] * (1 - t) + perLevel[k + 1] * t; };
+// The warped hue of an ab pair under every level, in radians.
+function warpedHues(a, b) {
+	const h = (Math.atan2(b, a) * 180 / Math.PI + 360) % 360, at = Math.floor(h);
+	return HUE_LEVELS.map(({ warp }) => (warp[at] + (warp[at + 1] - warp[at]) * (h - at)) * Math.PI / 180);
+}
+const warpedHue = (a, b, level) => mixedAt(warpedHues(a, b), level);
 
 // Weighted squared distance in deltaE (OKLab x100): lightness and radial chroma differences by
-// their weights, the tangential hue difference after both points turn to their warped hue, scaled
-// by the pair's mean chroma, the pair's mean lightness as a gain.
-function apart2(p, q) {
-	const pC = Math.hypot(p[1], p[2]), qC = Math.hypot(q[1], q[2]);
-	const pH = warpedHue(p[1], p[2]), qH = warpedHue(q[1], q[2]);
-	const dL = (p[0] - q[0]) * W_L, dC = pC - qC;
-	const da = pC * Math.cos(pH) - qC * Math.cos(qH), db = pC * Math.sin(pH) - qC * Math.sin(qH);
-	const hueScale = hueScaleAt((pC + qC) / 2), gain = lightnessGain((p[0] + q[0]) / 2);
-	return (dL * dL + W_C * W_C * dC * dC + Math.max(0, da * da + db * db - dC * dC) * hueScale * hueScale) * gain * gain;
+// their weights, the tangential hue difference after both points turn to their warped hue at the pair's
+// mean lightness, scaled by the pair's mean chroma, the pair's mean lightness as a gain.
+const apart2 = (p, q) => apartWarped2(warpedPoint(p), warpedPoint(q));
+// A position as the distance reads it: lightness, chroma, and the warped hue under every level. The generator
+// keeps its points in this form: the turns cost an atan2, the distance is taken thousands of times.
+function warpedPoint([L, a, b]) {
+	return { L, C: Math.hypot(a, b), hues: warpedHues(a, b) };
+}
+function apartWarped2(p, q) {
+	const meanL = (p.L + q.L) / 2, level = hueLevelAt(meanL), turn = mixedAt(p.hues, level) - mixedAt(q.hues, level);
+	const dL = (p.L - q.L) * W_L, dC = p.C - q.C, hueScale = hueScaleAt((p.C + q.C) / 2), gain = lightnessGain(meanL);
+	// The squared ab chord of the turned pair less its radial part
+	return (dL * dL + W_C * W_C * dC * dC + 2 * p.C * q.C * (1 - Math.cos(turn)) * hueScale * hueScale) * gain * gain;
 }
 
-// The packing metric, apart2 times the pair's chroma shares of their reach to this power. The generator spreads
-// colors evenly in the metric it packs on, so the seat density goes as the share to three times the power and a
-// pale placement has to earn its separation; the report stays on apart2. Measured at 1 against 1/3 and against
-// the member-round preference as the weight, see data/evolution.md.
-const VIVIDNESS_POWER = 1;
-// A grey's share is held above zero: at zero its packing distances vanish and its pushes never settle.
-const REACH_SHARE_FLOOR = 0.05;
-// A color's chroma as a share of the reach at its lightness.
-function reachShare([L, C, h]) {
-	const reach = gamutChroma(L, h);
-	return reach > 0 ? Math.max(REACH_SHARE_FLOOR, Math.min(1, C / reach)) : REACH_SHARE_FLOOR;
-}
-// The share relative to the box's most vivid draw (see generate): an absolute share on a pastel box scales every
-// packing distance down, the error limit is never met and the floor collapses.
-const packShare = (lch, cfg) => Math.min(1, reachShare(lch) / cfg.topShare);
-const packed2 = (p, q, pShare, qShare) => apart2(p, q) * (pShare * qShare) ** VIVIDNESS_POWER;
+// Where colors sit is one density over the box: the metric's volume times the cube of a packing scale, the
+// scale a color's vividness (data/README.md, "The generator"). Colors are spaced on the packing
+// distance, the metric's times the root of the pair's scales: a sample of the density is uniform in its volume.
+// The report stays on apart2.
+// Vividness enters the scale at this power. Measured at 1/4, 1/2 and 1 by eye, see data/evolution.md.
+const VIVIDNESS_POWER = 0.5;
+// A grey's vividness is held above zero: at zero its packing distances vanish.
+const VIVIDNESS_FLOOR = 0.05;
+// A color's chroma as a share of its hue's cusp chroma, the most the gamut holds at any lightness: a dark or a pale
+// color on the gamut's surface is not vivid. The share of the reach at the color's own lightness counted it as such.
+const vividness = (C, h) => Math.max(VIVIDNESS_FLOOR, Math.min(1, C / cuspChroma(h)));
+// The metric's volume per OKLab volume: apart2's scale along lightness, along chroma and along the hue arc.
+const metricVolume = (L, C, h) => W_L * W_C * mixedAt(HUE_LEVEL_DENSITIES.map(([, density]) => density[Math.floor(h) % 360]), hueLevelAt(L)) * hueScaleAt(C) * lightnessGain(L) ** 3;
+const packed2 = (p, q) => apartWarped2(p, q) * p.scale * q.scale;
 
 // The hue control's coordinate: the metric's length along the ridge, the sRGB cube's six saturated
 // edges walked code by code, per whole degree of OKLab hue, as a running integral normalized to 360.
@@ -1100,63 +1119,6 @@ function erfc(x) {
 // The chance noise of width `sigma` carries a recall past the midpoint to a color `d` away.
 const swapChance = (d, sigma) => 0.5 * erfc(d / (2 * sigma) / Math.SQRT2);
 
-// Degrees between two hues, the short way round.
-const hueTurn = (a, b) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
-
-// Nearest hue inside the range.
-function clampHue(h, hMin, hMax) {
-	if (hueInRange(h, hMin, hMax))
-		return h;
-	return hueTurn(h, hMin) <= hueTurn(h, hMax) ? hMin : hMax;
-}
-
-// An OKLab point (deltaE units) moved into the range box and then the sRGB gamut, by less chroma at
-// its lightness and hue, as OKLCh, and whether it had to be moved.
-function pointInBox(L, a, b, cfg) {
-	const [light, chroma, hue] = lchOf([L / 100, a / 100, b / 100]);
-	// The hue is clamped first: the lightness bounds are relative to the cusp at the hue finally used.
-	const boxH = clampHue(hue, cfg.hMin, cfg.hMax);
-	const relative = relativeL(light, boxH);
-	// Whether the lightness moved is decided in the relative coordinate, where an untouched value
-	// compares equal to itself; the round trip through absoluteL need not land on the same float.
-	const boundedRelative = Math.min(cfg.lMax, Math.max(cfg.lMin, relative));
-	const boxL = absoluteL(boundedRelative, boxH);
-	// Chroma is bounded in its own relative coordinate, for the same reason as the lightness above.
-	const relativeChroma = relativeC(chroma, boxH);
-	const boundedChroma = Math.min(cfg.cMax, Math.max(cfg.cMin, relativeChroma));
-	const rangeC = absoluteC(boundedChroma, boxH);
-	// The bisection only when the box point is outside sRGB: most pushes are not.
-	const boxC = showsLch(boxL, rangeC, boxH) ? rangeC : gamutChroma(boxL, boxH);
-	return { lch: [boxL, boxC, boxH],
-		clamped: boundedRelative !== relative || boundedChroma !== relativeChroma
-			|| boxH !== hue || boxC !== rangeC };
-}
-
-// The hue marginal of uniform draws over the box, per HUE_BIN degrees at mean 1 and floored. A draw
-// weighted by HUE_DENSITY over it lands with the density's own hue distribution: the box's hue cover
-// is uneven where its lightness or chroma room varies with hue, and would multiply in otherwise.
-const HUE_BIN = 10, MARGINAL_DRAWS = 20000, MARGINAL_FLOOR = 0.05;
-function hueMarginal(rnd, cfg) {
-	const bins = new Array(360 / HUE_BIN).fill(0);
-	for (let n = 0; n < MARGINAL_DRAWS; ++n)
-		++bins[Math.floor(samplePoint(rnd, cfg)[2] / HUE_BIN)];
-	return bins.map(count => Math.max(MARGINAL_FLOOR, count * bins.length / MARGINAL_DRAWS));
-}
-// The chance a draw over the box is kept, per whole degree of its hue, peak 1. One box is remembered:
-// the sliders change one box at a time and the benchmark runs its seeds per box.
-const hueWeightKey = cfg => [cfg.hMin, cfg.hMax, cfg.lMin, cfg.lMax, cfg.cMin, cfg.cMax, cfg.preference, cfg.included.map(Number).join(""),
-	(cfg.avoid ?? []).map(color => color.hex).join(",")].join(" ");
-let hueWeightCache = { key: null, weight: null };
-function hueWeightFor(cfg) {
-	const key = hueWeightKey(cfg);
-	if (hueWeightCache.key !== key) {
-		const marginal = hueMarginal(mulberry32(424242), cfg);
-		const weight = HUE_DENSITY.map((d, h) => d / marginal[Math.floor(h / HUE_BIN)]);
-		const peak = Math.max(...weight);
-		hueWeightCache = { key, weight: weight.map(w => w / peak) };
-	}
-	return hueWeightCache.weight;
-}
 // The chance a color is wanted for itself: one less the chance of a bad mark in the palette member round, a logistic
 // on absolute chroma and hue with a chroma by hue term, fitted by data/fit_preference.js to data/palette-members-log.json.
 // Chroma is clamped to the round's range: the fit says nothing beyond it.
@@ -1181,176 +1143,92 @@ const wantedLch = (C, h, cfg) => !cfg.preference || preferenceOf(C, h) >= PREFER
 // A shadow is a gate like an excluded name, not a repulsion: a push toward the cusp always leaves it.
 const AVOID_CONE = 20;
 const COS_AVOID_CONE = Math.cos(AVOID_CONE * Math.PI / 180);
-const warpOfHue = h => warpedHue(Math.cos(h * Math.PI / 180), Math.sin(h * Math.PI / 180));
+const warpOfHue = (h, level) => warpedHue(Math.cos(h * Math.PI / 180), Math.sin(h * Math.PI / 180), level);
 function shadowsOf(colors, sigma) {
 	return colors.map(color => {
 		const [L, C, h] = color.lch;
 		const away = [relativeL(L, h) - CUSP_ANCHOR, relativeC(C, h) - 100], length = Math.hypot(...away);
 		const perRadian = C * hueScaleAt(C) * lightnessGain(L);
-		return { hue: warpOfHue(h), reach: Math.min(Math.PI, sigma / Math.max(perRadian, 1e-6)), away: away.map(v => v / length), length };
+		const level = hueLevelAt(L);
+		return { level, hue: warpOfHue(h, level), reach: Math.min(Math.PI, sigma / Math.max(perRadian, 1e-6)), away: away.map(v => v / length), length };
 	}).filter(shadow => shadow.length > 1e-6);
 }
 const shadowsFor = cfg => shadowsOf(cfg.avoid ?? [], Math.max(cfg.scale, 1));
 function shadowed(L, C, h, cfg) {
 	if (!cfg.shadows.length)
 		return false;
-	const away = [relativeL(L, h) - CUSP_ANCHOR, relativeC(C, h) - 100], length = Math.hypot(...away), hue = warpOfHue(h);
+	const away = [relativeL(L, h) - CUSP_ANCHOR, relativeC(C, h) - 100], length = Math.hypot(...away);
+	// The turn is measured on the hue circle of the avoided color's lightness
 	return cfg.shadows.some(shadow => {
-		const turn = Math.abs(hue - shadow.hue);
+		const turn = Math.abs(warpOfHue(h, shadow.level) - shadow.hue);
 		return Math.min(turn, 2 * Math.PI - turn) <= shadow.reach && length >= shadow.length
 			&& away[0] * shadow.away[0] + away[1] * shadow.away[1] >= length * COS_AVOID_CONE;
 	});
 }
 
-// A box draw kept with its hue's chance and, with preference on, the color's own; the last draw stands after WEIGHTED_TRIES.
-const WEIGHTED_TRIES = 400;
-function sampleWeighted(rnd, cfg) {
-	let draw = null;
-	for (let n = 0; n < WEIGHTED_TRIES; ++n) {
-		draw = samplePoint(rnd, cfg);
-		if (rnd() < cfg.hueWeight[Math.floor(draw[2])] * (cfg.preference ? preferenceOf(draw[1], draw[2]) : 1))
-			return draw;
-	}
-	return draw;
-}
-
-// Restarts always made, and the most made while the result's floor stays under RESTART_TARGET or more
-// than RESTART_SHORTFALL below the floor the box allows, and the best improved within the last
-// RESTART_PLATEAU attempts.
-const RESTARTS = 4, MAX_RESTARTS = 16, RESTART_TARGET = 0.9, RESTART_SHORTFALL = 0.02, RESTART_PLATEAU = 3;
 const positionsOf = colors => colors.map(color => color.lab.map(v => v * 100));
 
-// The metric's volume per OKLab volume at a point: sqrt(det G) of apart2's quadratic form there, by finite differences.
-function volumeElement(p) {
-	const d = 0.01, e = [[d, 0, 0], [0, d, 0], [0, 0, d]], q = v => apart2(p, p.map((x, k) => x + v[k]));
-	const G = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
-	for (let i = 0; i < 3; ++i) {
-		G[i][i] = q(e[i]) / (d * d);
-		for (let j = i + 1; j < 3; ++j)
-			G[i][j] = G[j][i] = (q(e[i].map((x, k) => x + e[j][k])) - q(e[i]) - q(e[j])) / (2 * d * d);
-	}
-	const det = G[0][0] * (G[1][1] * G[2][2] - G[1][2] * G[2][1]) - G[0][1] * (G[1][0] * G[2][2] - G[1][2] * G[2][0])
-		+ G[0][2] * (G[1][0] * G[2][1] - G[1][1] * G[2][0]);
-	return Math.sqrt(Math.max(det, 0));
+// The pool: points of the box drawn from the density, the candidates every attempt throws from. One per box.
+// Raw draws are kept with a chance of their weight over the largest seen in the first RAW_SURVEY usable ones,
+// until POOL_SIZE are kept or RAW_TRIES are spent: a box with little usable room gets a smaller pool.
+const POOL_SIZE = 2000, RAW_SURVEY = 10000, RAW_TRIES = 150000;
+// The thickness given to a range that has none, a lightness range of one value or a chroma range beyond the gamut.
+const SHELL = 1;
+
+// A raw draw, always inside the ranges and the gamut: hue evenly, lightness evenly over the hue's interval, chroma
+// by its square over what the range and the gamut leave at that lightness. `slab` is the OKLab volume the draw
+// stands for, up to a constant: multiplying a weight by it undoes the uneven cover of the raw draws.
+// Null where the chroma range starts more than SHELL beyond the gamut: the box holds no color at that lightness and hue.
+function rawDraw(rnd, cfg) {
+	const h = (cfg.hMin + rnd() * hueSpan(cfg.hMin, cfg.hMax)) % 360;
+	const low = absoluteL(cfg.lMin, h), high = absoluteL(cfg.lMax, h), L = low + rnd() * (high - low);
+	const reach = gamutChroma(L, h);
+	if (absoluteC(cfg.cMin, h) > reach + SHELL)
+		return null;
+	const cHigh = Math.min(absoluteC(cfg.cMax, h), reach), cLow = Math.min(absoluteC(cfg.cMin, h), cHigh);
+	const span2 = cHigh * cHigh - cLow * cLow;
+	return { lch: [L, Math.sqrt(cLow * cLow + rnd() * span2), h], slab: Math.max(high - low, SHELL) * Math.max(span2, 2 * cHigh * SHELL) };
 }
 
-// The start covers the box by packing volume: a pool of weighted draws, each carrying the metric's volume element
-// times its share of reach to three times VIVIDNESS_POWER, is cut into as many cells of equal weight as there are
-// seats, and every cell seats one color. The share is the draw's own: the box's scale cancels between cells. The cells are
-// sub-boxes in the box's own coordinates, so a cell clamps a push the way the box does.
-// One pool per box, remembered like the hue weight: the seats vary by seed, the pool need not. Measured: a pool
-// per attempt spreads the hues no more evenly and costs twice the time.
-const POOL_DRAWS = 2000;
+// A generator point: the warped position, the color's lch and its packing scale.
+const pointAt = (lch, scale) => ({ ...warpedPoint(positionOf(lch)), lch, scale });
+
+const poolKey = cfg => [cfg.hMin, cfg.hMax, cfg.lMin, cfg.lMax, cfg.cMin, cfg.cMax, cfg.preference, cfg.included.map(Number).join(""),
+	(cfg.avoid ?? []).map(color => color.hex).join(), cfg.avoid?.length ? cfg.scale : ""].join("|");
 let poolCache = { key: null, pool: null };
+// The pool of a box: its points, and `scaleOf`, the packing scale of any color of the box.
 function poolFor(cfg) {
-	const key = hueWeightKey(cfg);
-	if (poolCache.key !== key) {
-		const rnd = mulberry32(31337), pool = [];
-		for (let n = 0; n < POOL_DRAWS; ++n) {
-			const lch = sampleWeighted(rnd, cfg), share = reachShare(lch);
-			pool.push({ lch, at: [relativeL(lch[0], lch[2]), relativeC(lch[1], lch[2]), lch[2]], share, weight: volumeElement(positionOf(lch)) * share ** (3 * VIVIDNESS_POWER) });
-		}
-		poolCache = { key, pool };
-	}
-	return poolCache.pool;
-}
-const boxOf = cfg => ({ lMin: cfg.lMin, lMax: cfg.lMax, cMin: cfg.cMin, cMax: cfg.cMax, hMin: cfg.hMin, hMax: cfg.hMax });
-// A point's coordinate along a cell's axis: relative lightness, relative chroma, or the hue's offset from `origin`.
-const cellCoordinate = (at, axis, origin) => axis === 2 ? (at[2] - origin + 360) % 360 : at[axis];
-const inCell = (at, cell) => at[0] >= cell.lMin && at[0] <= cell.lMax && at[1] >= cell.cMin && at[1] <= cell.cMax && hueInRange(at[2], cell.hMin, cell.hMax);
-// The packing length of a cell along an axis through the middle of the other two, the hue as chords of at most
-// 45 degrees. The shares are the points' own: only the axes' lengths against each other count.
-function cellLength(cell, axis) {
-	const span = hueSpan(cell.hMin, cell.hMax);
-	const mid = [(cell.lMin + cell.lMax) / 2, (cell.cMin + cell.cMax) / 2, (cell.hMin + span / 2) % 360];
-	const pointAt = at => { const lch = [absoluteL(at[0], at[2]), absoluteC(at[1], at[2]), at[2]]; return { pos: positionOf(lch), share: reachShare(lch) }; };
-	const packedApart = (a, b) => Math.sqrt(packed2(a.pos, b.pos, a.share, b.share));
-	if (axis < 2) {
-		const lo = mid.slice(), hi = mid.slice();
-		[lo[axis], hi[axis]] = axis === 0 ? [cell.lMin, cell.lMax] : [cell.cMin, cell.cMax];
-		return packedApart(pointAt(lo), pointAt(hi));
-	}
-	const chords = Math.max(1, Math.ceil(span / 45));
-	let length = 0, prev = pointAt([mid[0], mid[1], cell.hMin]);
-	for (let n = 1; n <= chords; ++n) {
-		const next = pointAt([mid[0], mid[1], (cell.hMin + span * n / chords) % 360]);
-		length += packedApart(prev, next);
-		prev = next;
-	}
-	return length;
-}
-// The cell cut into `parts` cells of equal weight, each cut at the weight quantile along an axis drawn among
-// those within SPLIT_SLACK of the cell's longest, by length; a full hue circle is cut from a random origin.
-// Equal-weight cells of a fixed box are otherwise the same for every seed, and colors settle at the same
-// places in them palette after palette. A cell of a single point is not cut: its seats are filled by revisiting it.
-const SPLIT_SLACK = 0.7;
-function splitCells(rnd, cell, points, parts) {
-	if (parts === 1 || points.length < 2)
-		return [{ cell, points }];
-	const lengths = [0, 1, 2].map(a => cellLength(cell, a)), longest = Math.max(...lengths);
-	const chances = lengths.map(length => length >= SPLIT_SLACK * longest ? length : 0);
-	let draw = rnd() * chances.reduce((sum, c) => sum + c, 0), axis = 0;
-	for (; axis < 2 && draw >= chances[axis]; ++axis)
-		draw -= chances[axis];
-	const span = hueSpan(cell.hMin, cell.hMax), origin = span === 360 ? rnd() * 360 : cell.hMin;
-	const sorted = points.slice().sort((p, q) => cellCoordinate(p.at, axis, origin) - cellCoordinate(q.at, axis, origin));
-	const total = sorted.reduce((sum, p) => sum + p.weight, 0), lower = Math.floor(parts / 2);
-	let i = 1;
-	for (let acc = sorted[0].weight; i < sorted.length - 1 && acc + sorted[i].weight <= total * lower / parts; ++i)
-		acc += sorted[i].weight;
-	const cut = (cellCoordinate(sorted[i - 1].at, axis, origin) + cellCoordinate(sorted[i].at, axis, origin)) / 2;
-	const [low, high] = axis === 0 ? [{ ...cell, lMax: cut }, { ...cell, lMin: cut }]
-		: axis === 1 ? [{ ...cell, cMax: cut }, { ...cell, cMin: cut }]
-		: [{ ...cell, hMin: origin, hMax: (origin + cut) % 360 }, { ...cell, hMin: (origin + cut) % 360, hMax: (origin + span) % 360 }];
-	return [...splitCells(rnd, low, sorted.slice(0, i), lower), ...splitCells(rnd, high, sorted.slice(i), parts - lower)];
-}
+	const key = poolKey(cfg);
+	if (poolCache.key === key)
+		return poolCache.pool;
 
-// The fixed colors, then the seats: the cells in a random order, each seating the first of its points, taken in
-// an order drawn by weight, at least the limit distance from every color placed so far, else the farthest of
-// them; a fixed color inside the box takes the cell it falls in; further rounds over the cells while seats
-// remain. Returns the colors and, per color, the cell it may move in, null for a fixed color.
-function poolStart(rnd, cfg) {
-	const colors = cfg.fixed.slice(), pos = positionsOf(colors), shares = colors.map(color => packShare(color.lch, cfg)), cells = colors.map(() => null);
-	const limit2 = cfg.limit * cfg.limit;
-	const fixedAt = cfg.fixed.map(color => [relativeL(color.lch[0], color.lch[2]), relativeC(color.lch[1], color.lch[2]), color.lch[2]]);
-	const box = boxOf(cfg);
-	const free = splitCells(rnd, box, poolFor(cfg), cfg.count + fixedAt.filter(at => inCell(at, box)).length)
-		.filter(({ cell }) => !fixedAt.some(at => inCell(at, cell)));
-	const clearance = (at, share) => {
-		let nearest = Infinity;
-		for (let k = 0; k < pos.length; ++k)
-			nearest = Math.min(nearest, packed2(at, pos[k], share, shares[k]));
-		return nearest;
-	};
-	for (let seated = 0; seated < cfg.count;) {
-		const order = free.map((_, i) => i);
-		for (let i = order.length - 1; i > 0; --i) {
-			const j = Math.floor(rnd() * (i + 1));
-			[order[i], order[j]] = [order[j], order[i]];
-		}
-		for (const c of order) {
-			if (seated === cfg.count)
-				break;
-			let pick = null, clearest = -1;
-			// Weighted sampling without replacement: a key of u^(1/w) per point, largest first.
-			const candidates = free[c].points.map(point => ({ point, key: Math.pow(rnd(), 1 / point.weight) })).sort((p, q) => q.key - p.key);
-			for (const { point } of candidates) {
-				const nearest = clearance(positionOf(point.lch), point.share / cfg.topShare);
-				if (nearest > clearest) {
-					pick = point;
-					clearest = nearest;
-				}
-				if (nearest >= limit2)
-					break;
-			}
-			colors.push(colorAt(...pick.lch));
-			pos.push(positionOf(pick.lch));
-			shares.push(pick.share / cfg.topShare);
-			cells.push(free[c].cell);
-			++seated;
-		}
+	const rnd = mulberry32(31337);
+	const densityOf = draw => metricVolume(...draw.lch) * vividness(draw.lch[1], draw.lch[2]) ** (3 * VIVIDNESS_POWER) * draw.slab;
+	const scaleOf = lch => vividness(lch[1], lch[2]) ** VIVIDNESS_POWER;
+	// The survey: the density's peak, the rejection's ceiling
+	const survey = [];
+	let tries = 0;
+	for (; tries < RAW_TRIES && survey.length < RAW_SURVEY; ++tries) {
+		const draw = rawDraw(rnd, cfg);
+		if (draw && allowedLch(...draw.lch, cfg))
+			survey.push(draw);
 	}
-	return { colors, cells };
+	const peak = survey.reduce((most, draw) => Math.max(most, densityOf(draw)), 0), points = [];
+	const keep = draw => { if (rnd() * peak < densityOf(draw)) points.push(pointAt(draw.lch, scaleOf(draw.lch))); };
+	for (const draw of survey)
+		if (points.length < POOL_SIZE)
+			keep(draw);
+	for (; tries < RAW_TRIES && points.length < POOL_SIZE; ++tries) {
+		const draw = rawDraw(rnd, cfg);
+		if (draw && allowedLch(...draw.lch, cfg))
+			keep(draw);
+	}
+	// The scale is relative to the pool's largest: a pastel box ranks its own colors.
+	const top = points.reduce((most, point) => Math.max(most, point.scale), 0);
+	for (const point of points)
+		point.scale /= top;
+	poolCache = { key, pool: { points, scaleOf: lch => Math.min(1, scaleOf(lch) / top) } };
+	return poolCache.pool;
 }
 
 // A color's chance of being misidentified may not exceed this: the start spaces every pair at it,
@@ -1368,133 +1246,44 @@ function limitDistance(sigma) {
 	}
 	return above;
 }
-// Each push moves a color this far in deltaE.
-const PUSH_STEP = 1;
-const MAX_PUSHES = 1000;
-// A push goes in a random direction between `cfg.pushMin` and `cfg.pushMax` degrees off straight
-// away from the neighbors: straight away runs into box walls and cancels between neighbors on
-// opposite sides, a sideways step slides past both. These are the angles for callers that set none.
-const PUSH_ANGLE_MIN = 15, PUSH_ANGLE_MAX = 120;
-// Rejected pushes in a row after which a color is left where it is.
-const STALL_PUSHES = 60;
 
-// A unit vector drawn uniformly from the band between PUSH_ANGLE_MIN and PUSH_ANGLE_MAX off the unit `axis`.
-function withinCone(rnd, axis, cfg) {
-	const nearest = Math.cos(cfg.pushMin * Math.PI / 180), farthest = Math.cos(cfg.pushMax * Math.PI / 180);
-	const cosine = nearest - rnd() * (nearest - farthest);
-	const sine = Math.sqrt(1 - cosine * cosine), turn = 2 * Math.PI * rnd();
-	// An orthonormal pair across the axis, from whichever coordinate axis is least aligned with it.
-	const pivot = Math.abs(axis[0]) < 0.6 ? [1, 0, 0] : [0, 1, 0];
-	const u = [pivot[1] * axis[2] - pivot[2] * axis[1], pivot[2] * axis[0] - pivot[0] * axis[2], pivot[0] * axis[1] - pivot[1] * axis[0]];
-	const uLength = Math.hypot(...u);
-	for (let k = 0; k < 3; ++k)
-		u[k] /= uLength;
-	const v = [axis[1] * u[2] - axis[2] * u[1], axis[2] * u[0] - axis[0] * u[2], axis[0] * u[1] - axis[1] * u[0]];
-	return axis.map((a, k) => a * cosine + (u[k] * Math.cos(turn) + v[k] * Math.sin(turn)) * sine);
-}
-
-// Pushes every color whose chance of being misidentified exceeds ERROR_LIMIT, a step at a time,
-// until none does or every such color has stalled. Nothing else moves. A color steps along a
-// heading drawn within the band off straight away from its neighbors, each neighbor weighing by
-// how steeply its swap chance falls with distance; the heading lasts while the color keeps being
-// pushed and its steps keep being accepted, and is redrawn otherwise. A push is dropped when it
-// raises the color's chance of being misidentified on the packing metric (see `packed2`), when its target carries an excluded name, or
-// when the bounds or the gamut had to pull its target back: the pushes otherwise walk colors onto
-// the walls and leave them there. Three phases, each for the colors still over the limit when the
-// one before is exhausted: within the color's cell of the start, then the cell's walls kept, then
-// the box's walls kept, so coverage yields to the floor only where the cell cannot hold the floor.
-// `cfg.hull` keeps the box's walls from the outset, for the floor the box allows when its walls may
-// be used.
-// Returns the state with the highest floor seen, the start included; equal floors go to the one
-// whose closest pair sits furthest apart, the only thing separating states above a sigma where
-// every color is confused and every floor is zero. That distance is `identification`'s `apart`.
-// A color is pushed while its error on apart2 is over the limit, and the floor is apart2's; the push weights and
-// the acceptance of a step are on the packing metric, so a step toward pale has to lower the error more than it
-// lowers the share. The limit itself on the packing metric is out of reach on a pastel box.
-function pushApart(rnd, colors, cells, cfg) {
-	colors = colors.slice();
-	const pos = positionsOf(colors), shares = colors.map(color => packShare(color.lch, cfg));
-	const rejected = pos.map(() => 0);
-	const heading = pos.map(() => null);
-	// The chance color `i` standing at `at` is recalled as another color, summed over the others.
-	const errorAt = (i, at) => {
-		let error = 0;
-		for (let j = 0; j < pos.length; ++j)
-			if (j !== i)
-				error += swapChance(Math.sqrt(apart2(at, pos[j])), cfg.sigma);
-		return error;
-	};
-	// The same on the packing metric, `share` the share at `at`.
-	const packedErrorAt = (i, at, share) => {
-		let error = 0;
-		for (let j = 0; j < pos.length; ++j)
-			if (j !== i)
-				error += swapChance(Math.sqrt(packed2(at, pos[j], share, shares[j])), cfg.sigma);
-		return error;
-	};
-	// The push on color `i` away from color `j`, by the pair's packing distance in noise widths, added to its shift.
-	const pushAway = (shift, i, j) => {
-		// Coincident colors have no line; they part along a.
-		const between = pos[i].map((v, k) => v - pos[j][k]);
-		const length = Math.hypot(...between);
-		const away = length > 1e-6 ? between.map(v => v / length) : [0, 1, 0];
-		const x = Math.sqrt(packed2(pos[i], pos[j], shares[i], shares[j])) / (2 * cfg.sigma);
-		const weight = Math.exp(-x * x / 2);
-		for (let k = 0; k < 3; ++k)
-			shift[i][k] += away[k] * weight;
-	};
-	let best = colors.slice(), bestScore = identification(colors, cfg, pos);
-	let n = 0;
-	const phases = cfg.hull ? [[() => cfg, true]] : [[i => cells[i], false], [i => cells[i], true], [() => cfg, true]];
-	for (const [boundsOf, keepClamped] of phases) {
-		rejected.fill(0);
-		heading.fill(null);
-		for (let proposed = true; n < MAX_PUSHES && proposed; ++n) {
-			proposed = false;
-			const shift = pos.map(() => [0, 0, 0]);
-			for (let i = 0; i < pos.length; ++i) {
-				if (colors[i].fixed || errorAt(i, pos[i]) <= ERROR_LIMIT)
-					continue;
-				for (let j = 0; j < pos.length; ++j)
-					if (j !== i)
-						pushAway(shift, i, j);
-			}
-
-			for (let i = 0; i < pos.length; ++i) {
-				const length = Math.hypot(...shift[i]);
-				if (colors[i].fixed || rejected[i] >= STALL_PUSHES)
-					continue;
-				if (length === 0) {
-					heading[i] = null;
-					continue;
-				}
-
-				proposed = true;
-				heading[i] ??= withinCone(rnd, shift[i].map(v => v / length), cfg);
-				const target = pos[i].map((v, k) => v + heading[i][k] * PUSH_STEP);
-				const { lch, clamped } = pointInBox(target[0], target[1], target[2], boundsOf(i));
-				const at = positionOf(lch), share = packShare(lch, cfg);
-				const color = colorAt(...lch);
-				if ((clamped && !keepClamped) || !cfg.included[color.cell] || !wantedLch(lch[1], lch[2], cfg) || shadowed(...lch, cfg)
-						|| packedErrorAt(i, at, share) > packedErrorAt(i, pos[i], shares[i])) {
-					++rejected[i];
-					heading[i] = null;
-					continue;
-				}
-				colors[i] = color;
-				pos[i] = at;
-				shares[i] = share;
-				rejected[i] = 0;
-			}
-			const score = identification(colors, cfg, pos);
-			if (score.floor > bestScore.floor || (score.floor === bestScore.floor && score.apart > bestScore.apart)) {
-				best = colors.slice();
-				bestScore = score;
-			}
-		}
+// The throw: the pool's points in the given order, a point seated when its packing distance to every point seated,
+// the fixed ones included, is at least `r`. Null when fewer than `count` find a seat.
+function throwAt(order, fixed, count, r) {
+	const seated = fixed.slice(), r2 = r * r;
+	for (const point of order) {
+		if (seated.length - fixed.length === count)
+			break;
+		if (seated.every(other => packed2(point, other) >= r2))
+			seated.push(point);
 	}
-	return best;
+	return seated.length - fixed.length === count ? seated : null;
 }
+
+// The widest throw: the largest `r` that seats `count`, by bisection to THROW_PRECISION of `r`. A maximal
+// Poisson-disc sample of the density: random, evenly spread. Fewer points than `count` seat them all.
+const THROW_PRECISION = 0.02;
+function widestThrow(order, fixed, count, limit) {
+	let seated = throwAt(order, fixed, Math.min(count, order.length), 0), below = 0, above = limit;
+	// One color and nothing fixed seats at any `r`.
+	while (above < 1000 && throwAt(order, fixed, count, above))
+		above *= 2;
+	while (above - below > THROW_PRECISION * above) {
+		const mid = (below + above) / 2, made = throwAt(order, fixed, count, mid);
+		if (made)
+			[seated, below] = [made, mid];
+		else
+			above = mid;
+	}
+	return seated;
+}
+
+// The relaxation's first step in deltaE, and the step under which it ends.
+const STEP_START = 2, STEP_MIN = 0.25;
+// Directions a color tries per sweep, the first that helps taken: with one, a sweep that keeps nothing is bad
+// luck, not a step too long, and the step halves for nothing.
+const PROPOSALS = 8;
+const SWEEPS_MAX = 400;
 
 // The chance each generated color is misidentified, summed over the others; the floor is the worst
 // color's chance of being identified. The pair is the one likeliest swapped, `apart` its weighted
@@ -1502,8 +1291,8 @@ function pushApart(rnd, colors, cells, cfg) {
 // The swap chance falls with distance, so `apart` is also the closest pair's distance, which ranks
 // attempts against each other. Pairs of two fixed colors are skipped: generation cannot move
 // either, so such a pair must neither rank an attempt nor be pointed at as the offender.
-// A caller stepping the colors passes the positions it already keeps for them.
-function identification(colors, cfg, pos = positionsOf(colors)) {
+// A caller stepping the colors passes the points it already keeps for them.
+function identification(colors, cfg, points = positionsOf(colors).map(warpedPoint)) {
 	const error = colors.map(() => 0);
 	let pair = null, apart = Infinity, confused = -1;
 	for (let i = 0; i < colors.length; ++i)
@@ -1511,7 +1300,7 @@ function identification(colors, cfg, pos = positionsOf(colors)) {
 			if (colors[i].fixed && colors[j].fixed)
 				continue;
 
-			const d = Math.sqrt(apart2(pos[i], pos[j]));
+			const d = Math.sqrt(apartWarped2(points[i], points[j]));
 			const chance = swapChance(d, cfg.sigma);
 			error[i] += chance;
 			error[j] += chance;
@@ -1529,40 +1318,97 @@ function identification(colors, cfg, pos = positionsOf(colors)) {
 	return { floor, pair, apart, confused };
 }
 
-// One start pushed apart, with its scores.
-function attempt(rnd, cfg) {
-	const start = poolStart(rnd, cfg);
-	const colors = pushApart(rnd, start.colors, start.cells, cfg);
-	return { colors, ...identification(colors, cfg),
-		named: new Set(colors.map(color => color.cell)).size };
+// Whether a point is inside the ranges and the gamut. Where the chroma range starts within SHELL beyond the gamut,
+// the SHELL under the gamut's surface is inside, as rawDraw takes it.
+function insideBox([L, C, h], cfg) {
+	if (!hueInRange(h, cfg.hMin, cfg.hMax) || !withinLightness(L, h, cfg))
+		return false;
+	const reach = gamutChroma(L, h), lowest = absoluteC(cfg.cMin, h);
+	return C <= Math.min(absoluteC(cfg.cMax, h), reach) && (C >= lowest || (lowest <= reach + SHELL && C >= reach - SHELL));
 }
 
-// The best of the restarts by floor, then gap. `reachable` is a floor the box allows for this many
-// colors: one attempt free to use the walls, from its own seed so a poor start is not shared. The
-// restarts continue past the first RESTARTS while the best falls short of it or of RESTART_TARGET
-// and a recent attempt still improved it. Null when the box holds no usable color.
-function generate(cfg) {
-	const sigma = Math.max(cfg.scale, 1);
-	const settings = { ...cfg, sigma, limit: limitDistance(sigma), included: cfg.included ?? ALL_INCLUDED, preference: cfg.preference ?? true,
-		pushMin: cfg.pushMin ?? PUSH_ANGLE_MIN, pushMax: cfg.pushMax ?? PUSH_ANGLE_MAX };
-	settings.shadows = shadowsFor(cfg);
-	const cells = boxCells(settings);
-	if (!cells.centres.length)
-		return null;
-	settings.cells = cells.fraction < SPARSE_FRACTION ? cells : null;
-	settings.hueWeight = hueWeightFor(settings);
-	settings.topShare = Math.max(...poolFor(settings).map(point => point.share));
-	const reachable = attempt(mulberry32(settings.seed + 104729), { ...settings, hull: true }).floor;
-	let best = null, bestAt = 0;
-	for (let n = 0; n < MAX_RESTARTS && (n < RESTARTS
-			|| (best.floor < Math.max(RESTART_TARGET, reachable - RESTART_SHORTFALL) && n - bestAt <= RESTART_PLATEAU)); ++n) {
-		const made = attempt(mulberry32(settings.seed + n * 7919), settings);
-		if (!best || made.floor > best.floor || (made.floor === best.floor && made.apart > best.apart)) {
-			best = made;
-			bestAt = n;
+// The relaxation, for the colors whose error on the metric is over the limit, worst first: each proposes one position
+// `step` away in a random direction of OKLab. A proposal outside the box or not allowed is dropped, never clamped;
+// one that lowers the color's error on the packing distance is kept, so a paler position has to pay for itself.
+// A sweep that keeps nothing halves the step. Returns the state with the highest floor seen, then the widest closest pair.
+function relax(rnd, colors, points, cfg, scaleOf) {
+	colors = colors.slice();
+	points = points.slice();
+	const errorAt = (i, at, apartOf2) => {
+		let error = 0;
+		for (let j = 0; j < points.length; ++j)
+			if (j !== i)
+				error += swapChance(Math.sqrt(apartOf2(at, points[j])), cfg.sigma);
+		return error;
+	};
+	let best = colors.slice(), bestScore = identification(colors, cfg, points);
+	for (let sweep = 0, step = STEP_START; sweep < SWEEPS_MAX && step >= STEP_MIN; ++sweep) {
+		const confusable = colors.map((color, i) => ({ i, error: color.fixed ? 0 : errorAt(i, points[i], apartWarped2) }))
+			.filter(({ error }) => error > ERROR_LIMIT).sort((p, q) => q.error - p.error);
+		if (!confusable.length)
+			break;
+
+		let kept = 0;
+		for (const { i } of confusable) {
+			const from = positionOf(points[i].lch), error = errorAt(i, points[i], packed2);
+			for (let n = 0; n < PROPOSALS; ++n) {
+				const z = 2 * rnd() - 1, turn = 2 * Math.PI * rnd(), flat = Math.sqrt(1 - z * z);
+				const lch = lchOf([from[0] + step * z, from[1] + step * flat * Math.cos(turn), from[2] + step * flat * Math.sin(turn)].map(v => v / 100));
+				if (!insideBox(lch, cfg) || !allowedLch(...lch, cfg))
+					continue;
+				const at = pointAt(lch, scaleOf(lch));
+				if (errorAt(i, at, packed2) >= error)
+					continue;
+				points[i] = at;
+				colors[i] = colorAt(...lch);
+				++kept;
+				break;
+			}
+		}
+		if (!kept) {
+			step /= 2;
+			continue;
+		}
+		const score = identification(colors, cfg, points);
+		if (score.floor > bestScore.floor || (score.floor === bestScore.floor && score.apart > bestScore.apart)) {
+			best = colors.slice();
+			bestScore = score;
 		}
 	}
-	return { ...best, reachable };
+	return best;
+}
+
+// One throw, relaxed, with its scores.
+function attempt(rnd, cfg, pool) {
+	const order = pool.points.slice();
+	for (let i = order.length - 1; i > 0; --i) {
+		const j = Math.floor(rnd() * (i + 1));
+		[order[i], order[j]] = [order[j], order[i]];
+	}
+	const fixed = cfg.fixed.map(color => pointAt(color.lch, pool.scaleOf(color.lch)));
+	const seated = widestThrow(order, fixed, cfg.count, cfg.limit);
+	const thrown = [...cfg.fixed, ...seated.slice(fixed.length).map(point => colorAt(...point.lch))];
+	const colors = relax(rnd, thrown, seated, cfg, pool.scaleOf);
+	return { colors, ...identification(colors, cfg), named: new Set(colors.map(color => color.cell)).size };
+}
+
+// The best of up to ATTEMPTS attempts by floor, then by the closest pair; the first with no confusable color ends
+// them. Null when the box holds no usable color.
+const ATTEMPTS = 4;
+function generate(cfg) {
+	const sigma = Math.max(cfg.scale, 1);
+	const settings = { ...cfg, sigma, limit: limitDistance(sigma), included: cfg.included ?? ALL_INCLUDED, preference: cfg.preference ?? true };
+	settings.shadows = shadowsFor(cfg);
+	const pool = poolFor(settings);
+	if (!pool.points.length)
+		return null;
+	let best = null;
+	for (let n = 0; n < ATTEMPTS && !(best && best.floor >= 1 - ERROR_LIMIT); ++n) {
+		const made = attempt(mulberry32(settings.seed + n * 7919), settings, pool);
+		if (!best || made.floor > best.floor || (made.floor === best.floor && made.apart > best.apart))
+			best = made;
+	}
+	return best;
 }
 
 // ---------- ui ----------
@@ -1586,11 +1432,9 @@ const bounded = id => Math.min(+$(id).max, Math.max(+$(id).min, +$(id).value));
 function readConfig() {
 	const [cMin, cMax] = ordered(+$("c-min").value, +$("c-max").value);
 	const [lMin, lMax] = ordered(+$("l-min").value, +$("l-max").value);
-	const [pushMin, pushMax] = ordered(+$("push-min").value, +$("push-max").value);
 	return {
 		count: bounded("count"),
 		scale: +$("strict").value,
-		pushMin, pushMax,
 		// The hue sliders run in the ridge coordinate; the config, the labels and the state are in degrees.
 		hMin: Math.round(ridgeUnwarp(+$("h-min").value)), hMax: Math.round(ridgeUnwarp(+$("h-max").value)),
 		cMin, cMax, lMin, lMax,
@@ -1882,7 +1726,6 @@ function refreshLabels() {
 	const cfg = readConfig();
 	refreshBars(cfg);
 	$("strict-value").textContent = cfg.scale.toFixed(1);
-	$("push-value").textContent = cfg.pushMin + "–" + cfg.pushMax + "°";
 	$("h-value").textContent = cfg.hMin + "–" + cfg.hMax + "°" + (cfg.hMin > cfg.hMax ? " (wraps)" : "");
 	// Chroma carries its unit, lightness does not: chroma is a plain fraction of the hue's peak,
 	// while lightness is piecewise with 50 pinned to the cusp and so is a landmark, not a percentage.
@@ -1919,8 +1762,7 @@ function render(result, cfg) {
 	const repeated = result ? result.colors.length - result.named : 0;
 	status.textContent = !result ? "sRGB has no color within these ranges" + (cfg.included.every(Boolean) ? "." : " with a name in use.")
 		: (result.pair ? "Hardest pair to tell apart (outlined): weighted ΔE " + result.apart.toFixed(1)
-			+ ", swapped " + (result.confused * 100).toFixed(1) + "% · worst color identified " + (result.floor * 100).toFixed(0) + "%"
-			+ (result.reachable > result.floor + 0.005 ? ", up to " + (result.reachable * 100).toFixed(0) + "% possible here" : ", at this box's limit") + " · " : "")
+			+ ", swapped " + (result.confused * 100).toFixed(1) + "% · worst color identified " + (result.floor * 100).toFixed(0) + "%" + " · " : "")
 		+ result.named + " distinct color name" + (result.named === 1 ? "" : "s")
 		+ (repeated ? ", " + repeated + " repeating one of them" : "");
 
@@ -2317,7 +2159,7 @@ function schedulePass(full) {
 function scheduleRun() { schedulePass(true); }
 function scheduleRedraw() { schedulePass(false); }
 
-for (const id of [...STATE_IDS, "fixed-colors", "avoid-colors", "push-min", "push-max"])
+for (const id of [...STATE_IDS, "fixed-colors", "avoid-colors"])
 	$(id).addEventListener("input", () => { refreshLabels(); scheduleRun(); });
 
 // Sorting is settled in render, so the palette itself is unchanged.
@@ -2676,7 +2518,7 @@ function metricScene(lab) {
 	const at = Math.min(100, Math.max(0, lab[0] * 100)), k = Math.min(99, Math.floor(at));
 	const height = METRIC_HEIGHT[k] + (METRIC_HEIGHT[k + 1] - METRIC_HEIGHT[k]) * (at - k);
 	const C = Math.hypot(lab[1], lab[2]) * 100;
-	const radius = C * hueScaleAt(C) * gainAt(lab[0]) / 100, angle = warpedHue(lab[1], lab[2]);
+	const radius = C * hueScaleAt(C) * gainAt(lab[0]) / 100, angle = warpedHue(lab[1], lab[2], hueLevelAt(lab[0] * 100));
 	return [radius * Math.cos(angle), height - METRIC_HEIGHT[100] / 2, radius * Math.sin(angle)];
 }
 // The checkbox survives a reload in some browsers, so the mapping starts from it.

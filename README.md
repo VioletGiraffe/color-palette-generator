@@ -30,17 +30,21 @@ for that isolated recognition, not just pairwise difference.
 
 - Two colors are as far apart as the author would want them in one palette, measured as a distance in
   OKLab with a noise width the Distinctness slider sets. The distance is anisotropic: a lightness
-  difference counts about a third of an equal hue difference, a chroma difference as much; a hue
-  difference grows with chroma at the 0.75 power; a pair toward black or toward white needs less
-  distance than one at the lightness of the most saturated colors. Hue differences are taken on a respaced circle, each hue's share
-  measured by the author's verdicts on thousands of pairs: a bump at red and at violet, a trough at
-  yellow and through cyan (`data/scripts.md`, `data/evolution.md`).
+  difference counts about half of an equal hue difference, a chroma difference a little under it; a hue
+  difference grows with chroma at the 0.75 power; a pair toward black or toward white needs somewhat less
+  distance than one at the lightness of the most saturated colors. Hue differences are taken on a respaced
+  circle, each hue's share measured by the author's verdicts on thousands of pairs and different by lightness:
+  red is widest among dark colors, violet among pastels, yellow narrow throughout
+  (`data/scripts.md`, `data/evolution.md`).
 - A pair's chance of being swapped follows from its weighted distance, and a color's chance of
   being misidentified is the sum over its pairs. The generator keeps every color's chance under a
-  limit: the selected range is cut into as many cells as there are colors, each holding an equal
-  share of the distinguishable colors, and every cell seats one; any color still confused too
-  often steps away from its neighbors, first within its cell, until none is. Several starts are
-  made and the one whose worst color does best is kept.
+  limit: the colors are thrown at random over the selected range with the widest spacing that seats
+  them all, so they follow one stated density and no region gets a second color while a comparable one
+  has none; any color still confused too often steps off in random directions until none is. A few
+  throws are made and the one whose worst color does best is kept.
+- Vividness is a preference, not a restriction: colors are spaced on the distance times their chroma's share
+  of the most saturated color of their hue, so a pale or a dark placement has to buy more distance than a vivid one
+  to be taken. What counts as distinct, and what is reported, stays on the distance itself.
 - The selected range is a box in OKLCh, cut by the sRGB gamut and by the excluded names: draws
   outside it are discarded, and a step that would leave it is refused.
 - Names are looked up in a partition of color space derived from the xkcd survey's millions of
@@ -49,8 +53,7 @@ for that isolated recognition, not just pairwise difference.
 
 You always get the best palette found; nothing fails outright short of an empty range. The pair
 likeliest to be mixed up is reported above the swatches with its weighted distance and swap
-chance, and outlined; the worst color's identification rate is given with the best this range can
-reach for the count, so a forced palette is visible as such.
+chance, and outlined; the worst color's identification rate is given, so a forced palette is visible as such.
 
 `data/README.md` is the engineering overview: the page's layout, its coordinates, the metric and the
 generator's pipeline. `data/evolution.md` is the design history behind all of this: every generator tried

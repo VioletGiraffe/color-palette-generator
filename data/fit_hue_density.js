@@ -181,10 +181,10 @@ function main(args) {
 		for (let h = 0; h < 360; h += 17)
 			console.log("\t" + entries.slice(h, h + 17).join(", ") + (h + 17 < 360 ? "," : "];"));
 	};
-	if (table && !levels.length)
+	if (table) {
 		printTable("HUE_DENSITY", best.density);
-	if (table)
 		best.levels?.forEach(level => printTable("HUE_DENSITY_AT_" + level.L, level.density));
+	}
 }
 
 // Adam on forward-difference gradients, the best point seen returned.

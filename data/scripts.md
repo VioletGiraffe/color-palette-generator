@@ -67,11 +67,11 @@ node data/make_boundary_deal.js --axis lightness [--hues 30] [--centres 35,50,65
 node data/make_boundary_deal.js --axis chroma [--hues 30] [--centres 30,50,70] [--turns 10,20,30,40,50] [--light 50] # chroma pairs: one hue and lightness, a turn apart in chroma share of the reach
 node data/make_boundary_deal.js --axis mixed [--ranges 0-360] [--windows 20-80] [--share 30-100] [--kinds mixed] [--by metric] [--distances 2-18] [--bands 6] [--each 30] [--seed 1] # validation pairs in cells of hue range, lightness window, kind (hue alone, chroma alone, or hue, lightness and chroma at once) and distance band, the chroma within a share of the reach, the bands on the metric or on OKLab deltaE; the defaults deal round 16
 node data/fit_boundaries.js log.json          # grades by turn and offset per boundary hue and the boundary's excess on the metric, from a calibrate-boundaries.html log; for a mixed deal, per kind the grades by distance band and by hue range and lightness window, and the ranking quality of the metric against OKLab deltaE
-node data/fit_hue_density.js [--p 0.75] [--ridge 2] [--knots 12] [--levels 30,58,85] [--level-ridge 10] [--own-cuts] [--same-cuts 13-17] [--wl 0.46] [--wc 0.86] [--gain 0.19] [--free wl,wc,gain] [--placement own] [--table] log.json [more.json ...] # the metric fitted to calibrate-boundaries.html logs through identify.js's metricWith: the hue density, one or one per lightness level, and whichever of the lightness weight, the chroma weight and the gain's exponent --free names; ranking quality and loss per verdict of the built metric, flat, fitted and cross-validated, the fitted numbers and the grade cuts on the metric, per log with --own-cuts
+node data/fit_hue_density.js [--p 0.75] [--ridge 2] [--knots 12] [--levels 30,58,85] [--level-ridge 10] [--own-cuts] [--same-cuts 13-17] [--wl 0.46] [--wc 0.83] [--gain 0.21] [--free wl,wc,gain] [--placement own] [--table] log.json [more.json ...] # the metric fitted to calibrate-boundaries.html logs through identify.js's metricWith: the hue density, one or one per lightness level, and whichever of the lightness weight, the chroma weight and the gain's exponent --free names; ranking quality and loss per verdict of the built metric, flat, fitted and cross-validated, the fitted numbers and the grade cuts on the metric, per log with --own-cuts
 node data/make_member_deal.js [--palettes 120] [--count 8] [--box 20 60 20 100] [--shared 0.5] # deal calibrate-members.html's palettes into the page
 node data/fit_members.js log.json             # where the bad colors live and whether bad is the color or its company, from a calibrate-members.html log
 node data/fit_preference.js log.json          # the draw's preference density from a calibrate-members.html log, as the PREFERENCE constant
-node data/hue-marginals.js [--names] [--counts 7,10,14] [m/d ...] # the hue and name shares the generator delivers, metric and draw density set apart
+node data/hue-marginals.js [--names] [--counts 7,10,14] [m/d ...] # the hue and name shares the generator delivers, metric and draw density set apart; runs a page with the box sampler, data/past-experiments/experimental-cells-pushes.html or earlier
 node data/fit_chroma.js chroma-log.json       # the chroma round's own question, see below
 node data/fit_names.js log.json               # fit the naming score to a calibrate-names.html log
 ```
@@ -86,24 +86,26 @@ range boxes as OKLCh ranges, so it needs a page whose controls are OKLCh. `build
 `tmp/`, the gitignored scratch folder). Its `loadPage(pagePath, densities)` runs the page's generator in Node:
 
 - It takes the page's script that holds the `// ---------- ui ----------` marker, evaluates the part before
-  the marker, and returns `generate`, `boxCells`, `samplePoint`, `mulberry32`, `cellOf`, `colorFromHex`,
-  `oklabToRgb`, `labOfLch`, `CELL_NAMES`, `CELL_OVERLAP`, `SPARSE_FRACTION` and `HUE_DENSITY`. Anything
+  the marker, and returns `generate`, `mulberry32`, `cellOf`, `colorFromHex`, `oklabToRgb`, `labOfLch`, `CELL_NAMES`,
+  `CELL_OVERLAP`, `HUE_DENSITY` and `HUE_LEVEL_DENSITIES`, and from a page before the rebuilt generator its box
+  sampler, `boxCells`, `samplePoint` and `SPARSE_FRACTION`, which `hue-marginals.js` reads. Anything
   defined below the marker (the UI, the state string, the 3D module) is not there.
 - Any version of the page loads: `index.html`, a `past-experiments/` page, a `git show <rev>:index.html`
   saved to a file, or a copy with a constant edited by `sed`. Pages are cached by path.
-- `densities`, optional: `{ metric, draw }`, each a 360-entry table, replace the page's `HUE_DENSITY` for
-  the metric (the `HUE_WARP` integral) and for the draw's hue weight, one or both. Without it a page whose
-  table differs from this file's is loaded with a warning: the scores `identify.js` prints are on this
+- `densities`, optional: `{ metric, draw }`, each a 360-entry table, replace the page's hue density for
+  the metric (every level of `HUE_LEVEL_DENSITIES`, or the `HUE_WARP` integral of a page with one table) and
+  for the draw's hue weight of a page that has one, one or both. Without it a page whose
+  tables differ from this file's is loaded with a warning: the scores `identify.js` prints are on this
   file's metric, the page's generator runs on its own.
 - `generate(cfg)` takes `{ count, scale, hMin, hMax, cMin, cMax, lMin, lMax, seed, fixed, avoid }` with
   `fixed` and `avoid` as arrays of `colorFromHex` results, plus the optional `included` (name mask, all
-  by default), `preference` (true), `pushMin`, `pushMax`. It returns `{ colors, floor, pair, apart,
-  confused, named, reachable }` or null for an empty box; a color is `{ lch, lab, rgb, hex, cell, confident }`.
+  by default), `preference` (true). It returns `{ colors, floor, pair, apart,
+  confused, named }` or null for an empty box; a color is `{ lch, lab, rgb, hex, cell, confident }`.
   The ranges are the page's cusp-relative ones, see `README.md`.
 
 The module also exports the metric itself for the fit scripts: the constants (`SIGMA`, `W_L`, `W_C`,
 `CHROMA_POWER`, `CHROMA_REFERENCE`, `CHROMA_FLOOR`, `LIGHTNESS_EXPONENT`, `LIGHTNESS_REFERENCE`,
-`LIGHTNESS_FLOOR`, `CALIBRATED_PX`, `NAME_DECAY`, `HUE_DENSITY`, `HUE_DENSITY_AUTHORED`), `lightnessGain`,
+`LIGHTNESS_FLOOR`, `CALIBRATED_PX`, `NAME_DECAY`, `HUE_DENSITY`, `HUE_LEVEL_DENSITIES`, `HUE_DENSITY_AUTHORED`), `lightnessGain`,
 `hueScaleAt`, `labOf`, `rgbOf`, `warpedLab`, `weightedDistance`, `recallDistance`, `metricWith`, `swapChance`,
 `confusionMatrix`, `summarize`, `score`, `nameCollision`, `gamutChroma`, `cuspLightness`,
 `relativePosition`. `metricWith({ density, wL, wC, power, gainExponent })` returns `recallDistance`'s form under
@@ -135,10 +137,10 @@ difference is the ab chord less its radial part, taken after each hue moves to i
 respaced circle of `HUE_DENSITY` and scaled by the pair's mean chroma at `CHROMA_POWER`, the whole
 distance by a lightness gain that is one at the cusps' lightness and rises toward black and toward white - and
 a pair swaps with the chance the noise carries a recall past their midpoint. A color's error is the
-sum over its pairs, the same formula the page optimizes. The lightness weight and the noise width come from the
-recall calibration below and were fitted on the step-round circle (the fit scripts' `--warped`); the
-circle, the chroma weight, the chroma power and the gain come from the hue boundary rounds under the preference question,
-see the boundary logs at the end. A
+sum over its pairs, the same formula the page optimizes. The noise width comes from the
+recall calibration below, fitted on the step-round circle (the fit scripts' `--warped`); the
+circle by lightness, the lightness and chroma weights and the gain's exponent are one fit to the pair rounds under
+the preference question, the chroma power from the same rounds, see the boundary logs at the end. A
 palette reports each color's accuracy, the floor (the worst color), and the pair confused most. A
 Monte Carlo (noise drawn per recall, nearest entry answered) was tried in
 four geometries and fitted the calibration verdicts worse than this formula in every one, by 5 to
@@ -191,7 +193,7 @@ three chroma bands; the rest are fillers.
 Fitted: wL 0.35 (0.3 to 0.35), wC 0.6 (0.5 to 0.7), too close below 7 and fine above 9 weighted
 deltaE, softness 2, lapse 0.005. Marked rate over the distance ladder: 21/21 at 4.5, 15/19 at 6,
 13/16 at 7.5, 9/16 at 9, 1/13 at 11, 0/13 at 13. The sigma rule below puts a lone pair's 2% swap
-chance at 13.0 weighted deltaE. Adopted: SIGMA 3, wL 0.35, wC 0.6; the preference rounds later put wC at 1.
+chance at 13.0 weighted deltaE. Adopted: SIGMA 3, wL 0.35, wC 0.6; the preference rounds later put wL at 0.46 and wC at 0.83.
 
 The staged fit returns a chroma exponent of -0.2, 4.1 log-likelihood units better than the flat
 metric. Not adopted: the chroma-axis probes are capped at distance 9 and so never leave the middle

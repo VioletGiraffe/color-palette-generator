@@ -1705,6 +1705,21 @@ middle, 1.31 light; violet at 300 1.18, 1.20, 2.19; green at 120 to 150 0.91, 1.
 90 0.54, 0.56, 0.64. The per-level fits of the hue-only sweeps said the same before the refit: red widest dark,
 violet widest pastel. The gain is a sixth of what the refit of the weights and the one table brought.
 
+Built: the three level densities in the metric of `index.html`, `generator-next.html` and `identify.js`, W_C 0.83
+and the exponent 0.21 with them; a pair's hues turn to the mix of the two levels' warps around its mean lightness;
+the avoided colors' shadows measure their turn at the avoided color's lightness, the 3D view turns each point at
+its own. `HUE_DENSITY`, the one table, stays as the hue distribution of the draws and the rebuilt generator's hue
+line. The pages' distance against `identify.js` over 732 judged pairs: equal to rounding. The same hundred palettes:
+dark red, 330 to 60 under lightness 45, 1.4 to 1.7 of 15, blue to magenta 4.7 to 4.4, orange to lime 3.2 to 3.4,
+the floor and the one dark warm color unchanged: a small move in this box, whose lightness range holds few pastels.
+
+The rebuilt generator on this metric ("The generator rebuilt from the end state" below): the hue target
+removed, the metric by lightness having taken over its work; vividness as the share of the hue's cusp chroma at the
+power 1/2, the share of the reach at the color's own lightness having read dull in magenta to red, dark surface
+colors counted as vivid there. A page the judge had called far worse under the cusp share, the current generator
+at power 1 (`tmp/vivid-cusp.html`), was judged through Dark Reader, which dims pages served over http and leaves
+local files alone; every page for the judge is opened from disk since.
+
 ## Live palettes under the preference metric
 
 The first palettes generated on the built metric came out pale: the state
@@ -1829,15 +1844,90 @@ colors in a wide box, 0.574 to 0.865 at 40 in 8 s, 0.247 to 0.516 in a pastel bo
 twice, once as the draw's acceptance and once inside the volume element: its points are 33% blue to magenta, its
 weight 45%. The heaviest tenth of the pool's points hold 30% of the weight.
 
-The generator rebuilt from the end state, `generator-next.html`, its spec and its measurements against this page in
-`data/generator-next.md`: one density, a pool drawn from it, the widest Poisson-disc throw, a relaxation of random
-steps for the confusable colors. With its hue target off it reproduces this page's floors and hue bins at a twentieth
-of the time; the hue target moves blue to magenta from 45% to the hue line's 31% and costs floor in a crowded box.
+## The generator rebuilt from the end state
+
+The generator rebuilt with no code accreted around the old algorithm: one density over the box, a pool drawn from it,
+the widest Poisson-disc throw, a relaxation of random steps for the confusable colors; `data/README.md`, "The
+generator", is its description, with what it leaves out and why. Built as `generator-next.html` beside the page,
+shipped as `index.html` once the judge found its palettes as good, the page it replaced archived as
+`data/past-experiments/experimental-cells-pushes.html`.
+
+The first build measured against the cells-and-pushes page, with the hue target at strength 1 and vividness as the share of the reach at the
+color's own lightness; the metric of the one hue table, before the refit. `tmp/compare-generators.js` runs both pages on the same boxes and seeds through `identify.js`'s `loadPage`;
+`tmp/contact-sheet.js` writes a page of palettes per generator to look at. Four seeds, Distinctness 3, the hue bins
+red, orange to lime, green to cyan, sky blue, blue to magenta; the target line is 18 / 22 / 18 / 11 / 31%:
+
+| box, colors | page | floor | ms | hue bins | 00 or ff channel |
+|---|---|---|---|---|---|
+| chroma 26-100, lightness 23-60, 14 | current | 0.980 | 178 | 14 / 18 / 16 / 5 / 46 | 9% |
+| | rebuilt | 0.965 | 21 | 20 / 21 / 14 / 14 / 30 | 11% |
+| chroma 30-100, lightness 20-80, 24 | current | 0.967 | 1503 | 17 / 16 / 16 / 7 / 45 | 67% |
+| | rebuilt | 0.881 | 93 | 16 / 24 / 19 / 11 / 30 | 47% |
+| the same, 40 | current | 0.865 | 8217 | 19 / 18 / 13 / 7 / 43 | 99% |
+| | rebuilt | 0.660 | 479 | 14 / 26 / 16 / 13 / 31 | 81% |
+| chroma 0-35, lightness 40-80, 14 | current | 0.516 | 1259 | 23 / 0 / 21 / 4 / 52 | 14% |
+| | rebuilt | 0.428 | 45 | 20 / 0 / 29 / 16 / 36 | 23% |
+| the ring, chroma 100-100, 14 | current | 0.586 | 1237 | | |
+| | rebuilt | 0.927 | 61 | | |
+
+The floor the rebuilt page gives up in a crowded box is the hue target's price, not the method's: with
+`HUE_TARGET_STRENGTH` 0 it reaches 0.982, 0.965, 0.878 and 0.507 on the first four boxes, the current page's floors, in a
+twentieth of the time and with the current page's hue bins (43 to 46% blue to magenta). At 0.5: 0.980, 0.940, 0.812,
+0.517, blue to magenta 35 to 38%. `HUE_BOOST_MAX` 2 at strength 1: 0.975, 0.916, 0.760, 0.521. Sixteen attempts
+at strength 1 buy 0.01 to 0.05. The target puts colors into hues with little room; how much floor that is worth is
+the judge's call, and the constant is the place to make it.
+
+## On the metric by lightness
+
+Measured again on the metric with the hue table by lightness (`tmp/strength-check.js`, `tmp/compare-generators.js`,
+six and four seeds): with the hue target at 1 the rebuilt page gives up 1.7 to 21 points of floor to the current
+page (95.9 against 97.6 at 15 colors, 56.9 against 77.8 at 40) and reads duller; at 0 it matches or beats the
+current page on floor (97.7 / 97.8 / 94.8 / 81.3 against 97.6 / 97.7 / 94.7 / 77.8) with the same hue balance,
+blue to magenta 29 to 36%: the metric by lightness left the target little to correct, and it is removed. The
+dullness that remained,
+most in magenta to red, was vividness as the share of the reach at the color's own lightness, which counts a dark
+red on the gamut's surface as vivid; the rebuilt page samples the volume as it is, where the current page's pushes
+park colors at the cusps. Vividness as the share of the hue's cusp chroma, a hundred palettes of 15 in chroma 46 to
+100, lightness 20 to 60, the current page for reference (`tmp/palette-set.js`, `tmp/dullness.js`, `tmp/red-sector.js`):
+
+| page | floor | mean chroma | colors of 15 at 90% of the cusp's chroma | magenta to red: mean L, C | dark ones of them |
+|---|---|---|---|---|---|
+| current page | 97.7% | 18.0 | 4.8 | 53.0, 19.9 | 0.92 |
+| rebuilt, share of the reach | 97.5% | 17.3 | 3.5 | 49.7, 18.8 | 1.32 |
+| cusp share, power 1/4 | 97.8% | 17.7 | 4.3 | 52.3, 19.5 | 0.99 |
+| cusp share, power 1/2 | 97.5% | 18.7 | 6.1 | 53.7, 20.7 | 0.81 |
+| cusp share, power 1 | 95.9% | 20.4 | 9.0 | 56.5, 22.5 | 0.56 |
+
+The judge chose the power 1/2: as vivid as the current page and a little more, at its floor, in a tenth of the time.
+
+The first build's known gap, vividness as the share of the reach at the color's own lightness, so that a near-white or
+near-black color on the gamut's surface counts as fully vivid, is what the cusp share below fixes.
+
+Measured again on the metric with the hue table by lightness (`tmp/strength-check.js`, `tmp/compare-generators.js`,
+six and four seeds): with the hue target at 1 the rebuilt page gives up 1.7 to 21 points of floor to the current
+page (95.9 against 97.6 at 15 colors, 56.9 against 77.8 at 40) and reads duller; at 0 it matches or beats the
+current page on floor (97.7 / 97.8 / 94.8 / 81.3 against 97.6 / 97.7 / 94.7 / 77.8) with the same hue balance,
+blue to magenta 29 to 36%: the metric by lightness left the target little to correct, and it is removed. The
+dullness that remained,
+most in magenta to red, was vividness as the share of the reach at the color's own lightness, which counts a dark
+red on the gamut's surface as vivid; the rebuilt page samples the volume as it is, where the current page's pushes
+park colors at the cusps. Vividness as the share of the hue's cusp chroma, a hundred palettes of 15 in chroma 46 to
+100, lightness 20 to 60, the current page for reference (`tmp/palette-set.js`, `tmp/dullness.js`, `tmp/red-sector.js`):
+
+| page | floor | mean chroma | colors of 15 at 90% of the cusp's chroma | magenta to red: mean L, C | dark ones of them |
+|---|---|---|---|---|---|
+| current page | 97.7% | 18.0 | 4.8 | 53.0, 19.9 | 0.92 |
+| rebuilt, share of the reach | 97.5% | 17.3 | 3.5 | 49.7, 18.8 | 1.32 |
+| cusp share, power 1/4 | 97.8% | 17.7 | 4.3 | 52.3, 19.5 | 0.99 |
+| cusp share, power 1/2 | 97.5% | 18.7 | 6.1 | 53.7, 20.7 | 0.81 |
+| cusp share, power 1 | 95.9% | 20.4 | 9.0 | 56.5, 22.5 | 0.56 |
+
+The judge chose the power 1/2: as vivid as the current page and a little more, at its floor, in a tenth of the time.
 
 ## Files
 
-- `index.html`: step 18 with the calibrated constants, the hue-lightness and hue-chroma charts, the plane
-  hue scrub and the empty-box handling, the analytic gamut boundary and the cusp-relative lightness range.
+- `index.html`: the generator rebuilt from the end state on the preference metric by lightness, with the
+  hue-lightness and hue-chroma charts, the plane hue scrub, the analytic gamut boundary and the cusp-relative ranges.
   The shipped page.
 - `data/past-experiments/`: a working page per step kept, each titled by its step. They run standalone, and
   their scores were measured on the metric of their own day: every page below step 18 predates both the OKLCh
@@ -1854,6 +1944,8 @@ of the time; the hue target moves blue to magenta from 45% to the hue line's 31%
     stop crossing.
   - `experimental-recall-metric.html`: the page before the preference metric, its distance the recall
     calibration's: the step-round hue circle, linear chroma, dark pairs counted closer.
+  - `experimental-cells-pushes.html`: the page before the rebuilt generator, cells over the pool, seats, phased
+    pushes and restarts, on the preference metric by lightness; the vividness packing weight as the share of the reach.
 - `data/README.md`: the engineering overview of the page, its coordinates, the metric and the generator; `data/scripts.md`: every script, log and fit here.
 - `data/identify.js`, `data/fit.js`, `data/calibrate.html`: the metric and its calibration; see `data/scripts.md`.
 - `data/calibration-log.json`: the verdicts the constants are fitted to.
