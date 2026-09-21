@@ -28,11 +28,11 @@ const path = require("path");
 // Memory noise, standard deviation in OKLab x100 along hue, for swatches of CALIBRATED_PX.
 // A lightness or chroma difference counts W_L or W_C times its size: below 1 the axis is a weaker
 // cue than hue, so noise along it is wider by the same factor.
-// SIGMA and W_L are fitted by data/fit.js to data/calibration-log.json, W_L held under the preference rounds;
-// W_C is the preference rounds' chroma pairs, a chroma gap reading at the metric's unit; see data/scripts.md.
+// SIGMA is fitted by data/fit.js to data/calibration-log.json. W_L, W_C, LIGHTNESS_EXPONENT and HUE_DENSITY are one
+// fit to the preference rounds; see HUE_DENSITY and data/scripts.md.
 const SIGMA = 3;
-const W_L = 0.35;
-const W_C = 1;
+const W_L = 0.46;
+const W_C = 0.86;
 // A hue difference grows with chroma at this power, one at CHROMA_REFERENCE; the preference rounds at
 // 85% and 50% of the reach. Below CHROMA_FLOOR the scale is held.
 const CHROMA_POWER = 0.75;
@@ -43,44 +43,44 @@ const CHROMA_FLOOR = 1;
 // lightness 25, 50 and 75 of the cusp; the recall calibration ran the dark side the other way. Absolute
 // lightness, not the cusp-relative coordinate: a round of lightness pairs ranks the two alike, and
 // data/calibrate-cusp.html chose absolute for recall.
-const LIGHTNESS_EXPONENT = 0.5;
+const LIGHTNESS_EXPONENT = 0.19;
 // The gain's minimum, the cusps' own lightness
 const LIGHTNESS_REFERENCE = 68;
 // The rounds reach down to 25; the gain is held below this.
 const LIGHTNESS_FLOOR = 20;
-function lightnessGain(L) {
+function lightnessGain(L, exponent = LIGHTNESS_EXPONENT) {
 	const l = Math.max(LIGHTNESS_FLOOR, L);
-	return (Math.max(l, LIGHTNESS_REFERENCE) / Math.min(l, LIGHTNESS_REFERENCE)) ** LIGHTNESS_EXPONENT;
+	return (Math.max(l, LIGHTNESS_REFERENCE) / Math.min(l, LIGHTNESS_REFERENCE)) ** exponent;
 }
-const hueScaleAt = C => (Math.max(CHROMA_FLOOR, C) / CHROMA_REFERENCE) ** (CHROMA_POWER - 1);
+const hueScaleAt = (C, power = CHROMA_POWER) => (Math.max(CHROMA_FLOOR, C) / CHROMA_REFERENCE) ** (power - 1);
 const CALIBRATED_PX = 16;
 // Each hue's share of the circle in the metric, per whole degree at mean 1; the page's copy, which
-// loadPage checks against this one. Fitted to the hue boundary rounds under the preference question, the
-// output of node data/fit_hue_density.js --own-cuts --ridge 10 --p 0.75 --table over boundary-4-log.json to
-// boundary-9-log.json. See index.html.
+// loadPage checks against this one. Fitted to the pair rounds under the preference question, the output of
+// node data/fit_hue_density.js --own-cuts --ridge 10 --free wl,wc,gain --table over boundary-4-log.json to
+// boundary-20-log.json. See index.html.
 const HUE_DENSITY = [
-	0.833, 0.857, 0.881, 0.906, 0.932, 0.958, 0.985, 1.013, 1.042, 1.071, 1.101, 1.133, 1.165, 1.198, 1.231, 1.266, 1.302,
-	1.339, 1.377, 1.416, 1.456, 1.497, 1.539, 1.583, 1.628, 1.674, 1.721, 1.77, 1.82, 1.871, 1.924, 1.863, 1.803, 1.746,
-	1.69, 1.636, 1.584, 1.533, 1.484, 1.437, 1.391, 1.347, 1.304, 1.262, 1.222, 1.183, 1.145, 1.109, 1.073, 1.039, 1.006,
-	0.974, 0.943, 0.913, 0.883, 0.855, 0.828, 0.802, 0.776, 0.751, 0.727, 0.717, 0.708, 0.698, 0.689, 0.679, 0.67, 0.661,
-	0.652, 0.644, 0.635, 0.626, 0.618, 0.61, 0.601, 0.593, 0.585, 0.577, 0.57, 0.562, 0.554, 0.547, 0.54, 0.532, 0.525,
-	0.518, 0.511, 0.504, 0.497, 0.491, 0.484, 0.497, 0.511, 0.524, 0.539, 0.553, 0.568, 0.583, 0.599, 0.615, 0.632, 0.649,
-	0.667, 0.685, 0.703, 0.722, 0.742, 0.762, 0.782, 0.804, 0.825, 0.848, 0.871, 0.894, 0.918, 0.943, 0.969, 0.995, 1.022,
-	1.049, 1.078, 1.072, 1.065, 1.059, 1.053, 1.047, 1.041, 1.035, 1.029, 1.023, 1.017, 1.011, 1.005, 0.999, 0.993, 0.987,
-	0.982, 0.976, 0.97, 0.965, 0.959, 0.953, 0.948, 0.942, 0.937, 0.931, 0.926, 0.92, 0.915, 0.91, 0.904, 0.894, 0.884,
-	0.874, 0.864, 0.855, 0.845, 0.836, 0.826, 0.817, 0.808, 0.799, 0.79, 0.781, 0.772, 0.763, 0.755, 0.746, 0.738, 0.73,
-	0.721, 0.713, 0.705, 0.697, 0.689, 0.682, 0.674, 0.666, 0.659, 0.652, 0.644, 0.645, 0.646, 0.646, 0.647, 0.648, 0.648,
-	0.649, 0.65, 0.65, 0.651, 0.652, 0.652, 0.653, 0.654, 0.654, 0.655, 0.656, 0.656, 0.657, 0.658, 0.658, 0.659, 0.66,
-	0.66, 0.661, 0.662, 0.662, 0.663, 0.664, 0.664, 0.672, 0.679, 0.687, 0.694, 0.702, 0.71, 0.718, 0.726, 0.734, 0.742,
-	0.75, 0.758, 0.767, 0.775, 0.784, 0.793, 0.801, 0.81, 0.819, 0.828, 0.838, 0.847, 0.856, 0.866, 0.875, 0.885, 0.895,
-	0.905, 0.915, 0.925, 0.935, 0.946, 0.956, 0.967, 0.977, 0.988, 0.999, 1.01, 1.021, 1.032, 1.044, 1.055, 1.067, 1.079,
-	1.091, 1.103, 1.115, 1.127, 1.14, 1.152, 1.165, 1.178, 1.191, 1.204, 1.217, 1.231, 1.244, 1.258, 1.272, 1.286, 1.302,
-	1.319, 1.336, 1.353, 1.371, 1.388, 1.406, 1.424, 1.442, 1.461, 1.48, 1.499, 1.518, 1.537, 1.557, 1.577, 1.598, 1.618,
-	1.639, 1.66, 1.681, 1.703, 1.725, 1.747, 1.769, 1.792, 1.815, 1.838, 1.862, 1.886, 1.844, 1.803, 1.763, 1.724, 1.685,
-	1.648, 1.611, 1.575, 1.54, 1.506, 1.473, 1.44, 1.408, 1.377, 1.346, 1.316, 1.287, 1.258, 1.23, 1.203, 1.176, 1.15,
-	1.124, 1.1, 1.075, 1.051, 1.028, 1.005, 0.983, 0.961, 0.956, 0.952, 0.947, 0.943, 0.938, 0.934, 0.929, 0.925, 0.921,
-	0.916, 0.912, 0.908, 0.903, 0.899, 0.895, 0.89, 0.886, 0.882, 0.878, 0.874, 0.87, 0.865, 0.861, 0.857, 0.853, 0.849,
-	0.845, 0.841, 0.837];
+	0.842, 0.861, 0.881, 0.902, 0.922, 0.943, 0.965, 0.987, 1.01, 1.033, 1.057, 1.081, 1.106, 1.132, 1.158, 1.184, 1.212,
+	1.24, 1.268, 1.297, 1.327, 1.358, 1.389, 1.421, 1.454, 1.487, 1.521, 1.556, 1.592, 1.629, 1.666, 1.63, 1.596, 1.561,
+	1.528, 1.495, 1.463, 1.432, 1.401, 1.371, 1.342, 1.313, 1.285, 1.257, 1.23, 1.204, 1.178, 1.153, 1.128, 1.104, 1.081,
+	1.057, 1.035, 1.013, 0.991, 0.97, 0.949, 0.929, 0.909, 0.889, 0.87, 0.86, 0.85, 0.84, 0.83, 0.82, 0.811, 0.801,
+	0.792, 0.782, 0.773, 0.764, 0.755, 0.746, 0.738, 0.729, 0.72, 0.712, 0.704, 0.695, 0.687, 0.679, 0.671, 0.663, 0.656,
+	0.648, 0.64, 0.633, 0.625, 0.618, 0.611, 0.625, 0.639, 0.654, 0.669, 0.685, 0.701, 0.717, 0.734, 0.751, 0.768, 0.786,
+	0.804, 0.823, 0.842, 0.861, 0.881, 0.902, 0.923, 0.944, 0.966, 0.989, 1.011, 1.035, 1.059, 1.084, 1.109, 1.134, 1.161,
+	1.188, 1.215, 1.209, 1.202, 1.195, 1.189, 1.182, 1.176, 1.17, 1.163, 1.157, 1.151, 1.144, 1.138, 1.132, 1.126, 1.12,
+	1.113, 1.107, 1.101, 1.095, 1.089, 1.083, 1.077, 1.072, 1.066, 1.06, 1.054, 1.048, 1.043, 1.037, 1.031, 1.021, 1.01,
+	1, 0.989, 0.979, 0.969, 0.959, 0.949, 0.94, 0.93, 0.92, 0.911, 0.901, 0.892, 0.883, 0.874, 0.865, 0.856, 0.847,
+	0.838, 0.83, 0.821, 0.813, 0.804, 0.796, 0.788, 0.78, 0.772, 0.764, 0.756, 0.762, 0.769, 0.775, 0.781, 0.788, 0.795,
+	0.801, 0.808, 0.815, 0.821, 0.828, 0.835, 0.842, 0.849, 0.856, 0.863, 0.871, 0.878, 0.885, 0.893, 0.9, 0.908, 0.915,
+	0.923, 0.931, 0.938, 0.946, 0.954, 0.962, 0.97, 0.968, 0.965, 0.963, 0.96, 0.958, 0.955, 0.953, 0.95, 0.948, 0.946,
+	0.943, 0.941, 0.938, 0.936, 0.933, 0.931, 0.929, 0.926, 0.924, 0.922, 0.919, 0.917, 0.914, 0.912, 0.91, 0.907, 0.905,
+	0.903, 0.9, 0.898, 0.903, 0.907, 0.912, 0.917, 0.921, 0.926, 0.931, 0.935, 0.94, 0.945, 0.95, 0.955, 0.959, 0.964,
+	0.969, 0.974, 0.979, 0.984, 0.989, 0.994, 0.999, 1.004, 1.009, 1.015, 1.02, 1.025, 1.03, 1.035, 1.041, 1.046, 1.056,
+	1.065, 1.075, 1.085, 1.095, 1.105, 1.115, 1.125, 1.136, 1.146, 1.157, 1.167, 1.178, 1.189, 1.2, 1.211, 1.222, 1.233,
+	1.245, 1.256, 1.268, 1.279, 1.291, 1.303, 1.315, 1.327, 1.339, 1.352, 1.364, 1.377, 1.357, 1.337, 1.318, 1.299, 1.28,
+	1.262, 1.244, 1.226, 1.208, 1.191, 1.173, 1.157, 1.14, 1.123, 1.107, 1.091, 1.076, 1.06, 1.045, 1.03, 1.015, 1,
+	0.986, 0.972, 0.958, 0.944, 0.93, 0.917, 0.904, 0.891, 0.889, 0.887, 0.886, 0.884, 0.882, 0.881, 0.879, 0.877, 0.876,
+	0.874, 0.873, 0.871, 0.869, 0.868, 0.866, 0.864, 0.863, 0.861, 0.86, 0.858, 0.856, 0.855, 0.853, 0.852, 0.85, 0.848,
+	0.847, 0.845, 0.844];
 
 // The table authored by eye in data/hue-density.html before the measurement; not in the metric, kept for
 // fit_hue_steps.js to compare against.
@@ -108,17 +108,20 @@ const HUE_DENSITY_AUTHORED = [
 	0.42, 0.416, 0.411, 0.402, 0.391, 0.377, 0.362, 0.349, 0.337, 0.328, 0.321, 0.314, 0.308, 0.306, 0.311, 0.325, 0.348,
 	0.373, 0.395, 0.411, 0.423, 0.438, 0.455];
 
-// The warped hue of each whole degree, 0 to 360: the running integral of HUE_DENSITY.
-const HUE_WARP = (() => {
+// The warped hue of each whole degree, 0 to 360: the running integral of a density per whole degree, scaled to a full turn.
+function hueWarpOf(density) {
 	const warp = [0];
 	for (let h = 0; h < 360; ++h)
-		warp.push(warp[h] + HUE_DENSITY[h]);
+		warp.push(warp[h] + density[h]);
 	return warp.map(v => v * 360 / warp[360]);
-})();
+}
+const HUE_WARP = hueWarpOf(HUE_DENSITY);
 // The color with its hue moved to the warped hue, chroma and lightness kept.
-function warpedLab(lab) {
-	const h = (Math.atan2(lab[2], lab[1]) * 180 / Math.PI + 360) % 360, at = Math.floor(h);
-	const turned = (HUE_WARP[at] + (HUE_WARP[at + 1] - HUE_WARP[at]) * (h - at)) * Math.PI / 180;
+const warpedLab = lab => warpedUnder(lab, HUE_WARP);
+// warp, or the mix of it and `toward` at the share t: two warps mixed are a warp, both run from 0 to 360.
+function warpedUnder(lab, warp, toward = warp, t = 0) {
+	const h = (Math.atan2(lab[2], lab[1]) * 180 / Math.PI + 360) % 360, at = Math.floor(h), hueIn = w => w[at] + (w[at + 1] - w[at]) * (h - at);
+	const turned = (hueIn(warp) * (1 - t) + hueIn(toward) * t) * Math.PI / 180;
 	const C = Math.hypot(lab[1], lab[2]);
 	return [lab[0], C * Math.cos(turned), C * Math.sin(turned)];
 }
@@ -346,8 +349,24 @@ function weightedDistance(p, q, wL, wC, hueScale = 1) {
 // How far apart a pair reads: the weighted distance of the hue-warped points, the hue term scaled by the
 // pair's mean chroma, times the gain for the pair's lightness. This is the metric the generator optimizes
 // and this file scores.
-const recallDistance = (p, q, wL, wC) => weightedDistance(warpedLab(p), warpedLab(q), wL, wC, hueScaleAt((Math.hypot(p[1], p[2]) + Math.hypot(q[1], q[2])) / 2))
-	* lightnessGain((p[0] + q[0]) / 2);
+// levels: the hue warps by lightness, [{ L, warp }] in rising L; a pair's is the mix of the two around its mean lightness,
+// the first or the last beyond them.
+function distanceUnder(p, q, levels, wL, wC, power, gainExponent) {
+	const meanL = (p[0] + q[0]) / 2, found = levels.findIndex(level => level.L > meanL), above = found < 0 ? levels.length : found;
+	const from = levels[Math.max(0, above - 1)], to = levels[Math.min(above, levels.length - 1)];
+	const t = to === from ? 0 : Math.min(1, Math.max(0, (meanL - from.L) / (to.L - from.L)));
+	return weightedDistance(warpedUnder(p, from.warp, to.warp, t), warpedUnder(q, from.warp, to.warp, t), wL, wC, hueScaleAt((Math.hypot(p[1], p[2]) + Math.hypot(q[1], q[2])) / 2, power))
+		* lightnessGain(meanL, gainExponent);
+}
+const BUILT_LEVELS = [{ L: 0, warp: HUE_WARP }];
+const recallDistance = (p, q, wL, wC) => distanceUnder(p, q, BUILT_LEVELS, wL, wC, CHROMA_POWER, LIGHTNESS_EXPONENT);
+// The same distance under a candidate's hue density per whole degree, weights, chroma power and gain exponent: what a fit
+// measures, so its numbers hold in the metric they are pasted into. levels, [{ L, density }] in rising L, replaces
+// density by one per lightness.
+function metricWith({ density = HUE_DENSITY, levels = [{ L: 0, density }], wL = W_L, wC = W_C, power = CHROMA_POWER, gainExponent = LIGHTNESS_EXPONENT }) {
+	const warps = levels.map(level => ({ L: level.L, warp: hueWarpOf(level.density) }));
+	return (p, q) => distanceUnder(p, q, warps, wL, wC, power, gainExponent);
+}
 
 // Chance a recall of one color of a pair lands nearer the other: noise of width sigma along the
 // pair's line, past the midpoint.
@@ -559,7 +578,7 @@ function main(args) {
 }
 
 module.exports = { SIGMA, W_L, W_C, CHROMA_POWER, CHROMA_REFERENCE, CHROMA_FLOOR, LIGHTNESS_EXPONENT, LIGHTNESS_REFERENCE, LIGHTNESS_FLOOR, lightnessGain, hueScaleAt, NAME_DECAY, CALIBRATED_PX, HUE_DENSITY, HUE_DENSITY_AUTHORED,
-	labOf, rgbOf, warpedLab, weightedDistance, recallDistance, swapChance, confusionMatrix, summarize, score, nameCollision,
+	labOf, rgbOf, warpedLab, weightedDistance, recallDistance, metricWith, swapChance, confusionMatrix, summarize, score, nameCollision,
 	loadPage, gamutChroma, cuspLightness, relativePosition };
 
 if (require.main === module)

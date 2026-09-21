@@ -1627,6 +1627,84 @@ stretch and the dark gain multiply, and the verdicts carry neither. Dark pairs o
 than the built one. On mixed pairs neither the hue table nor the gain improves the ranking; an AUC step of 0.01 is
 within this round's noise, the violet residual, three standard errors, is not. Nothing built from one round of 180.
 
+Round 17, dealt for that stretch and by OKLab deltaE, the metric kept out of the deal: both colors in 230 to 340 (144
+pairs) or in 90 to 200 (48, the control), in a dark, a cusp or a light window of relative lightness, half the pairs
+differing in hue alone, half in all three (`tmp/round17-variants.js`). The judge's note: a large lightness difference
+is fine whatever the hues, black or white is confused with nothing. The dark hue-only violet pairs sit at a mean
+distance of 20 on the metric and grade 1.08, marginal; the cusp ones at 15 grade 0.58. Log-likelihood of two cuts on
+the log distance, this round: built -149.9, flat hue circle -131.9, flat with the gain's exponent at 0.25 -123.6, that
+with W_L 0.5 -117.6, OKLab deltaE -167.4. Mixed pairs with a lightness difference of 16 or more grade 0.35 over the
+built metric's expectation, 0.18 at W_L 0.5.
+
+A grid over three numbers, the hue table to a power s, the gain's exponent and W_L, scored the same way with cuts
+per round on rounds 16 and 17 (372 verdicts, the table fitted on neither) and on rounds 4 to 15 (2084), as
+log-likelihood gained over the built metric (`tmp/grid-16-17.js`):
+
+| change alone | rounds 16, 17 | rounds 4 to 15 |
+|---|---|---|
+| table to the power 0.5 | +20.3 | +39.4 |
+| gain exponent 0.15 for 0.5 | +17.2 | +13.6 |
+| W_L 0.5 for 0.35 | +22.4 | +26.8 |
+| all three | +64.8 | +71.3 |
+| flat circle, gain 0.15, W_L 0.5 | +64.2 | -57.1 |
+
+Each change helps both sets on its own and they add. The circle is not flat: the early rounds lose 57 without the
+table; they want it at about half its strength in the logarithm, the new rounds at a quarter to a half. W_L 0.65
+and 0.8 are worse than 0.5 on both. In the reported box blue to magenta holds 42% of the volume under the built
+metric, 32% at table^0.5 with gain 0.15, 26% in plain OKLab; its share of the hue line goes from 31% to 26.5%.
+
+Before the refit, the coverage of rounds 4 to 17 by position and by what differs in a pair (`tmp/coverage.js`):
+79 pairs under 40% of the reach, 60 of them chroma pairs; no chroma pair below lightness 45; yellow to sky below
+their cusps at 6 to 35 pairs a sector against 70 to 160 in red and violet. Rounds 18 to 20 deal those: muted colors,
+chroma pairs below the cusp, hues 45 to 255 below the cusp, 360 verdicts, by OKLab deltaE as round 17. The judge on
+round 19: the calls between too close and marginal are tough, not whether the chroma differs but whether it is
+memorable enough.
+
+`fit_hue_density.js` had fitted a distance of its own, not the metric's: its hue term C^p times the arc, the
+metric's the chord times (C / 15)^(p - 1), so a lightness or a chroma difference weighed twice as much against a
+hue turn in the fit as in the metric the table went into. Hue-only pairs hide that in their cuts; pairs with a
+lightness gap do not. It now measures through `metricWith` in `identify.js`, the metric's form under a candidate's
+numbers, fits the cuts exactly per candidate and the transitions' slope with every model, and frees the lightness
+weight, the chroma weight and the gain's exponent beside the table. Rounds 4 to 20, 2816 verdicts, cuts per log,
+ridge 10, loss per verdict held out over six folds:
+
+| model | held-out loss | AUC not-close, fine |
+|---|---|---|
+| built metric | 0.6632 | 0.913, 0.908 |
+| flat circle, built weights | 0.6652 | 0.912, 0.906 |
+| table refitted, built weights | 0.6273 | 0.922, 0.919 |
+| table, W_L, W_C and gain exponent | 0.6021 | 0.927, 0.921 |
+
+W_L 0.48, W_C 0.97, gain exponent 0.19, slope 7; ridge 4 and 25 and a chroma power of 0.6 give the same loss to
+0.001 and the same numbers. The table: red at 30 degrees 1.71 for 1.92, violet at 300 1.37 for 1.89, blue at 270
+1.00 for 1.29, yellow at 90 0.65 for 0.48, sky at 210 1.07 for 0.66. With a pair of cuts per log for rounds 16 to
+20 as well: W_L 0.46, W_C 0.86, exponent 0.19, violet 1.40, held-out 0.5870. Under shared cuts round 17 grades 0.29
+under the fit, its green control (-0.39) as much as its violet pairs (-0.32, -0.19): a sitting of one stretch of hues
+is judged more strictly as a whole, 25 minutes after round 16, so a round's cuts are its own and only its pairs
+against each other count. What the fit leaves (`tmp/refit-residuals.js`): dark pairs in red, 330 to 60, graded 0.16
+to 0.25 over it, dark yellow-green, 90 to 120, 0.33 under it, pairs under chroma 6 0.14 over it; no residual by
+lightness level, lightness gap or chroma elsewhere. In the reported box blue to magenta holds 31% of the volume
+for 42%, 25% of the hue line for 31%.
+
+Applied: W_L 0.46, W_C 0.86, the gain's exponent 0.19 and the table of the run with a pair of cuts per log, in
+`index.html`, `generator-next.html` and `identify.js`. A hundred palettes of 15 from `index.html` before and after
+(`tmp/palette-set.js`; chroma 46 to 100, lightness 20 to 60, push angles 5 to 120): blue to magenta 7.1 of 15
+before, 4.7 after, orange to lime 2.2 to 3.2, green to cyan 2.1 to 3.1, mean lightness 53 to 59; the judge: more
+saturated, less violet, more yellow and lime, both good. One dark warm color (maroon, brown, brick red, lightness
+39, hue 36) sits in 86 of the 100, as in 77 before: the box's dark warm corner holds one seat far from everything,
+and an even spread fills every such seat in every palette. It is on the gamut's surface, fully vivid by the
+reach at its own lightness and 57% of its hue's cusp chroma. Vividness as the share of the cusp's chroma instead
+(`tmp/vivid-cusp.html`): 70 of 100, dark colors 4.4 to 3.0 a palette, floor 97.7 to 96.4%, and the judge finds
+those palettes far worse. Left as is; the name control bans brown.
+
+A density per lightness, the pair's the mix of the two around its mean lightness (`--levels 30,58,85`, each level
+the one density times offsets ridged toward none, the optimiser now gradient steps, the simplex having stalled at
+16 dimensions and being hopeless at 52): held-out loss 0.5870 with one table, 0.5800 with two levels, 0.5764 with
+three, the same from level ridge 5 to 20. The levels at the knots that differ: red at 30 degrees 2.10 dark, 1.69
+middle, 1.31 light; violet at 300 1.18, 1.20, 2.19; green at 120 to 150 0.91, 1.25 to 1.35, 1.21 to 0.93; yellow at
+90 0.54, 0.56, 0.64. The per-level fits of the hue-only sweeps said the same before the refit: red widest dark,
+violet widest pastel. The gain is a sixth of what the refit of the weights and the one table brought.
+
 ## Live palettes under the preference metric
 
 The first palettes generated on the built metric came out pale: the state

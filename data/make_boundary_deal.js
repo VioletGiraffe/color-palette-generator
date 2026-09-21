@@ -8,13 +8,15 @@
 //     node data/make_boundary_deal.js --sweep 10 [--turns 20,30,45,60,45] [--light 50] [--chroma 85] [--placement shared] [--ranges 230-340,120-190] [page.html]
 //     node data/make_boundary_deal.js --axis lightness [--hues 30] [--centres 35,50,65] [--turns 10,20,30,45,60] [--chroma 85] [page.html]
 //     node data/make_boundary_deal.js --axis chroma [--hues 30] [--centres 30,50,70] [--turns 10,20,30,40,50] [--light 50] [page.html]
-//     node data/make_boundary_deal.js --axis mixed [--ranges 0-360] [--windows 20-80] [--kinds mixed] [--by metric] [--distances 2-18] [--bands 6] [--each 30] [--seed 1] [page.html]
+//     node data/make_boundary_deal.js --axis mixed [--ranges 0-360] [--windows 20-80] [--share 30-100] [--kinds mixed] [--by metric] [--distances 2-18] [--bands 6] [--each 30] [--seed 1] [page.html]
 //
 // A mixed deal validates the metric on pairs no round dealt. A cell is a hue range of --ranges, a window of
 // cusp-relative lightness of --windows, a kind and a distance band; every cell holds --each pairs, one number per hue range.
-// Both colors of a pair are drawn evenly in hue, relative lightness and chroma share (MIXED_SHARE) inside the cell.
+// Both colors of a pair are drawn evenly in hue, relative lightness and chroma, --share, a percentage of the reach
+// at the color's lightness, inside the cell.
 //   mixed - each color at its own draw: the pair differs in hue, lightness and chroma at once.
 //   hue - the second color takes the first's relative lightness and share, the pair placed as `shared` below.
+//   chroma - the second color takes the first's hue and relative lightness: the pair differs in chroma alone.
 // --distances holds one range per kind, split evenly into --bands, so the grades cover both cuts; a cell's top is
 // lowered to what its pairs reach (MIXED_REACH). --by is the distance between the two shown hexes the bands are in:
 // `metric`, or `oklab`, plain deltaE, which keeps the metric out of the deal.
@@ -44,10 +46,8 @@ const path = require("path");
 const { loadPage, cuspLightness, gamutChroma, labOf, recallDistance, W_L, W_C } = require("./identify.js");
 
 const CUSP_ANCHOR = 50;
-// A mixed deal's chroma, as a percentage of the reach at the color's lightness
-const MIXED_SHARE = [30, 100];
-// Draws of the second color before the first is redrawn; a hue pair's second varies in hue alone
-const MIXED_TRIES = { mixed: 200000, hue: 1000 };
+// Draws of the second color before the first is redrawn; a hue or a chroma pair's second varies on one axis
+const MIXED_TRIES = { mixed: 200000, hue: 1000, chroma: 1000 };
 // Second colors drawn per band before the deal fails: a band no pair of the cell reaches
 const MIXED_BAND_DRAWS = 5e6;
 // A cell's top distance is at most the one this share of MIXED_SURVEY random pairs of the cell stay under: a dark or a pale cell reaches less
@@ -59,7 +59,7 @@ function main(args) {
 	let turns = [10, 15, 20, 30, 45, 60], offsets = [-1, -0.5, 0, 0.5, 1], light = 50, chroma = 85, sweep = 0, placements = ["shared"], pagePath = path.join(__dirname, "..", "index.html");
 	let names = ["red", "yellow", "green", "cyan", "blue", "magenta"], ranges = [[0, 360]];
 	let axis = "hue", hueStep = 30, centres = [35, 50, 65];
-	let windows = [[20, 80]], kinds = ["mixed"], by = "metric", distances = [[2, 18]], bands = 6, each = [30], seed = 1;
+	let windows = [[20, 80]], share = [30, 100], kinds = ["mixed"], by = "metric", distances = [[2, 18]], bands = 6, each = [30], seed = 1;
 	const rangesOf = text => text.split(",").map(range => range.split("-").map(Number));
 	for (let i = 0; i < args.length; ++i) {
 		if (args[i] === "--boundaries")
@@ -68,10 +68,12 @@ function main(args) {
 			sweep = +args[++i];
 		else if (args[i] === "--windows")
 			windows = rangesOf(args[++i]);
+		else if (args[i] === "--share")
+			[share] = rangesOf(args[++i]);
 		else if (args[i] === "--kinds") {
 			kinds = args[++i].split(",");
 			for (const kind of kinds)
-				if (!["hue", "mixed"].includes(kind))
+				if (!(kind in MIXED_TRIES))
 					throw new Error("unknown kind " + kind);
 		} else if (args[i] === "--by") {
 			by = args[++i];
@@ -159,8 +161,8 @@ function main(args) {
 		};
 		const dealt = [];
 		ranges.forEach((range, r) => windows.forEach(window => kinds.forEach((kind, k) => {
-			const drawsFrom = random => { const within = ([lo, hi]) => lo + random() * (hi - lo), hue = () => within(range) % 360; return { hue, spot: () => ({ h: hue(), light: within(window), share: within(MIXED_SHARE) }) }; };
-			const pairFrom = (first, firstOwn, draw) => kind === "hue" ? placedShared(first, [first.h, draw.hue()]) : [firstOwn, placedOwn(draw.spot())];
+			const drawsFrom = random => { const within = ([lo, hi]) => lo + random() * (hi - lo), hue = () => within(range) % 360, chroma = () => within(share); return { hue, chroma, spot: () => ({ h: hue(), light: within(window), share: chroma() }) }; };
+			const pairFrom = (first, firstOwn, draw) => kind === "hue" ? placedShared(first, [first.h, draw.hue()]) : [firstOwn, placedOwn(kind === "chroma" ? { ...first, share: draw.chroma() } : draw.spot())];
 			const draw = drawsFrom(rnd), probe = drawsFrom(surveyRnd);
 			const reached = Array.from({ length: MIXED_SURVEY }, () => { const first = probe.spot(); return distanceOf(pairFrom(first, placedOwn(first), probe)); }).sort((a, b) => a - b)[Math.floor(MIXED_REACH * MIXED_SURVEY)];
 			const low = distances[k][0], high = Math.min(distances[k][1], reached), width = (high - low) / bands;
@@ -207,7 +209,7 @@ function main(args) {
 					for (const placement of placements)
 						pairs.push(dealPair(turn, (hue + offset * turn + 360) % 360, { boundary, offset }, placement));
 	// Deal version: 2 places by the placement above, 1 put each color at the centre hue's cusp lightness and its own reach
-	const where = axis === "mixed" ? { axis, ranges, windows, share: MIXED_SHARE, kinds, by, distances, bands, each, seed }
+	const where = axis === "mixed" ? { axis, ranges, windows, share, kinds, by, distances, bands, each, seed }
 		: { light, chroma, placement: placements.join(","), turns,
 			...(axis !== "hue" ? { axis, hueStep, centres } : sweep ? { sweep, ranges } : { offsets, boundaries: Object.fromEntries(Object.entries(boundaries).map(([k, v]) => [k, +v.toFixed(1)])) }) };
 	const data = { version: 2, page: path.basename(pagePath), ...where, pairs };
@@ -217,7 +219,7 @@ function main(args) {
 		throw new Error(path.basename(out) + " lacks the deal markers");
 	fs.writeFileSync(out, source.slice(0, from + OPEN.length) + "const BOUNDARY_PAIRS = " + JSON.stringify(data) + ";\n" + source.slice(to));
 	const dealt = axis === "mixed"
-		? "mixed, hues " + ranges.map(r => r.join(" to ")).join(", ") + " with " + each.join(", ") + " pairs a cell, lightness " + windows.map(w => w.join(" to ")).join(", ") + " of the cusp, chroma " + MIXED_SHARE.join(" to ")
+		? "mixed, hues " + ranges.map(r => r.join(" to ")).join(", ") + " with " + each.join(", ") + " pairs a cell, lightness " + windows.map(w => w.join(" to ")).join(", ") + " of the cusp, chroma " + share.join(" to ")
 			+ "% of the reach, " + kinds.map((kind, k) => kind + " pairs in " + bands + " bands of " + distances[k].join(" to ")).join(", ") + (by === "oklab" ? " OKLab deltaE" : " on the metric") + ", seed " + seed
 		: "turns " + turns.join(", ") + (axis === "lightness" ? " in relative lightness at centres " + centres.join(", ") + ", hues every " + hueStep + " degrees; chroma " + chroma + "% of the reach"
 		: axis === "chroma" ? " in chroma share at centres " + centres.join(", ") + ", hues every " + hueStep + " degrees; lightness " + light

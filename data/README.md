@@ -46,19 +46,19 @@ hue control's only.
 
 `apart2(p, q)` is the squared distance between two metric positions, in deltaE:
 
-- the lightness difference times `W_L` (0.35);
-- the radial chroma difference times `W_C` (1);
+- the lightness difference times `W_L` (0.46);
+- the radial chroma difference times `W_C` (0.86);
 - the tangential part, the ab chord after both hues move to their warped angle less the radial part, times
   `hueScaleAt` of the pair's mean chroma, `(C / CHROMA_REFERENCE) ^ (CHROMA_POWER - 1)`, so a hue turn grows with
   chroma at the 0.75 power;
 - the sum times the square of `lightnessGain` of the pair's mean lightness, one at `LIGHTNESS_REFERENCE` (68) and
-  rising as the square root of the ratio toward black (floored at 20) and toward white.
+  rising as the ratio to `LIGHTNESS_EXPONENT` (0.19) toward black (floored at 20) and toward white.
 
 The Distinctness control is the noise width `sigma`; a pair at distance `d` swaps with `swapChance(d, sigma)`,
 half the complementary error function of `d / (2 sigma)` in standard units, and `limitDistance(sigma)` is where
-that chance falls to `ERROR_LIMIT` (0.02). `W_L` and `sigma` come from the recall calibration (`calibrate.html`,
-`fit.js`); `HUE_DENSITY`, `W_C`, the chroma power and the gain from the pair rounds under the preference question
-(`calibrate-boundaries.html`, `fit_hue_density.js`); the sources and numbers are in `scripts.md` and `evolution.md`.
+that chance falls to `ERROR_LIMIT` (0.02). `sigma` comes from the recall calibration (`calibrate.html`,
+`fit.js`); `HUE_DENSITY`, `W_L`, `W_C` and the gain's exponent are one fit to the pair rounds under the preference
+question (`calibrate-boundaries.html`, `fit_hue_density.js`), the chroma power from the same rounds; the sources and numbers are in `scripts.md` and `evolution.md`.
 The metric measures how far apart two colors read as members of one palette. It carries no term for a color on
 its own.
 

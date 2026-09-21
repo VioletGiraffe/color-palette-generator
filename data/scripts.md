@@ -65,9 +65,9 @@ node data/make_boundary_deal.js [--boundaries red,yellow,green,cyan,blue,magenta
 node data/make_boundary_deal.js --sweep 10 [--turns 20,30,45,60,45] [--light 50] [--chroma 85] [--placement shared|own-chroma|own|own-reversed|low|high[,more]] [--ranges 230-340,120-190] # the same, swept around the circle or over hue ranges at even centres; a turn listed twice is dealt again at centres half a step over; several placements deal every pair under each
 node data/make_boundary_deal.js --axis lightness [--hues 30] [--centres 35,50,65] [--turns 10,20,30,45,60] [--chroma 85] # lightness pairs instead: one hue, a turn apart in cusp-relative lightness
 node data/make_boundary_deal.js --axis chroma [--hues 30] [--centres 30,50,70] [--turns 10,20,30,40,50] [--light 50] # chroma pairs: one hue and lightness, a turn apart in chroma share of the reach
-node data/make_boundary_deal.js --axis mixed [--ranges 0-360] [--windows 20-80] [--kinds mixed] [--by metric] [--distances 2-18] [--bands 6] [--each 30] [--seed 1] # validation pairs in cells of hue range, lightness window, kind (hue alone, or hue, lightness and chroma at once) and distance band, the bands on the metric or on OKLab deltaE; the defaults deal round 16
+node data/make_boundary_deal.js --axis mixed [--ranges 0-360] [--windows 20-80] [--share 30-100] [--kinds mixed] [--by metric] [--distances 2-18] [--bands 6] [--each 30] [--seed 1] # validation pairs in cells of hue range, lightness window, kind (hue alone, chroma alone, or hue, lightness and chroma at once) and distance band, the chroma within a share of the reach, the bands on the metric or on OKLab deltaE; the defaults deal round 16
 node data/fit_boundaries.js log.json          # grades by turn and offset per boundary hue and the boundary's excess on the metric, from a calibrate-boundaries.html log; for a mixed deal, per kind the grades by distance band and by hue range and lightness window, and the ranking quality of the metric against OKLab deltaE
-node data/fit_hue_density.js [--p 0.75] [--ridge 2] [--knots 12] [--own-cuts] [--wl 0.35] [--wc 0.6] [--gain 0.5] [--placement own] [--table] log.json [more.json ...] # memory-scale hue density from calibrate-boundaries.html logs, the hue term in the metric's distance form: ranking quality flat, fitted and cross-validated, the density at each knot and the grade cuts on the metric, per log with --own-cuts
+node data/fit_hue_density.js [--p 0.75] [--ridge 2] [--knots 12] [--levels 30,58,85] [--level-ridge 10] [--own-cuts] [--same-cuts 13-17] [--wl 0.46] [--wc 0.86] [--gain 0.19] [--free wl,wc,gain] [--placement own] [--table] log.json [more.json ...] # the metric fitted to calibrate-boundaries.html logs through identify.js's metricWith: the hue density, one or one per lightness level, and whichever of the lightness weight, the chroma weight and the gain's exponent --free names; ranking quality and loss per verdict of the built metric, flat, fitted and cross-validated, the fitted numbers and the grade cuts on the metric, per log with --own-cuts
 node data/make_member_deal.js [--palettes 120] [--count 8] [--box 20 60 20 100] [--shared 0.5] # deal calibrate-members.html's palettes into the page
 node data/fit_members.js log.json             # where the bad colors live and whether bad is the color or its company, from a calibrate-members.html log
 node data/fit_preference.js log.json          # the draw's preference density from a calibrate-members.html log, as the PREFERENCE constant
@@ -104,9 +104,11 @@ range boxes as OKLCh ranges, so it needs a page whose controls are OKLCh. `build
 The module also exports the metric itself for the fit scripts: the constants (`SIGMA`, `W_L`, `W_C`,
 `CHROMA_POWER`, `CHROMA_REFERENCE`, `CHROMA_FLOOR`, `LIGHTNESS_EXPONENT`, `LIGHTNESS_REFERENCE`,
 `LIGHTNESS_FLOOR`, `CALIBRATED_PX`, `NAME_DECAY`, `HUE_DENSITY`, `HUE_DENSITY_AUTHORED`), `lightnessGain`,
-`hueScaleAt`, `labOf`, `rgbOf`, `warpedLab`, `weightedDistance`, `recallDistance`, `swapChance`,
+`hueScaleAt`, `labOf`, `rgbOf`, `warpedLab`, `weightedDistance`, `recallDistance`, `metricWith`, `swapChance`,
 `confusionMatrix`, `summarize`, `score`, `nameCollision`, `gamutChroma`, `cuspLightness`,
-`relativePosition`. The metric here and in the page must agree; a constant changed in one is changed in
+`relativePosition`. `metricWith({ density, wL, wC, power, gainExponent })` returns `recallDistance`'s form under
+a candidate's numbers, each defaulting to the built one: a fit measures through it, never through a copy of the
+form. The metric here and in the page must agree; a constant changed in one is changed in
 the other, and a new density table is pasted into both.
 
 `identify.js` reports two scores side by side and never combines them:
@@ -325,6 +327,14 @@ five ways each: one lightness at the mean (`own-chroma`), each at its own cusp (
 reach, the two colors differing in hue, lightness and chroma at once, 30 pairs per band of distance 2 to 18 on the
 metric. A record carries the pair's index in the deal, its hexes, hues and grade; the stamp carries the box, the
 distance range, the bands and the seed. It validates the metric on pairs of a kind no earlier round dealt.
+`boundary-17-log.json` is a mixed deal in cells: both colors in hues 230 to 340 (144 pairs) or 90 to 200, the control
+(48), in one of three windows of cusp-relative lightness, 13 to 37, 38 to 62, 63 to 87; half the pairs differ in hue
+alone (`kind` hue, the shared placement), half in hue, lightness and chroma (`kind` mixed); four bands of OKLab
+deltaE per cell, 4 to 16 and 6 to 26, so the metric had no part in the deal. A record carries its `kind` and `window`.
+Rounds 18 to 20 are the same kind of deal over what rounds 4 to 17 left thin: round 18 muted colors, every hue, the
+three windows, chroma 20 to 50% of the reach, hue and mixed pairs (120); round 19 pairs differing in chroma alone
+(`kind` chroma), six hue ranges, windows 10 to 30 and 30 to 48 below the cusp, chroma 10 to 100% (96); round 20
+hues 45 to 255 in three overlapping ranges, the same two windows, hue and mixed pairs (144).
 
 - `node data/fit_boundaries.js log.json` tables one deal's grades by turn and placement.
 - `node data/fit_hue_density.js data/boundary-1-log.json data/boundary-2-log.json data/boundary-3-log.json` pools every log into the memory-scale hue density; a
