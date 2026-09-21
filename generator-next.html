@@ -1,0 +1,2735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Next: Palette generator</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='2' y='2' width='13' height='13' rx='3' fill='%233d6df0'/><rect x='17' y='2' width='13' height='13' rx='3' fill='%23f0a33d'/><rect x='2' y='17' width='13' height='13' rx='3' fill='%23d9469b'/><rect x='17' y='17' width='13' height='13' rx='3' fill='%232fae66'/></svg>">
+<style>
+	/* Both palettes key off data-theme, which the script below sets before the first paint. A
+	   prefers-color-scheme query cannot be overridden by the selector without a second copy of
+	   the dark palette. */
+	:root {
+		color-scheme: light;
+		--bg: #f4f4f6;
+		--panel: #ffffff;
+		--ink: #1a1a1e;
+		--ink-dim: #6a6a76;
+		--line: #d8d8e0;
+		--accent: #3d6df0;
+		--warn: #b45309;
+		--danger: #d92020;
+		--swatch-hover: var(--accent);
+	}
+	:root[data-theme="dark"] {
+		color-scheme: dark;
+		--bg: #0a0a0c;
+		--panel: #131317;
+		--ink: #ececf0;
+		--ink-dim: #9a9aa6;
+		--line: #35353f;
+		--accent: #6f95ff;
+		--warn: #e0a33a;
+		--danger: #ff6b6b;
+	}
+
+	* { box-sizing: border-box; }
+
+	body {
+		margin: 0;
+		padding: 0 20px 20px;
+		background: var(--bg);
+		color: var(--ink);
+		font: 14px/1.45 system-ui, "Segoe UI", sans-serif;
+	}
+
+	h1 { font-size: 18px; margin: 0 0 16px; font-weight: 600; }
+	h2 { font-size: 13px; margin: 0 0 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-dim); }
+
+	#layout {
+		display: grid;
+		gap: 20px;
+		align-items: start;
+		grid-template-columns: 300px minmax(380px, 1fr) 360px;
+		grid-template-rows: auto 1fr;
+		grid-template-areas: "controls output gamut" "controls output side";
+	}
+
+	/* Below three columns, the short panels pair under the tall ones - State under Controls,
+	   the gamut under Output - so neither column carries all the height. */
+	@media (max-width: 1140px) {
+		#layout {
+			grid-template-columns: 300px minmax(0, 1fr);
+			grid-template-rows: auto 1fr;
+			grid-template-areas: "controls output" "side gamut";
+		}
+	}
+
+	@media (max-width: 780px) {
+		#layout {
+			grid-template-columns: 100%;
+			grid-template-rows: auto;
+			grid-template-areas: "controls" "output" "gamut" "side";
+		}
+	}
+
+	/* Compact mode for short viewports: standalone captions go, spacing tightens. The PALETTE
+	   and EXPORT captions stay - they share a row with controls and hiding them frees nothing. */
+	@media (max-height: 850px) {
+		.group > h2, #gamut > h2 { display: none; }
+		.group { margin-bottom: 8px; }
+		hr { margin: 5px 0; }
+	}
+
+	.panel {
+		background: var(--panel);
+		border: 1px solid var(--line);
+		border-radius: 8px;
+		padding: 16px;
+	}
+
+	#controls { grid-area: controls; }
+	#output { grid-area: output; }
+	#side { grid-area: side; }
+	#gamut { grid-area: gamut; }
+
+	.group { margin-bottom: 12px; }
+	.group:last-child { margin-bottom: 0; }
+
+	label.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+	label.row > span:first-child { white-space: nowrap; }
+
+	.value { font-variant-numeric: tabular-nums; color: var(--ink-dim); }
+
+	input[type=range] { width: 100%; accent-color: var(--accent); }
+	input[type=number] { width: 68px; }
+	input[type=color] { width: 34px; height: 28px; padding: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 5px; cursor: pointer; }
+
+	input[type=number], input[type=text], select, button, textarea {
+		font: inherit;
+		color: var(--ink);
+		background: var(--bg);
+		border: 1px solid var(--line);
+		border-radius: 5px;
+		padding: 4px 7px;
+	}
+
+	button { cursor: pointer; }
+	button:hover { border-color: var(--accent); }
+	button.primary { background: var(--accent); color: #fff; border-color: transparent; font-weight: 600; padding: 7px 14px; }
+
+	.range-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin-bottom: 12px; }
+	.range-pair .caption { grid-column: 1 / -1; display: flex; justify-content: space-between; }
+	.range-pair .edge { font-size: 12px; color: var(--ink-dim); }
+	.range-pair .end { display: flex; align-items: center; gap: 6px; }
+	.range-pair .end input[type=number] { width: 64px; }
+	.range-pair .end input[type=range] { flex: 1; min-width: 0; }
+
+	.range-bar {
+		grid-column: 1 / -1;
+		position: relative;
+		height: 16px;
+		margin: 2px 0 4px;
+		border: 1px solid var(--line);
+		border-radius: 4px;
+		overflow: hidden;
+	}
+
+	.range-bar canvas { display: block; width: 100%; height: 100%; }
+
+	.plane {
+		position: relative;
+		border: 1px solid var(--line);
+		border-radius: 4px;
+		overflow: hidden;
+	}
+
+	.plane canvas { display: block; width: 100%; height: 100%; }
+
+	#range-plane { height: 110px; margin: 2px 0 4px; }
+
+	#hl-plane, #hc-plane { height: 120px; margin: 16px 0 0; }
+
+	#gamut-3d { height: 460px; }
+
+	/* Hatched, not a flat scrim: the plane runs to black and to white, and a scrim of either
+	   tone is invisible against its own corner. */
+	.muted {
+		position: absolute;
+		background: repeating-linear-gradient(45deg, rgba(0, 0, 0, .7) 0 5px, rgba(255, 255, 255, .32) 5px 10px);
+	}
+
+	.range-bar .muted { top: 0; bottom: 0; }
+
+	#status { margin: 14px 0 12px; font-size: 13px; min-height: 20px; }
+
+	#palette-area { border-radius: 6px; }
+
+	#swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+
+	/* Square, unrounded and tightly spaced: the point is judging the colors against each other,
+	   so anything between them competes with what is being judged. Fixed-width tracks, so the
+	   block stays compact rather than stretching the tiles across the panel. */
+	#tiles { display: grid; grid-template-columns: repeat(var(--cols, 1), 24px); gap: 4px; margin-top: 12px; }
+	/* Thinner and fainter than the same marks on the swatches: against a 24px tile, the outlines in
+	   the block below read as a frame competing with the color rather than a mark on it.
+	   --mark is the marker's color, set by whichever of those rules applies. */
+	#tiles div { aspect-ratio: 1; outline-width: 1px; outline-color: color-mix(in srgb, var(--mark) 60%, transparent); }
+
+	.swatch { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; cursor: pointer; background: none; padding: 0; text-align: left; display: block; width: 100%; }
+	.swatch:hover { border-color: var(--swatch-hover); }
+	.swatch .chip { height: 64px; }
+	.swatch .meta { padding: 5px 7px; font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1.35; color: var(--ink); }
+	.swatch .meta .hex { font-weight: 600; letter-spacing: .02em; }
+	.swatch .meta .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.swatch .meta .coords { color: var(--ink-dim); }
+
+	/* Outline rather than a border: it is drawn outside the box, so it neither shifts the grid
+	   nor covers any of the color being judged.
+	   The later rule wins: .fixed and .off-name come before .clash, so a color that is also the
+	   closest pair shows the amber, and .hilite last, so a hovered color shows over all of them. */
+	.fixed { --mark: var(--ink-dim); outline: 2px dashed var(--mark); outline-offset: 1px; }
+	.off-name { --mark: var(--warn); outline: 2px dotted var(--mark); outline-offset: 1px; }
+	.clash { --mark: var(--warn); outline: 2px solid var(--mark); outline-offset: 1px; }
+	.hilite { --mark: var(--accent); outline: 2px solid var(--mark); outline-offset: 1px; }
+
+	/* A name chip carries the chip height of a palette swatch, so a name's territory reads at the
+	   size the colors themselves do. */
+	#name-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+	.name-chip { position: relative; width: 104px; border: 1px solid var(--line); border-radius: 6px;
+		overflow: hidden; cursor: pointer; background: none; user-select: none; }
+	.name-chip:hover { border-color: var(--swatch-hover); }
+	.name-chip canvas { display: block; width: 100%; height: 64px; }
+	/* The right padding leaves room for the showcase square, which spans both text lines at the strikeout's inset. */
+	.name-chip .meta { position: relative; padding: 4px 30px 4px 6px; font-size: 11px; line-height: 1.3; color: var(--ink); }
+	.name-chip .meta div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	/* Framed by the line color: the showcase of white or black would otherwise vanish into the panel of its theme. */
+	.name-chip .meta .sample { position: absolute; right: 4px; top: 50%; width: 20px; height: 20px; margin-top: -10px;
+		border-radius: 3px; box-shadow: inset 0 0 0 1px var(--line); }
+	.name-chip .meta .level { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+	.name-chip.off { border-style: dashed; }
+	/* The territory keeps its true colors: the line is what marks the name as dropped, and a color
+	   is still worth seeing while deciding whether to drop it. */
+	.name-chip.off .meta { color: var(--ink-dim); }
+	/* Ruled across the chip rather than set on the text: a line-through reaches only as far as the
+	   name is long, and the short names are the ones hardest to spot. Inset by less than .meta's
+	   6px gutter, so it overshoots the name at either end whatever the name's length, and stops
+	   the same 4px short of the showcase square, which stays readable.
+	   Vertically it is .meta's top padding plus half a line, which centres it on the name. */
+	.name-chip.off .meta::after {
+		content: "";
+		position: absolute;
+		left: 4px;
+		right: 28px;
+		top: calc(4px + 0.65em - 1.5px);
+		height: 3px;
+		background: var(--danger);
+	}
+	#fixed-colors, #avoid-colors { width: 100%; height: 56px; resize: vertical; font: 11px/1.5 ui-monospace, Consolas, monospace; }
+	#fixed-preview, #avoid-preview { display: flex; height: 18px; margin-top: 6px; border-radius: 4px; overflow: hidden; }
+	#fixed-preview:empty, #avoid-preview:empty { display: none; }
+	#fixed-preview span, #avoid-preview span { flex: 1; }
+
+	.bar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+
+	#export { width: 100%; height: 150px; margin-top: 8px; resize: vertical; font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre; }
+	/* Smaller than the export text: the string is copied, not read. */
+	#state { width: 100%; font: 11px/1.5 ui-monospace, Consolas, monospace; }
+	/* Wide enough for the ten digits a load-time seed always has, spinner included. */
+	#seed { width: 120px; }
+
+	#pin-paste { width: 100%; height: 64px; resize: vertical; font: 11px/1.5 ui-monospace, Consolas, monospace; }
+	#pin-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+	#pin-list:empty { display: none; }
+	.pin { display: flex; flex-wrap: wrap; gap: 4px; }
+	.pin-name { flex: 1; min-width: 0; }
+	.pin-drop { padding: 2px 8px; line-height: 1; }
+	#pin-clear.armed { color: var(--danger); border-color: var(--danger); }
+	/* The strip is the restore control: the largest target in the row, and it shows what it restores. */
+	.pin-strip { flex: 0 0 100%; display: flex; height: 18px; padding: 0; overflow: hidden; }
+	.pin-strip span { flex: 1; }
+
+	.hint { font-size: 12px; color: var(--ink-dim); margin-top: 6px; }
+
+	hr { border: none; border-top: 1px solid var(--line); margin: 8px 0; }
+</style>
+<script>
+	// Runs here, before the body: setting the attribute after load would flash the light theme.
+	document.documentElement.dataset.theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+</script>
+</head>
+<body>
+
+<div id="layout">
+
+<div class="panel" id="controls">
+
+	<div class="group">
+		<div class="range-pair" style="grid-template-columns: auto 1fr; align-items: center; margin-bottom: 0">
+			<label for="count">Colors</label>
+			<label for="strict" class="row" style="margin: 0"><span>Distinctness</span><span class="value" id="strict-value">3.0</span></label>
+			<input type="number" id="count" min="1" max="40" step="1" value="8">
+			<input type="range" id="strict" min="1" max="10" step="0.5" value="3">
+		</div>
+		<div class="hint">Width of the memory noise the colors are spread against, in ΔE. Low pushes only the closest pairs apart; high trades that for an even spread.</div>
+	</div>
+
+	<hr>
+
+	<div class="group">
+		<div class="bar" style="justify-content:space-between; margin-bottom:0">
+			<label class="row" style="margin:0"><span>Seed</span><input type="number" id="seed" value="1" min="0" step="1"></label>
+			<label class="row" style="margin:0"><span>Sort by hue</span><input type="checkbox" id="sort" checked></label>
+		</div>
+		<button class="primary" id="generate" style="width:100%; margin-top:10px">Generate</button>
+	</div>
+
+	<hr>
+
+	<div class="group">
+		<h2>OKLCh range</h2>
+
+		<div class="range-pair">
+			<div class="caption"><span>Hue</span><span class="value" id="h-value"></span></div>
+			<div class="range-bar" id="hue-bar"><canvas id="hue-canvas"></canvas><div class="muted" id="hue-muted-a"></div><div class="muted" id="hue-muted-b"></div></div>
+			<label class="end"><span class="edge">min</span><input type="range" id="h-min" min="0" max="360" step="any" value="0"></label>
+			<label class="end"><input type="range" id="h-max" min="0" max="360" step="any" value="360"><span class="edge">max</span></label>
+			<div class="hint" style="grid-column: 1 / -1; margin: 0">Hue wraps when min &gt; max (e.g. 300 &rarr; 60 covers magenta through yellow).</div>
+		</div>
+
+		<div class="plane" id="range-plane"><canvas id="range-canvas"></canvas></div>
+		<div class="hint" style="margin: 0 0 12px">Hue across, lightness up, each point at the most vivid chroma the ranges allow: the same chart as under the palette.</div>
+
+		<div class="range-pair">
+			<div class="caption"><span>Chroma</span><span class="value" id="c-value"></span></div>
+			<label class="end"><span class="edge">min</span><input type="range" id="c-min" min="0" max="100" value="20"></label>
+			<label class="end"><input type="range" id="c-max" min="0" max="100" value="100"><span class="edge">max</span></label>
+		</div>
+
+		<div class="range-pair" style="margin-bottom: 0">
+			<div class="caption"><span>Lightness</span><span class="value" id="l-value"></span></div>
+			<label class="end"><span class="edge">min</span><input type="range" id="l-min" min="0" max="100" value="20"></label>
+			<label class="end"><input type="range" id="l-max" min="0" max="100" value="60"><span class="edge">max</span></label>
+		</div>
+		<div class="hint" style="margin: 8px 0 0">Both are relative to each hue's own peak. Lightness: 50 is the most vivid sRGB reaches at that hue, 0 black and 100 white. Yellow peaks near absolute L 97 and blue near 45, so an absolute range would clip the one and wash out the other. Chroma: 100 is all the hue has, so one setting asks the same vividness everywhere - teal peaks at absolute 14.5 and magenta at 32.2, and an absolute range would drop teal while barely touching magenta.</div>
+	</div>
+
+	<hr>
+
+	<div class="group">
+		<h2>Fixed colors</h2>
+		<textarea id="fixed-colors" spellcheck="false" placeholder="#1a73e8&#10;#e8710a"></textarea>
+		<div id="fixed-preview"></div>
+		<div class="hint">Six-digit hex, any separator. New colors are kept distinct from these. They do not count towards Colors and are not exported.</div>
+	</div>
+
+	<div class="group">
+		<h2>Avoid colors</h2>
+		<textarea id="avoid-colors" spellcheck="false" placeholder="#8b6b4a&#10;#7f7f7f"></textarea>
+		<div id="avoid-preview"></div>
+		<div class="hint">Six-digit hex, any separator. Each bans what it lacks: at its hue, every color at least as far from the most vivid one in the same direction, so a dull color bans duller ones and a dark one darker ones, never the pure version. Hatched on the charts. Right-click a color in the palette to add it.</div>
+	</div>
+
+</div>
+
+<div class="panel" id="output">
+
+	<div class="bar">
+		<h2 style="margin:0; flex:1">Palette</h2>
+		<label for="backdrop" style="font-size:12px; color:var(--ink-dim)">Backdrop</label>
+		<select id="backdrop">
+			<option value="panel" selected>Panel</option>
+			<option value="#ffffff">White</option>
+			<option value="#000000">Black</option>
+			<option value="#808080">Mid grey</option>
+			<option value="custom">Custom</option>
+		</select>
+		<input type="color" id="backdrop-color" value="#3c6ea5" title="Custom backdrop">
+		<label for="theme" style="font-size:12px; color:var(--ink-dim)">Theme</label>
+		<select id="theme">
+			<option value="auto" selected>Auto</option>
+			<option value="light">Light</option>
+			<option value="dark">Dark</option>
+		</select>
+	</div>
+
+	<div id="status"></div>
+	<div id="palette-area">
+		<div id="swatches"></div>
+		<div id="tiles"></div>
+	</div>
+
+	<div class="plane" id="hl-plane"><canvas id="hl-canvas"></canvas></div>
+	<div class="hint">Hue across, lightness up, each point at the most vivid chroma the ranges allow: the outside of the selected region. Lightness here is plain black to white, so the band the range allows rises and falls with each hue's peak. Hatching is outside the hue or lightness range, where the chroma minimum leaves nothing, or in an avoided color's shadow. Dots are the generated colors, triangles the fixed ones.</div>
+
+	<div class="plane" id="hc-plane"><canvas id="hc-canvas"></canvas></div>
+	<div class="hint">Hue across, chroma up. Each hue is drawn at the lightness within the range that makes it most vivid, so the top edge is the most chroma the ranges allow at that hue. Blank above it: no lightness in the range reaches that far. The solid line is the chroma reached at the top of the lightness range, the dashed line at the bottom; between them and the top edge lies what the range gives up. Hatching is outside the hue or chroma range, or in an avoided color's shadow; chroma here is absolute, so the band the range allows rises and falls with each hue's peak. Dots are the generated colors, triangles the fixed ones.</div>
+
+	<hr>
+
+	<div class="bar">
+		<h2 style="margin:0; flex:1">Names</h2>
+		<span style="font-size:12px; color:var(--ink-dim)" id="names-summary"></span>
+		<button id="names-toggle">Hide</button>
+	</div>
+	<div id="names-body">
+		<div id="name-chips"></div>
+		<div class="hint" id="names-hint">Every name the generator can reach, each drawn at the lightness where it covers the most ground - eleven of them, white and black among them, cover nothing at all at mid lightness. Click a name to exclude it: generated colors keep out of it, fixed colors are exempt. A color that lands in it regardless is outlined.</div>
+	</div>
+
+	<hr>
+
+	<div class="bar">
+		<h2 style="margin:0; flex:1">Export</h2>
+		<select id="format">
+			<option value="hex">Hex list</option>
+			<option value="css">CSS custom properties</option>
+			<option value="json">JSON array</option>
+			<option value="python">Python list</option>
+		</select>
+		<button id="copy">Copy</button>
+	</div>
+	<textarea id="export" readonly spellcheck="false"></textarea>
+	<div class="hint">Click any swatch to copy its hex.</div>
+
+</div>
+
+<div class="panel" id="gamut">
+	<div class="bar">
+		<h2 style="margin:0; flex:1">3D gamut</h2>
+		<label class="row" style="margin:0"><span>In the metric</span><input type="checkbox" id="metric-3d"></label>
+	</div>
+	<div class="plane" id="gamut-3d"></div>
+	<div class="hint">The sRGB gamut in OKLab, lightness up. Solid body: what the selected ranges allow. Cones: fixed colors. Amber line: hardest pair. Halos reach half the distance the generator keeps colors apart at this Distinctness, so two meeting mark a pair right at its limit; they stand tall since lightness counts for less, and grow toward black. In the metric: the same body as the generator measures it, each hue turned to its calibrated angle, chroma and height scaled by the lightness gain and height by the lightness weight too; only distances straight in or out from the grey axis stay at OKLab scale, so a halo still stretches that way. Drag to rotate, double-click to reset.</div>
+</div>
+
+<div class="panel" id="side">
+
+	<div class="group">
+		<h2>State</h2>
+		<input type="text" id="state" spellcheck="false" aria-label="State string">
+		<div class="bar" style="margin-top:8px">
+			<button id="state-copy">Copy</button>
+			<button id="state-apply">Apply</button>
+		</div>
+		<div class="hint">Every setting, in one string. Paste one back and apply it to restore the exact palette.</div>
+	</div>
+
+	<hr>
+
+	<div class="group">
+		<h2>Pinned</h2>
+		<div class="bar">
+			<button id="pin-add">Pin</button>
+			<button id="pin-copy" hidden>Copy all</button>
+			<button id="pin-load">Load</button>
+			<button id="pin-clear" hidden>Clear all</button>
+		</div>
+		<textarea id="pin-paste" spellcheck="false" hidden placeholder="Paste copied lines, then press Load again"></textarea>
+		<div id="pin-list"></div>
+		<div class="hint">Kept in this browser. Copy the list out to take it elsewhere, and paste it back with Load.</div>
+	</div>
+
+</div>
+
+</div>
+
+<script>
+"use strict";
+
+// ---------- color math ----------
+
+function srgbToLinear(u) {
+	return u <= 0.04045 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4);
+}
+
+function parseHex(hex) {
+	const n = parseInt(hex.slice(1), 16);
+	return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255];
+}
+
+function relativeLuminance(rgb) {
+	return 0.2126 * srgbToLinear(rgb[0]) + 0.7152 * srgbToLinear(rgb[1]) + 0.0722 * srgbToLinear(rgb[2]);
+}
+
+// True where black marks out-contrast white: 0.179 is the luminance at which the two are equal.
+function isLightColor(rgb) {
+	return relativeLuminance(rgb) >= 0.179;
+}
+
+// Bjorn Ottosson's OKLab, from linear sRGB.
+function rgbToOklab(rgb) {
+	const r = srgbToLinear(rgb[0]), g = srgbToLinear(rgb[1]), b = srgbToLinear(rgb[2]);
+	const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+	const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+	const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+	return [
+		0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+		1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+		0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+	];
+}
+
+// The a and b weight of each LMS term, and the LMS mix of each linear channel. Named because
+// gamutChroma solves these same expressions symbolically and must use the identical numbers.
+const LMS_A = [0.3963377774, -0.1055613458, -0.0894841775];
+const LMS_B = [0.2158037573, -0.0638541728, -1.2914855480];
+const RGB_FROM_LMS = [
+	[4.0767416621, -3.3077115913, 0.2309699292],
+	[-1.2684380046, 2.6097574011, -0.3413193965],
+	[-0.0041960863, -0.7034186147, 1.7076147010]];
+
+// Linear sRGB from OKLab. Components outside [0, 1] mean the color is outside the sRGB gamut.
+function oklabToLinear(L, a, b) {
+	const l = (L + LMS_A[0] * a + LMS_B[0] * b) ** 3;
+	const m = (L + LMS_A[1] * a + LMS_B[1] * b) ** 3;
+	const s = (L + LMS_A[2] * a + LMS_B[2] * b) ** 3;
+	return [
+		RGB_FROM_LMS[0][0] * l + RGB_FROM_LMS[0][1] * m + RGB_FROM_LMS[0][2] * s,
+		RGB_FROM_LMS[1][0] * l + RGB_FROM_LMS[1][1] * m + RGB_FROM_LMS[1][2] * s,
+		RGB_FROM_LMS[2][0] * l + RGB_FROM_LMS[2][1] * m + RGB_FROM_LMS[2][2] * s];
+}
+
+// Inverse of rgbToOklab.
+function oklabToRgb(L, a, b) {
+	return oklabToLinear(L, a, b).map(u => u <= 0.0031308 ? u * 12.92 : 1.055 * u ** (1 / 2.4) - 0.055);
+}
+
+// OKLCh from OKLab: lightness and chroma x100, hue in degrees.
+function lchOf(lab) {
+	const h = Math.atan2(lab[2], lab[1]) * 180 / Math.PI;
+	return [lab[0] * 100, Math.hypot(lab[1], lab[2]) * 100, (h + 360) % 360];
+}
+
+// OKLab from lightness and chroma x100 and hue in degrees.
+function labOfLch(L, C, h) {
+	const t = h * Math.PI / 180;
+	return [L / 100, C / 100 * Math.cos(t), C / 100 * Math.sin(t)];
+}
+
+// Holds for linear and for gamma-encoded sRGB alike: the transfer curve keeps 0 and 1 in place.
+const inGamut = rgb => rgb.every(v => v >= -1e-6 && v <= 1 + 1e-6);
+// The linear form: the transfer curve is the costly part of oklabToRgb and the test does not need it.
+const showsLch = (L, C, h) => inGamut(oklabToLinear(...labOfLch(L, C, h)));
+
+// Above the most chroma sRGB shows anywhere (32.25, at magenta).
+const CHROMA_MAX = 32.5;
+
+// The real roots of a x^3 + b x^2 + c x + d, degenerating to the quadratic and the line.
+function cubicRoots(a, b, c, d) {
+	if (Math.abs(a) < 1e-12) {
+		if (Math.abs(b) < 1e-12)
+			return Math.abs(c) < 1e-12 ? [] : [-d / c];
+		const discriminant = c * c - 4 * b * d;
+		if (discriminant < 0)
+			return [];
+		const root = Math.sqrt(discriminant);
+		return [(-c + root) / (2 * b), (-c - root) / (2 * b)];
+	}
+
+	// Depressed to t^3 + p t + q, where x is t less a third of the quadratic coefficient.
+	const quad = b / a, lin = c / a, base = d / a;
+	const shift = quad / 3;
+	const p = lin - quad * quad / 3;
+	const q = 2 * quad * quad * quad / 27 - quad * lin / 3 + base;
+	if (Math.abs(p) < 1e-14)
+		return [Math.cbrt(-q) - shift];
+
+	const delta = q * q / 4 + p * p * p / 27;
+	if (delta > 0) {
+		const root = Math.sqrt(delta);
+		return [Math.cbrt(-q / 2 + root) + Math.cbrt(-q / 2 - root) - shift];
+	}
+	// Three real roots: p is negative here, so the trigonometric form applies.
+	const scale = 2 * Math.sqrt(-p / 3);
+	const angle = Math.acos(Math.min(1, Math.max(-1, 3 * q / (p * scale)))) / 3;
+	return [0, 1, 2].map(k => scale * Math.cos(angle - 2 * Math.PI * k / 3) - shift);
+}
+
+// The most chroma sRGB shows at this lightness and hue; 0 at black and white.
+// Along the ray each LMS term is linear in chroma and then cubed, so every linear channel is a
+// cubic in it and the sRGB box is six cubic inequalities. Their roots cut the ray into spans that
+// are wholly in or out, and the outermost span that is in gives the answer.
+// A bisection would stop at the first crossing: the ray leaves and re-enters where it grazes a
+// corner of the cube, and misses pure blue by 4.8 chroma.
+function gamutChroma(L, h) {
+	const turn = h * Math.PI / 180, toA = Math.cos(turn), toB = Math.sin(turn);
+	const light = L / 100, limit = CHROMA_MAX / 100;
+	// The LMS terms as light + slope * chroma.
+	const slope = LMS_A.map((a, n) => a * toA + LMS_B[n] * toB);
+	const breaks = [0, limit];
+	for (const mix of RGB_FROM_LMS) {
+		let c3 = 0, c2 = 0, c1 = 0, c0 = 0;
+		for (let n = 0; n < 3; ++n) {
+			const w = mix[n], k = slope[n];
+			c3 += w * k * k * k;
+			c2 += w * 3 * light * k * k;
+			c1 += w * 3 * light * light * k;
+			c0 += w * light * light * light;
+		}
+		for (const target of [0, 1])
+			for (const root of cubicRoots(c3, c2, c1, c0 - target))
+				if (root > 0 && root < limit)
+					breaks.push(root);
+	}
+
+	breaks.sort((p, q) => p - q);
+	for (let n = breaks.length - 1; n > 0; --n) {
+		const mid = (breaks[n - 1] + breaks[n]) / 2;
+		if (inGamut(oklabToLinear(light, mid * toA, mid * toB)))
+			return breaks[n] * 100;
+	}
+	return 0;
+}
+
+function toHex(rgb) {
+	return "#" + rgb.map(v => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, "0")).join("");
+}
+
+// A hue range runs from hMin upwards and wraps when hMin > hMax.
+const hueSpan = (hMin, hMax) => hMin <= hMax ? hMax - hMin : 360 - hMin + hMax;
+const hueInRange = (h, hMin, hMax) => hMin <= hMax ? h >= hMin && h <= hMax : h >= hMin || h <= hMax;
+
+// ---------- lightness relative to the cusp ----------
+
+// The lightness at which sRGB shows the most chroma at this hue, the gamut cusp. A coarse scan
+// brackets the peak, golden-section search narrows it to 0.1 L: chroma over lightness at one hue
+// has a single peak.
+const CUSP_SCAN_LEVELS = 24;
+function searchCuspLightness(h) {
+	let bestLevel = 0, bestC = 0;
+	for (let n = 1; n < CUSP_SCAN_LEVELS; ++n) {
+		const C = gamutChroma(100 * n / CUSP_SCAN_LEVELS, h);
+		if (C > bestC) {
+			bestLevel = n;
+			bestC = C;
+		}
+	}
+
+	const R = (Math.sqrt(5) - 1) / 2;
+	let lo = 100 * (bestLevel - 1) / CUSP_SCAN_LEVELS, hi = 100 * (bestLevel + 1) / CUSP_SCAN_LEVELS;
+	let a = hi - R * (hi - lo), b = lo + R * (hi - lo), Ca = gamutChroma(a, h), Cb = gamutChroma(b, h);
+	while (hi - lo > 0.1) {
+		if (Ca < Cb) {
+			lo = a;
+			a = b;
+			Ca = Cb;
+			b = lo + R * (hi - lo);
+			Cb = gamutChroma(b, h);
+		} else {
+			hi = b;
+			b = a;
+			Cb = Ca;
+			a = hi - R * (hi - lo);
+			Ca = gamutChroma(a, h);
+		}
+	}
+	return (lo + hi) / 2;
+}
+
+const CUSP_STEP = 1;
+
+// The cusp locus follows the edges of the sRGB cube and turns a corner at each of the six primaries
+// and secondaries, blue's five times sharper than the next. The relative coordinates divide by these
+// values, so an unsmoothed corner shears both of them across one degree of hue.
+// Only the corners move: everywhere else the blur shifts the locus by under 0.15, so one blur over
+// the whole circle needs no special case at the six hues.
+const CUSP_SMOOTHING = 2;
+function smoothRing(samples) {
+	const sigma = CUSP_SMOOTHING / CUSP_STEP, radius = Math.ceil(sigma * 3), weights = [];
+	for (let k = -radius; k <= radius; ++k)
+		weights.push(Math.exp(-k * k / (2 * sigma * sigma)));
+	const total = weights.reduce((a, b) => a + b, 0);
+	return samples.map((_, n) => {
+		let sum = 0;
+		for (let k = -radius; k <= radius; ++k)
+			sum += samples[(n + k + samples.length) % samples.length] * weights[k + radius];
+		return sum / total;
+	});
+}
+
+// The cusp depends on the hue alone, so the search runs once per sample and everything else reads
+// the samples. Built on first use: the search is far too slow to run per draw or per pixel.
+let cuspSamples = null;
+
+function cuspTable() {
+	if (!cuspSamples) {
+		const light = [], chroma = [];
+		for (let n = 0; n < 360 / CUSP_STEP; ++n) {
+			const h = n * CUSP_STEP, L = searchCuspLightness(h);
+			light.push(L);
+			chroma.push(gamutChroma(L, h));
+		}
+		cuspSamples = { light: smoothRing(light), chroma: smoothRing(chroma) };
+	}
+	return cuspSamples;
+}
+
+// One cusp sample at any hue, straight between the samples either side of it.
+function cuspValue(h, key) {
+	const samples = cuspTable()[key];
+	const at = ((h % 360) + 360) % 360 / CUSP_STEP;
+	const before = Math.floor(at), within = at - before;
+	return samples[before] * (1 - within) + samples[(before + 1) % samples.length] * within;
+}
+
+// Both read the smoothed table, so both land near the true cusp, not on it. Everything that needs
+// the cusp itself calls searchCuspLightness.
+const cuspLightness = h => cuspValue(h, "light");
+const cuspChroma = h => cuspValue(h, "chroma");
+
+// The lightness range is stated relative to the hue's cusp, not in absolute OKLCh lightness: the
+// cusp sits at CUSP_ANCHOR at every hue, 0 is black and 100 is white. A range therefore selects the
+// same standing in every hue's own gamut, where an absolute range clips the hues whose peak is
+// bright and admits only washed-out colors where it is dark.
+// `apart2` does not read this coordinate: its lightness gain is on absolute lightness.
+const CUSP_ANCHOR = 50;
+
+// Piecewise linear either side of the cusp, so both maps are exact inverses and both are strictly
+// increasing: 0 to black, CUSP_ANCHOR to the cusp, 100 to white.
+function absoluteL(relative, h) {
+	const cusp = cuspLightness(h);
+	return relative <= CUSP_ANCHOR ? cusp * relative / CUSP_ANCHOR
+		: cusp + (100 - cusp) * (relative - CUSP_ANCHOR) / (100 - CUSP_ANCHOR);
+}
+
+function relativeL(L, h) {
+	const cusp = cuspLightness(h);
+	return L <= cusp ? CUSP_ANCHOR * L / cusp
+		: CUSP_ANCHOR + (100 - CUSP_ANCHOR) * (L - cusp) / (100 - cusp);
+}
+
+// Whether an absolute lightness falls in the range at this hue.
+const withinLightness = (L, h, cfg) => {
+	const relative = relativeL(L, h);
+	return relative >= cfg.lMin && relative <= cfg.lMax;
+};
+
+// The chroma range is stated relative to the hue's cusp too, where 100 is the hue's cusp chroma and
+// 0 is neutral. Cusp chroma runs from 14.5 at teal to 32.2 at magenta, so an absolute range asks for
+// the whole gamut at the first hue and its top half at the second, and a floor above 14.5 drops teal
+// entirely.
+// Smoothing puts 100 up to 1.0 chroma outside the gamut near blue; the callers clamp to gamutChroma
+// at the point's own lightness.
+// A fraction of the cusp, not of the reach at the point's own lightness as data/identify.js takes
+// it: only the cusp makes one number mean the same vividness at every hue.
+const absoluteC = (relative, h) => relative / 100 * cuspChroma(h);
+const relativeC = (C, h) => C / cuspChroma(h) * 100;
+
+// ---------- color naming ----------
+
+// A palette color is looked at alone rather than beside the others, so recognising it is a matter
+// of the name it carries, not of its distance from the rest.
+// generate places colors by confusability: name overlap between cells, fading with OKLab distance.
+//
+// Which name a color carries, and whether people agree on it, from the c3 model of the XKCD color
+// survey - Heer and Stone, "Color Naming Models for Color Selection, Image Editing and Palette
+// Design", CHI 2012. Model data from https://github.com/StanfordHCI/c3, BSD licensed:
+//   Copyright (c) 2011, Stanford University. All rights reserved.
+// The survey binned sRGB into CIE Lab cubes 5 units on a side and tallied the words people gave to
+// each. 36 words earn a cell of their own; every other word is folded into the one its votes
+// co-occur with most, so synonyms count for the region they share instead of splitting it.
+// A bin belongs to the word with the highest vote share weighted by the word's rarity: unweighted,
+// generic words win everywhere as everyone's fallback and confine specific words to slivers of
+// their real regions. Weighted, purple owns 689 bins, orange 226, salmon 131.
+//
+// The tables below are generated: data/build_cells.py prints them, and --check reports whether the
+// ones here still match the model. Edits made by hand are lost at the next run.
+const CELL_NAMES = ["purple", "blue", "pink", "brown", "lavender", "green", "light green", "olive", "light blue", "grey", "magenta", "dark green", "navy blue", "maroon", "teal", "orange", "dark purple", "tan", "red", "turquoise", "grey blue", "black", "peach", "mustard", "lime green", "salmon", "yellow", "mauve", "yellow green", "light pink", "brick red", "pale yellow", "white", "burnt orange", "off white", "beige"];
+// Each name's showcase for the names panel: the bin it owns where the most people gave the name.
+const CELL_SWATCH = ["#8d12dc", "#270fe2", "#f0348f", "#76480d", "#be9ee2", "#0ec61c", "#2ae282", "#7d8b14", "#25b8ea", "#9e9e9e", "#eb1fcb", "#0b5313", "#0b0862", "#8f0f1b", "#1fa198", "#ea6b12", "#52115d", "#c9a66b", "#d7050d", "#2eece6", "#6a879d", "#000000", "#f4bb8f", "#dbb512", "#00e614", "#ea675f", "#faf81d", "#ad7484", "#bde31d", "#f6c8de", "#992a13", "#f7f683", "#f1f1f1", "#c35712", "#f3f3d4", "#e0d59b"];
+
+// Bins form a regular grid, so a color's bin is arithmetic rather than a search.
+const GRID_STEP = 5, GRID_L0 = 0, GRID_A0 = -85, GRID_B0 = -110;
+const GRID_NL = 21, GRID_NA = 38, GRID_NB = 42;
+// No sRGB color reaches these bins, three quarters of the grid.
+const OUTSIDE_GAMUT = 36;
+// Set on a bin where people split their votes between names, or where the winning word barely beat
+// the runner-up: the color has a name, but not one a viewer would land on twice running.
+const UNSURE = 64;
+
+// One char per bin in L then a then b order: "#" (35) plus the symbol, unsure cells continuing past OUTSIDE_GAMUT.
+const CELL_GRID_CHARS = "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG88GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG8888GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG]88888GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG/]88888GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG//]8GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG88GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG8888GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG88888GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGT888888GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG/T888888GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG///]88888GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG///T]888]8GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG////XX]]]8]GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG///X333X]U0GGGGGGGGGGGGGGGGGGGGGGGGGGGGGG///X33333GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG////GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG/GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG..GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG]S..GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG8888].GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG88888]8GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGT8888888GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG/T88888]8GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG///]8888]]&GGGGGGGGGGGGGGGGGGGGGGGGGGGGGG////8888]8&&GGGGGGGGGGGGGGGGGGGGGGGGGGGGGG////]8888K&&GGGGGGGGGGGGGGGGGGGGGGGGGGGGG////333X]8&&&GGGGGGGGGGGGGGGGGGGGGGGGGGGG////X3333U0UUKGGGGGGGGGGGGGGGGGGGGGGGGGGG////XX333300000GGGGGGGGGGGGGGGGGGGGGGGGGG////333XX3X00000GGGGGGGGGGGGGGGGGGGGGGGGG///TX33GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG//T/GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG.GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG....GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGS.....GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG]8]S...GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG/]888]8].GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG//]888888]GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG///]88888&&GGGGGGGGGGGGGGGGGGGGGGGGGGGGGG////888]]&&&GGGGGGGGGGGGGGGGGGGGGGGGGGGGG/////]8]]&&&&GGGGGGGGGGGGGGGGGGGGGGGGGGGG////T33X]K&&&&GGGGGGGGGGGGGGGGGGGGGGGGGGG////T33333K&&&&GGGGGGGGGGGGGGGGGGGGGGGGGG////XX3333U0UU&&GGGGGGGGGGGGGGGGGGGGGGGGGT///X33XXX300000UGGGGGGGGGGGGGGGGGGGGGGGG/T//T33333XX000000GGGGGGGGGGGGGGGGGGGGGGG//TTT3333333U000000GGGGGGGGGGGGGGGGGGGGGGI//T/X333GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGIT//XGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG$IGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG....GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG......GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGS.......GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGVV.......GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG///]8]S....GGGGGGGGGGGGGGGGGGGGGGGGGGGGGG////888]8]K&GGGGGGGGGGGGGGGGGGGGGGGGGGGGG/////]888&&&&GGGGGGGGGGGGGGGGGGGGGGGGGGGG/////]]88&&&&&GGGGGGGGGGGGGGGGGGGGGGGGGGG//////3X8&&&&&&GGGGGGGGGGGGGGGGGGGGGGGGGGT////XX33X&&&&&&GGGGGGGGGGGGGGGGGGGGGGGGG/T///3XX333K&&&&&GGGGGGGGGGGGGGGGGGGGGGGG//T/T333XX3X0UU&&&&GGGGGGGGGGGGGGGGGGGGGGT//T/33333XX000000K&GGGGGGGGGGGGGGGGGGGGGIT/T/X333333X00000000GGGGGGGGGGGGGGGGGGGG$I///HX333333U00000000GGGGGGGGGGGGGGGGGGGG$I//HXXXX3333000000000GGGGGGGGGGGGGGGGGGG$$IT#HHHHHXX3GGGGGGGGGGGGGGGGGGGGGGGGGGGG$$$I###GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG$$$$GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG$GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG...GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG......GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGS.......GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG11S.......GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGT11S.......GGGGGGGGGGGGGGGGGGGGGGGGGGGGGG//TVQS...SO*GGGGGGGGGGGGGGGGGGGGGGGGGGGGG////,,,,K&&&&GGGGGGGGGGGGGGGGGGGGGGGGGGGT////Q,,,Q&&&&&GGGGGGGGGGGGGGGGGGGGGGGGGG/T////,,,Q&&&&&&GGGGGGGGGGGGGGGGGGGGGGGGG//T///XXQQ&&&&&&&GGGGGGGGGGGGGGGGGGGGGGGGT////T3XX3X&&&&&&&&GGGGGGGGGGGGGGGGGGGGGGIT/T//333X33K&&&&&&&GGGGGGGGGGGGGGGGGGGGG$I//TTX333XXU0UK&&&&&GGGGGGGGGGGGGGGGGGGG$$T//HXX33333U000UK&&&GGGGGGGGGGGGGGGGGGG$$$TT#HXX3333U000000UffGGGGGGGGGGGGGGGGGGG$$IT##HHXX333000000000UGGGGGGGGGGGGGGGGGG$$$I####HHXX330000000000GGGGGGGGGGGGGGGGG$$$$#######HHXX0000000000GGGGGGGGGGGGGGGG$$$$##########HHGGGGGGGGGGGGGGGGGGGGGGGGG$$$$H#####GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG$$$$I#GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG$$$GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG.S.GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG....SSGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG.......SGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG1V........GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG11V........GGGGGGGGGGGGGGGGGGGGGGGGGGGGGV111V.....SO*GGGGGGGGGGGGGGGGGGGGGGGGGGGG//TV\\,,S.SO***GGGGGGGGGGGGGGGGGGGGGGGGGGG//TT\\,,,,,&KKKOGGGGGGGGGGGGGGGGGGGGGGGGGG//T/\\,,,,,&&&&&&GGGGGGGGGGGGGGGGGGGGGGGGGT//T/\\,,,,&&&&&&&GGGGGGGGGGGGGGGGGGGGGGG$IT/T/TXQ,,&&&&&&&&GGGGGGGGGGGGGGGGGGGGGGG$I//TT333XX&&&&&&&&GGGGGGGGGGGGGGGGGGGGG$$$T//#X3333X&&&&&&&&GGGGGGGGGGGGGGGGGGGGG$$ITH#HX3333U0U&&&&&&&GGGGGGGGGGGGGGGGGGG$$$I###HHX333U000fK&&&&GGGGGGGGGGGGGGGGGG$$$$#####HXX3UU0000fAfffGGGGGGGGGGGGGGGGG$$$$#######HXX0000000UfffGGGGGGGGGGGGGGGG$$$$########HHX000000000UfGGGGGGGGGGGGGGG$$$$##########HH0U000000UUUGGGGGGGGGGGGGG$$$$H##########HRUUU0000UUUZGGGGGGGGGGGGG$$$$I###########R-RRUGGGGGGGGGGGGGGGGGGGG$$$$$########GGGGGGGGGGGGGGGGGGGGGGGGGGGGG$$$$###GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG$$$$HGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG$$GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG...GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGSS....GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGS..SS...GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG1S.....SS.GGGGGGGGGGGGGGGGGGGGGGGGGGGGGG111S.....SS.GGGGGGGGGGGGGGGGGGGGGGGGGGGGG1111S.....SO*GGGGGGGGGGGGGGGGGGGGGGGGGGGG11111....SO***GGGGGGGGGGGGGGGGGGGGGGGGGG$IT\\\\\\,,,Q******GGGGGGGGGGGGGGGGGGGGGGGGG$IT\\\\\\,,,,,KKKOOOGGGGGGGGGGGGGGGGGGGGGGGG$$TT77,,,,,K&&&&&&GGGGGGGGGGGGGGGGGGGGGGG$$I/T\\\\,,,,K&&&&&&&GGGGGGGGGGGGGGGGGGGGGG$$$T/\\7Q,,,Q&&&&&&&&GGGGGGGGGGGGGGGGGGGGG$$$ITT#X333X&&&&&&&&&GGGGGGGGGGGGGGGGGGGG$$$$I###H333XK&&&&&&&&GGGGGGGGGGGGGGGGGGG$$$$I####HX33UUK&&&&&&&GGGGGGGGGGGGGGGGGG$$$$I######XXXU00UfK&&&&&GGGGGGGGGGGGGGGG$$$$I#######HHX0000ffAffKKGGGGGGGGGGGGGGG$$$$I#########HUU0000UffffAGGGGGGGGGGGGGG$$$$I##########H0U00000UffffGGGGGGGGGGGGG$$$$$###########HUU0000U0UZZZGGGGGGGGGGGG$$$$$###########H-RU0U0UUUZ555GGGGGGGGGGG$$$$$###########H-R---UUUZ55555GGGGGGGGGGG$$$$###########H-R-----UZGGGGGGGGGGGGGGGG$$$$H##########GGGGGGGGGGGGGGGGGGGGGGGGGGG$$$I#####GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG$$$$##GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGMMGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG....SGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG......SGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG1........GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG111SSSS.....GGGGGGGGGGGGGGGGGGGGGGGGGGGG11111SS.SS..O*GGGGGGGGGGGGGGGGGGGGGGGGGGGV1111VSSSSSO***GGGGGGGGGGGGGGGGGGGGGGGGGGI1V1VVQSSO******GGGGGGGGGGGGGGGGGGGGGGGG$$$\\7\\\\,,,,*******GGGGGGGGGGGGGGGGGGGGGGG$$$I77\\,,,,,OKOO***GGGGGGGGGGGGGGGGGGGGGG$$$$7\\7,,,,,Q&&&&&&&GGGGGGGGGGGGGGGGGGGGG$$$$\\77\\,,,,,&&&&&&&&GGGGGGGGGGGGGGGGGGGG$$$$$7\\7Q,,,,&&&&&&&&&GGGGGGGGGGGGGGGGGGG$$$$$I\\H#HXQc&&&&&&&&&&GGGGGGGGGGGGGGGGGG$$$$$I#####Hc>c&&&&&&&&&GGGGGGGGGGGGGGGGG$$$$$H######Hc>cc&&&&&&&&GGGGGGGGGGGGGGGG$$$$$H########c>ccAAK&&&&&GGGGGGGGGGGGGGG$$$$$##########c>U0UffAffKKGGGGGGGGGGGGGG$$$$$###########cU000fAAAffiiGGGGGGGGGGGG$$$$$############cUU00UfAffffiGGGGGGGGGGG$$$$$H###########H-UUU0UU5ZZZZiGGGGGGGGGGG$$$$H###########R---RUUUZ555555GGGGGGGGGG$$$$H###########RR-----UZ5555555GGGGGGGGGG$$$I##########HRR-------55555555GGGGGGGGGG$$$##########H-R--------Z5555555GGGGGGGGGG$$##########H-R-GGGGGGGGGGGGGGGGGGGGGGGGGG$I#######GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG###GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG(GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGMM(((GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGSSSSM((GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG1....SSMMGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG111......SMGGGGGGGGGGGGGGGGGGGGGGGGGGGGG1111V......SOGGGGGGGGGGGGGGGGGGGGGGGGGGGG11111S...SOO*OGGGGGGGGGGGGGGGGGGGGGGGGGGV111111..SOO*****GGGGGGGGGGGGGGGGGGGGGGGG$$VVV\\7,QO********GGGGGGGGGGGGGGGGGGGGGGG$$$777\\,,,,********GGGGGGGGGGGGGGGGGGGGGG$$$\\77\\,,,,,,KOO****GGGGGGGGGGGGGGGGGGGG$$$$I7\\7,,,,,,&&&&&&&&GGGGGGGGGGGGGGGGGGG$$$$$777Q,,,,,&&&&&&&&&GGGGGGGGGGGGGGGGGG$$$$$I7\\7,,,,,&&&&&&&&&&GGGGGGGGGGGGGGGGG$$$$$$\\\\H#H,Qcc&&&&&&&&&&GGGGGGGGGGGGGGGG$$$$$$H#####c>>cK&&&&&&&&&GGGGGGGGGGGGGGG$$$$$$H######H>>cc&&&&&&&&&GGGGGGGGGGGGGG$$$$$$########H>>ccfAf&&&&KDGGGGGGGGGGGGG$$$$$$#########H>>>>fAfAAfiDiGGGGGGGGGGGGG$$$$$##########H>ccUUffAAfiiDGGGGGGGGGGGG$$$$$###########HcJJJUffAAffiiDGGGGGGGGGGG$$$$############RJ%%%J555ZZfiiDGGGGGGGGGGG$$$###########H-RRJ%%J55555555ZGGGGGGGGGGG$$###########R-R-RRRJJZ55555555GGGGGGGGGGG$###########R-----RRRRZ55555555GGGGGGGGGGG##########HRR------RRRR55555555GGGGGGGGGGG#########H-R-------RRRRZ5555555GGGGGGGGGGG########H-R----GGGGGGGGGGGGGGGGGGGGGGGGGGG#######HGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG((((GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG(((((((GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGV((((((((GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG1VVMMMM((((GGGGGGGGGGGGGGGGGGGGGGGGGGGGG111VVSSMMMM((GGGGGGGGGGGGGGGGGGGGGGGGGGG11111VSSSSSOO**GGGGGGGGGGGGGGGGGGGGGGGGGG1111111SSO****OOGGGGGGGGGGGGGGGGGGGGGGGGGI1V1111**OO******GGGGGGGGGGGGGGGGGGGGGGG$$$I\\\\\\\\,,O********GGGGGGGGGGGGGGGGGGGGGG$$$$7\\7\\,,,,O********GGGGGGGGGGGGGGGGGGGG$$$$777\\,,,,,,OOOO***OGGGGGGGGGGGGGGGGGGG$$$$I77\\,,,,,,Q&&&&&&K:GGGGGGGGGGGGGGGGGG$$$$$7\\7Q,,,,,Q&&&&&&&&KGGGGGGGGGGGGGGGGG$$$$$\\7\\\\,,,,,K&&&&&&&&&&GGGGGGGGGGGGGGGG$$$$$$LLLLL,Qcc&&&&&&&&&&&GGGGGGGGGGGGGG$$$$$$IL'LLLHc>>>>&&&&&&&&&iGGGGGGGGGGGGGG$$$$$I'LLLLLHc>ccccK&&&&&KiDGGGGGGGGGGGGG$$$$$LLLHHHHHHc>c>>cAAfK&iDDiGGGGGGGGGGGG$$$$$LLHHHHHH##c>>cccAffffDiiDGGGGGGGGGGGGG$$$LLHHH######ccJ%%JaffAfiiDiGGGGGGGGGGGG$$$LHH########HJ%%%%%<fAAfiDiWGGGGGGGGGGGGG$IHH#########J%%%%%%aaZ5ZZiW2GGGGGGGGGGGGGI###########J%%%%%%%aa55555W22GGGGGGGGGGGG##########H-RJJ%%%%%J555555552GGGGGGGGGGGG#########R-RRRRJJ%%%JZ55555555GGGGGGGGGGGG########RR---RRRRJJJJZ55555555GGGGGGGGGGGG#######RR-----RRRRRRRR55555555GGGGGGGGGGGG#####H-R------RRRRRRRR55555555GGGGGGGGGGGG####H-R-------RGGGGGGGGGGGGGGGGGGGGGGGGGGG###H-R-GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG((((GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG(((((((GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG(((((((((GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGV1(((((((((GGGGGGGGGGGGGGGGGGGGGGGGGGGGG1111(((((((((GGGGGGGGGGGGGGGGGGGGGGGGGGG1111VV(((((((MMGGGGGGGGGGGGGGGGGGGGGGGGGG11111VV((MMO****GGGGGGGGGGGGGGGGGGGGGGGGI1V1111VOO***OOOOOGGGGGGGGGGGGGGGGGGGGGGG$$V111VVOOOO*******GGGGGGGGGGGGGGGGGGGGGG$$$I7\\7\\,,O*********GGGGGGGGGGGGGGGGGGGG$$$$$7\\7\\,,,,Q********GGGGGGGGGGGGGGGGGGG$$$$$7\\7\\,,,,,,OOOOO*O_GGGGGGGGGGGGGGGGGG$$$$$\\77\\,,,,,,QYYKK&K_:GGGGGGGGGGGGGGGGG$$$$$$7\\7Q,,,,,,YKYKK&&__:GGGGGGGGGGGGGGG$$$$$$I7\\\\,,,,,QKYKKKK&&&__GGGGGGGGGGGGGG$$$$$$LL'LLLLQcc>KKKKK&&&&KiGGGGGGGGGGGGG$$$$$$''LLLLLL>ccccKKKK&&&iDDGGGGGGGGGGGGG$$$$$LLLLLLLLL>c>>>KK&&&KDiDiGGGGGGGGGGGGG$$$ILLLLL''''cc>ccJafAfiiiDiWGGGGGGGGGGGGG$$ILL''''''''ccJ%%J<affiDDiW2GGGGGGGGGGGGG$$L''''''LLLJ%%%%%J<a<ffiWW22GGGGGGGGGGGGG$'''''LLLLLJ%%%%%%J<a<aa22222GGGGGGGGGGGGGLLLLLLLHHHHJ%%%%%%%<aaa<22222GGGGGGGGGGGGGHHLLLHH##HJ%%%%%%%%a<a<a5W222GGGGGGGGGGGGG#HHHH###HJ%%%%%%%%%a<<aZ55W222GGGGGGGGGGGG#######HRJJ%%%%%%%%%aaZ55555Z2GGGGGGGGGGGG######R-RRRJJJ%%%%%%JZ55555555GGGGGGGGGGGG####HRR-RRRRRRJJJJJJJZ55555555GGGGGGGGGGGG###HRR----RRRRRRRRRRRZ55555555GGGGGGGGGGGG##H-R--------RRRR--RGGGGGGGGGGGGGGGGGGGGGG##-R---------GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGRR----GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG((((GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG(((((((GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG(((((((((GGGGGGGGGGGGGGGGGGGGGGGGGGGGGG11((((((((((GGGGGGGGGGGGGGGGGGGGGGGGGGGG1111((((((((((GGGGGGGGGGGGGGGGGGGGGGGGGGG11111((((((((((GGGGGGGGGGGGGGGGGGGGGGGGGV111111(((((((MMMGGGGGGGGGGGGGGGGGGGGGGGGVV1111VVMMMOOO****GGGGGGGGGGGGGGGGGGGGGGI$V11111V*****OOOOOOGGGGGGGGGGGGGGGGGGGGGII$I1VV\\\\OOO*********GGGGGGGGGGGGGGGGGGGGPII$I7\\7\\Q,Q**********GGGGGGGGGGGGGGGGGGGPIIII7\\7\\,,,,,*******O_GGGGGGGGGGGGGGGGGPPPPPP7\\7\\,,,,,,YY4YY__::GGGGGGGGGGGGGGGGIIIPPPP77\\,,,,,,Q444YYY_::GGGGGGGGGGGGGGGGIIPP++7\\7Q,,,,,Q4444YYY_::GGGGGGGGGGGGGGG$IPP+PPL\\LQ,,,,Q44444YYYY_:GGGGGGGGGGGGGGG$IPPP'''''''LcccYY444YYYYi__GGGGGGGGGGGGGG$IPPL'''''''cc>>>YYYYYYYiWW2GGGGGGGGGGGGGGIPL'''''''''c>>cJ<^YYYWWW222GGGGGGGGGGGGGGI''''''''''LcJ%%J<aa^WW22222GGGGGGGGGGGGGG'''''''''LL%%%%%a<a<<W222222GGGGGGGGGGGGGGL''''L'LLL%%%%%%J<a<<a222222GGGGGGGGGGGGGG'LLLLLLLL%%%%%%%J<a<<a222222GGGGGGGGGGGGGG''LLLL'L%%%%%%%%J<a<<<W22222GGGGGGGGGGGGGG''''''J%%%%%%%%%%<<<<aa22222GGGGGGGGGGGGGGL'''LJ%%%%%%%%%%%a<aa<aW2222GGGGGGGGGGGGGGHLLLJ%%%%%%%%%%%%J<a<a555W22GGGGGGGGGGGGGGHHHJJJ%%%%%%%%%%%%a<a5555555GGGGGGGGGGGGGG##RRRJJJJJJJ%%%JJJJGGGGGGGGGGGGGGGGGGGGGGG#RRRRRRRRRRRRRRGGGGGGGGGGGGGGGGGGGGGGGGGGG-R---RR-RRRGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGR--------GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG------GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG-GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG((GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG((((((GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG(((((((((GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG1M(((((((((GGGGGGGGGGGGGGGGGGGGGGGGGGGGG11VM((((((((((GGGGGGGGGGGGGGGGGGGGGGGGGGGV11VM((((((((((GGGGGGGGGGGGGGGGGGGGGGGGGVV1111M((((((((((GGGGGGGGGGGGGGGGGGGGGGG[[V11111(((((((MMMMGGGGGGGGGGGGGGGGGGGGGG[6[V111VVMMMOOO*****GGGGGGGGGGGGGGGGGGGGGPP[VV111V*******OOOOOGGGGGGGGGGGGGGGGGGG+++PPPV\\\\\\\\OO**********GGGGGGGGGGGGGGGGGG++++++7\\7\\Q,Q*********O_GGGGGGGGGGGGGGGGG+++PPP\\\\7\\,,,,,***OO*O_::GGGGGGGGGGGGGGGGP++PPPP\\7\\,,,,,,444444::::GGGGGGGGGGGGGGGPP+P+++\\\\\\,,,,,,Y444444_:::GGGGGGGGGGGGGGGP+PP+++\\\\,,,,,,Y4444444_:::GGGGGGGGGGGGGGGP+P+++'''LQ,,,Y44444444Y:::GGGGGGGGGGGGGGG+PPPL'''''''>c>44444444WWWWGGGGGGGGGGGGGGG+PP'''''''''>>cc^^Y44Y22222GGGGGGGGGGGGGGGPL'''''''''LJ%%Ja^^^^2222222GGGGGGGGGGGGGGL'''''''''L%%%%a<a^^92222222GGGGGGGGGGGGGG'''''''''J%%%%%J<a<a^2222222GGGGGGGGGGGGGG''''''''J%%%%%%J<a<<a2222222GGGGGGGGGGGGGG''''''LJ%%%%%%%J<a<<aW222222GGGGGGGGGGGGGGG''''L%%%%%%%%%J<a<<<W222222GGGGGGGGGGGGGGLL''L%%%%%%%%%%%<<<<<<22222GGGGGGGGGGGGGGGLLLL%%%%%%%%%%%%a<<<<GGGGGGGGGGGGGGGGGGGGGG'L%%%%%%%%%%%%%GGGGGGGGGGGGGGGGGGGGGGGGGG'J%%%%%%%%%%%GGGGGGGGGGGGGGGGGGGGGGGGGGGGGRJ%%%%%%%%GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGJJJJJJGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGRRRRGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGRRGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG((GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG(((((GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG((((((((GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGV((((((((((GGGGGGGGGGGGGGGGGGGGGGGGGGGGGVV1((((((((((GGGGGGGGGGGGGGGGGGGGGGGGGGG[VVV1((((((((((GGGGGGGGGGGGGGGGGGGGGGGGGG[[VVVVM(((((((((GGGGGGGGGGGGGGGGGGGGGGGG66[VV1VNMM((((((((GGGGGGGGGGGGGGGGGGGGGGG[66[V11N)NNM((((MMd?GGGGGGGGGGGGGGGGGGGGPP[[6VV1VN)NMMOOO***d?GGGGGGGGGGGGGGGGGGGPPPPP[V11NNO*****OOOOOdGGGGGGGGGGGGGGGGGGPPP++PP\\\\\\\\OO*********OdGGGGGGGGGGGGGGGGGPP+++++\\7\\Q,,O*******O_::GGGGGGGGGGGGGGGGPP+++++\\\\\\,,,,,OOYYYY_::::GGGGGGGGGGGGGGGGP+++++P\\\\,,,,,,444444_::::GGGGGGGGGGGGGGGGP+++++7\\,,,,,,4444444_::::GGGGGGGGGGGGGGGG++++++\\,,,,,,Y4444444Y::::GGGGGGGGGGGGGGGG++++L'''QQ,,Y44444444Y__::GGGGGGGGGGGGGGGG++P'''''''cccYYYYYY4Y2222WGGGGGGGGGGGGGGGGP''''''''L%%%^999^^9222222GGGGGGGGGGGGGGGG'''''''''%%%%J^^999^222222GGGGGGGGGGGGGGGG'''''''L%%%%%Ja^^9^^222222GGGGGGGGGGGGGGGG''''''L%%%%%%J<aa^^^222222GGGGGGGGGGGGGGGG'''''L%%%%%%%J<a<<aW222222GGGGGGGGGGGGGGGG''''J%%%%%%%%J<a<<<W2222GGGGGGGGGGGGGGGGGG'''J%%%%%%%%%J<a<GGGGGGGGGGGGGGGGGGGGGGGGG'LJ%%%%%%%%%%GGGGGGGGGGGGGGGGGGGGGGGGGGGGGL%%%%%%%%%GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG%%%%%%%GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG%%%%%GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG%%%GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG`GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG(((M`GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG((((((M`GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGNNM((((((M`GGGGGGGGGGGGGGGGGGGGGGGGGGGGG[VNNM((((((M`GGGGGGGGGGGGGGGGGGGGGGGGGGG6[[VNNMM(((((M`GGGGGGGGGGGGGGGGGGGGGGGGGG66[VN)NNMM((((M;GGGGGGGGGGGGGGGGGGGGGGGG666[[VNN)NNM((((``GGGGGGGGGGGGGGGGGGGGGG66666[[NNNN)NMM(((ddGGGGGGGGGGGGGGGGGGGGG[66666[V))NN))NM(Md??GGGGGGGGGGGGGGGGGGGPPPP[[6[VN))NN)NOO*Od?dGGGGGGGGGGGGGGGGGGP++++++PVV)))NNO****Oddd?GGGGGGGGGGGGGGGGPP+++++++\\\\NNOOOO****OddddGGGGGGGGGGGGGGGG++++++++7\\Q,,Q******__:::_GGGGGGGGGGGGGGGGG++++++\\\\,,,,,kYY444_:::::GGGGGGGGGGGGGGGGG+++++P\\,,,,,QYY4444_:::::GGGGGGGGGGGGGGGGG+++++\\,,,,,,YY44444Y:::::GGGGGGGGGGGGGGGGG++++PQ,,,,,YY444444Y:::::GGGGGGGGGGGGGGGGG++P''''QQQYYYY^YYY4WW__::GGGGGGGGGGGGGGGGGP'''''''@@e9^999^^^2222WWGGGGGGGGGGGGGGGGG'''''''eeee9^9999^^222222GGGGGGGGGGGGGGGGG''''''eJJJJ^99999^^222222GGGGGGGGGGGGGGGGG'''''JJJ%%%J^^9999W222222GGGGGGGGGGGGGGGGG''''JJ%%%%%J<a^9992GGGGGGGGGGGGGGGGGGGGGGG''L%%%%%%%%J<<GGGGGGGGGGGGGGGGGGGGGGGGGGGG'L%%%%%%%%%GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGL%%%%%%%GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG%%%%%%GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG%%%GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG%GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGM`;;`GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGM(((M`;;GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGNNNM(((M`;`GGGGGGGGGGGGGGGGGGGGGGGGGGGGG[NN)NM(((M`;`GGGGGGGGGGGGGGGGGGGGGGGGGGG66[NN)NNM((M;;`GGGGGGGGGGGGGGGGGGGGGGGGG6666[NNN))NM(M;;`GGGGGGGGGGGGGGGGGGGGGGGG66666N)))N))NM`;;`GGGGGGGGGGGGGGGGGGGGGG666666[))))NN)NM`;``GGGGGGGGGGGGGGGGGGGG66666666))))))N)NMddddGGGGGGGGGGGGGGGGGGG[6666666[))))))NNNd??ddGGGGGGGGGGGGGGGGGGPPPPPP[[6)))))))N)d??d??GGGGGGGGGGGGGGGGGG++++++++P))))))NO*ddd??dGGGGGGGGGGGGGGGGGG++++++++P))))NOOOOddddb=GGGGGGGGGGGGGGGGGG+++++++P\\QQQOOkkYY____b==GGGGGGGGGGGGGGGGG++++++P,,,,,kkkYY4__:_b==GGGGGGGGGGGGGGGGG+++++P,,,,,kkkYY44_::__b=GGGGGGGGGGGGGGGGG+++++,,,,,kFkYY444Y:::_b=GGGGGGGGGGGGGGGGG++++LQ,,,QkkYY4444Y_::__bGGGGGGGGGGGGGGGGG+P'''''e@@^^^^^^^^W2__:__GGGGGGGGGGGGGGGGG''''''e@@@9999999^W222W_GGGGGGGGGGGGGGGGGG'''''e@@@@9^999999222222GGGGGGGGGGGGGGGGGG''''e@@eeJ^9999999GGGGGGGGGGGGGGGGGGGGGGGG'''eeeeJJJ%^^GGGGGGGGGGGGGGGGGGGGGGGGGGGGG''eeeJ%%%%GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG'eJJ%%%GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGJJ%%%GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG%%GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG;``;GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGMMM`;;`;GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGN)NMMM`;;`;GGGGGGGGGGGGGGGGGGGGGGGGGGGGGNNN))NMM`;``;GGGGGGGGGGGGGGGGGGGGGGGGGGG66NNNN)NNM`;`;;GGGGGGGGGGGGGGGGGGGGGGGGG6666N))NN))N;;`;;GGGGGGGGGGGGGGGGGGGGGGG66666[)))))NNN;`;;;GGGGGGGGGGGGGGGGGGGGGG666666)))))))N);`;;;GGGGGGGGGGGGGGGGGGGG6666666[)))))))NN;``ddGGGGGGGGGGGGGGGGGGG66666666))))))))NNdddddGGGGGGGGGGGGGGGGGGG6666666[))))))))Nd?d??dGGGGGGGGGGGGGGGGGGG[PPPP[[)))))))))ddd??dbGGGGGGGGGGGGGGGGGGG+++++++))))))))dddddb==GGGGGGGGGGGGGGGGGGG+++++++))))))Ngggb=====GGGGGGGGGGGGGGGGGGG+++++++NN)NFkFkgg======GGGGGGGGGGGGGGGGGGG+++++PQQQkkFFkkgb======GGGGGGGGGGGGGGGGGGG++++hQQQQkkFkkY4b======GGGGGGGGGGGGGGGGGGG+++hhhQQkkFkYY44bbbb===GGGGGGGGGGGGGGGGGGG++hhhhhekk^999^^Y___bb=GGGGGGGGGGGGGGGGGGG'''L@e@@^999999^9W____GGGGGGGGGGGGGGGGGGGG'''@@@@@^9999999GGGGGGGGGGGGGGGGGGGGGGGGGG''@@@@@@^^9GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG'e@@@@@@GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGe@@@eeGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG@@eGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGeGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG;;`;;GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGNM`;;`;;GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGNN))N`;;`;;GGGGGGGGGGGGGGGGGGGGGGGGGGGGG[)NNN)N`;;`;;GGGGGGGGGGGGGGGGGGGGGGGGGGG66N)))NNNN;`;;;GGGGGGGGGGGGGGGGGGGGGGGGG6666N)))))NN;`;;;GGGGGGGGGGGGGGGGGGGGGGG66666[)))))))N;`;;;;GGGGGGGGGGGGGGGGGGGG6666666))))))))N``;```GGGGGGGGGGGGGGGGGGG6666666[)))))))))``dd??GGGGGGGGGGGGGGGGGGG6666666)))))))))NddddddGGGGGGGGGGGGGGGGGGG666[[[[)))))))))?d??db=GGGGGGGGGGGGGGGGGGGPPPPPP)))))))))?dddb===GGGGGGGGGGGGGGGGGGG++++++)))))))NBgBb=====GGGGGGGGGGGGGGGGGGG++++++)))))NBgBBBb=====GGGGGGGGGGGGGGGGGGG++++++hjEEEjggBBgb=====GGGGGGGGGGGGGGGGGGG++++PChjjjjkggBBg======GGGGGGGGGGGGGGGGGGG+++ChCCjjjkFkggg=======GGGGGGGGGGGGGGGGGGG++CCCChjkkFkkYYb=====GGGGGGGGGGGGGGGGGGGGG+ChCChek^^^^^^^GGGGGGGGGGGGGGGGGGGGGGGGGGGLhheeee^999GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG'eee@@@^GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGee@@@GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG@@@GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG`;````GGGGGGGGGGGGGGGGGGGGGGGGGG[)))))))))ddd?ddGGGGGGGGGGGGGGGGGGGGG66666)))))))))NddddddGGGGGGGGGGGGGGGGGGGGG6[[[[))))))))N???db==GGGGGGGGGGGGGGGGGGGGGPP+P))))))))Nggd======GGGGGGGGGGGGGGGGGGGG++++)))))))BgBBg======GGGGGGGGGGGGGGGGGGGG++++)))NjjBgBBBg======GGGGGGGGGGGGGGGGGGGG++++hjEEjjggBBBg======GGGGGGGGGGGGGGGGGGGG++hChjEjjjggBBBb====GGGGGGGGGGGGGGGGGGGGGG+ChChEjjjjggBBGGGGGGGGGGGGGGGGGGGGGGGGGGGGChCCjjjjjkGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGhCChjj^GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGhe@@GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGeeGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGBBbGGGGGGGGGGGGGGGGGGGGGGGGGGGGhhEEjjgBgBBBBGGGGGGGGGGGGGGGGGGGGGGGGGGGPChhEEEEjBgGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGCCChEEEGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGCCCjEGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGCCGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG";
+
+// Name overlap between cells as a byte each, the full square matrix row-major: how much people
+// share words for the two cells' colors.
+const CELL_OVERLAP_B64 = "/ygpA78AAQASFHQAP08IAOYCAgkpDQQAAAcAtQAdBAANAAEBKP8CADoACAG2DAcCsgVcABkAAG7DCQAAAAAADAACAAAoAAIAKQL/AlIAAAABBtAABSUAAhsNHwADAV0AALAAdQDrGgAiAhEQAwAC/wMEBDUAIwIMAVECEA6WBwEEMhtLAw0BPwUDxQQGnAgdvzpSA/8AAgIzKHMBPDkRAJ0GBRhGChMAACMAtABjBwA4AAkJAAAABAD/1sUEEADHAQB8AAAKADIQDQAb5AAJALUAACILACocAQgABALW/6YUFQCYBgCBAAAMAFAdCgIZ0gAMAbMBAC0eAEolAAEANQLFpv8ELACzAQxgAwI5ACQXFwpCqQIODaICICgYGzI3ErYBADMEFAT/FQEFbgFbAAgBAKeqBgAAAwAABAMDAAFgAAoDFAwGIygQFSwV/woZEg4cAhs1AQx/HwkMDQQBOwwZFAaqEERRdAfQAnMAAAABCv8AEk4AAV8JIwAJBT4AAH4AkACqGAAYAgwLAAIADAHHmLMFGQD/BAJyAAINACgULwAYowAHAoIBBBgMAx0YP7IFATwBBgFuEhIE/xBGAEYBAESZMQAAAQAAIAADAAAaAAIBTwUlUTkAAAwBDk4CEP8ACWIofQAHHQ4TADoAewAVogAEPQEGCFwAAhF8gWBbHAByRgD/AAQGAMF+EQAMZgAEAVABAA8gABgQAAACEAAAAAMAAgEAAAkA/wApJAAAAlVnADcQBQQCMwsBvgcM5hkbDp0AAAIIG18CRmIEAP8HAwMhKgEDAAIAqwAQDwAMBgIDAgANlgYKDDkBNQkNASgGKQf/BgINGH54CR8aNRQVc00jdX7EAgAfBwUAAAAAASMAAH0AJAMG/wAAARMJAG0BHwAShgACNQECCW4AARgyUCSnDAAoRADBAAMCAP97BgAEKQACACEAAAc2AA8GKcMDBEYQHReqfwkUmQd+ACENAHv/FQECDQABIQoMAAJ2AB0eDQkBMgoNChcGHwUvMR0RAioYAQYV/wMMCgIAFQgCHwINFwYJBABdGxMAAgoACT4AAA4AVQF+EwABA/8+AJ8NMQVlLi4ZRV5/AAAASwAbGUIADAAYABMMZwN4CQQCDD7/HBOyEmECQaQEcTxQAAAAAwDk0qkDDQCjAQBmAAAJACkNCgAc/wASANMAACoLACwbBwCwDSMAAAIABH4AADoANwIfbQAAAp8TAP8CUwCeVwQVMxQYAAAAAQAJDA4AAQAHAAAEEAAaAQIBAA2yEgL/AGsAAeABBy8ntQx1P7QAAQ0EO5ACIHsBBas1HwAhFTESAFMA/wFuUAMsJhMcAAAABQC1s6IDDACCAABQBAAUACEKCAVh0wBrAf8AAXsLAjopHQLrA2MAAQIDGaoBAxUBAhAVEgAMAmUCAJ4AbgD/EwRBASUhBAAaxQcAACAAFBgEAKIAMw9zhgAAHy5BAFcBUAET/wIDrQUTAAAABAAiLSgBBgAYAAAPCwBNAAcCAi6kKgTgA3sEAv8OBn1zDSgiBjgLHhhgqhgMGgQgAQwjAjZ2DRkECxUBLAtBAw7/AYNQAAACnAAAABsAEAIDAD0AvgZ1NQAAF0VxADMHJgIBrQYB/wgYAQIRCAkqSjIKRAwdAgEYBwJ+AQ8dBl48LBQvEzolBX2DCP/UAQAQHQkcJTcDUQsYAQYQDAPEAgYeCX9QGxgnHCkhE3NQGNT/";
+const CELL_OVERLAP = Uint8Array.from(atob(CELL_OVERLAP_B64), ch => ch.charCodeAt(0));
+
+const CELL_GRID = Uint8Array.from(CELL_GRID_CHARS, ch => {
+	const symbol = ch.charCodeAt(0) - 35;
+	return symbol <= OUTSIDE_GAMUT ? symbol : (symbol - OUTSIDE_GAMUT - 1) | UNSURE;
+});
+
+// CIE Lab under D65, the space the survey binned. Distances are still measured in OKLab; this
+// exists only to find a color's bin.
+function rgbToLab(rgb) {
+	const r = srgbToLinear(rgb[0]), g = srgbToLinear(rgb[1]), b = srgbToLinear(rgb[2]);
+	const f = t => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+	const x = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047);
+	const y = f(0.2126 * r + 0.7152 * g + 0.0722 * b);
+	const z = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
+	return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+}
+
+const gridIndex = (value, origin, count) =>
+	Math.min(count - 1, Math.max(0, Math.round((value - origin) / GRID_STEP)));
+
+const gridAt = (li, ai, bi) => CELL_GRID[(li * GRID_NA + ai) * GRID_NB + bi];
+
+// The color's cell, and whether the survey settled on that name.
+// Rounding reaches a bin outside the gamut only at its edge, where a neighbour along one axis holds
+// the same name; the six of them are searched in turn rather than widening to a shell.
+function cellOf(rgb) {
+	const lab = rgbToLab(rgb);
+	const li = gridIndex(lab[0], GRID_L0, GRID_NL);
+	const ai = gridIndex(lab[1], GRID_A0, GRID_NA);
+	const bi = gridIndex(lab[2], GRID_B0, GRID_NB);
+	let symbol = gridAt(li, ai, bi);
+
+	for (let n = 0; symbol === OUTSIDE_GAMUT && n < 6; ++n) {
+		const step = n % 2 ? 1 : -1;
+		symbol = gridAt(
+			Math.min(GRID_NL - 1, Math.max(0, li + (n < 2 ? step : 0))),
+			Math.min(GRID_NA - 1, Math.max(0, ai + (n >= 2 && n < 4 ? step : 0))),
+			Math.min(GRID_NB - 1, Math.max(0, bi + (n >= 4 ? step : 0))));
+	}
+
+	return { cell: symbol & ~UNSURE, confident: (symbol & UNSURE) === 0 };
+}
+
+// The slot past the names carries no word of its own: cellOf lands there for a color no bin near it names.
+const cellName = cell => CELL_NAMES[cell] ?? "unnamed";
+
+// Cell-indexed tables run one slot past the names: a color the grid places outside the survey's
+// gamut carries OUTSIDE_GAMUT, which must read as an ordinary included name.
+const NAME_SLOTS = CELL_NAMES.length + 1;
+
+// ---------- generation ----------
+
+function mulberry32(seed) {
+	let a = seed >>> 0;
+	return function () {
+		a = (a + 0x6D2B79F5) >>> 0;
+		let t = Math.imul(a ^ (a >>> 15), 1 | a);
+		t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+	};
+}
+
+// The name table when none is chosen: every name usable.
+const ALL_INCLUDED = Array.from({ length: NAME_SLOTS }, () => true);
+
+// Whether a point inside the gamut may hold a generated color: its name in use, at or above the preference floor,
+// outside every shadow.
+const allowedLch = (L, C, h, cfg) => wantedLch(C, h, cfg) && !shadowed(L, C, h, cfg) && cfg.included[cellOf(oklabToRgb(...labOfLch(L, C, h))).cell];
+// The same for any point: sRGB has to show it.
+const usableLch = (L, C, h, cfg) => showsLch(L, C, h) && allowedLch(L, C, h, cfg);
+
+// OKLab in deltaE units (x100) of an OKLCh point.
+const positionOf = lch => labOfLch(...lch).map(v => v * 100);
+
+// The record every stage shares, from OKLCh (lightness and chroma x100, hue in degrees). Requires a
+// color sRGB shows, up to rounding.
+function colorAt(L, C, h) {
+	const lab = labOfLch(L, C, h);
+	const rgb = oklabToRgb(...lab).map(v => Math.min(1, Math.max(0, v)));
+	return { lch: [L, C, h], rgb, lab, hex: toHex(rgb), ...cellOf(rgb) };
+}
+
+// Same record shape as a sampled color, so everything downstream reads a fixed color the same way.
+function colorFromHex(hex) {
+	const rgb = parseHex(hex);
+	const lab = rgbToOklab(rgb);
+	return { lch: lchOf(lab), rgb, lab, hex, fixed: true, ...cellOf(rgb) };
+}
+
+// Every six-digit hex token in the text, whatever separates them, without repeats. Tokens are split
+// out and matched whole, so an eight-digit RGBA value is dropped rather than read as its first six.
+function parseHexColors(text) {
+	const tokens = text.split(/[^#0-9a-f]+/i).filter(token => /^#?[0-9a-f]{6}$/i.test(token));
+	return [...new Set(tokens.map(token => "#" + token.replace("#", "").toLowerCase()))].map(colorFromHex);
+}
+
+// Distance model, as in data/identify.js: how far apart two colors read as palette members, in
+// units of the noise width the Distinctness slider sets. A lightness or chroma difference counts W_L or
+// W_C times its size against a hue difference, hues first respaced by HUE_DENSITY. W_L is the recall
+// calibration's, held under the preference rounds; W_C is the preference rounds' chroma pairs, a chroma
+// gap reading at the metric's unit; see data/scripts.md.
+const W_L = 0.35;
+const W_C = 1;
+// A hue difference grows with chroma at this power, not linearly: the same turn at half the chroma
+// reads at 0.6 of the distance, not half. The scale is one at CHROMA_REFERENCE.
+const CHROMA_POWER = 0.75;
+const CHROMA_REFERENCE = 15;
+// Below this the hue scale is held: a grey's hue term is near zero whatever the scale.
+const CHROMA_FLOOR = 1;
+// A pair at the reference lightness needs the least distance; toward black and toward white a
+// pair is wanted at less. Measured by the preference rounds at lightness 25, 50 and 75 of the cusp;
+// the recall calibration ran the dark side the other way, dark pairs confusing in memory. The gain is
+// on the whole distance, not on the lightness weight, and on absolute lightness, not the cusp-relative
+// coordinate of the range controls: a round of lightness pairs ranks the two coordinates alike.
+const LIGHTNESS_EXPONENT = 0.5;
+// The lightness at which the gain is one, its minimum: the cusps' own lightness, where the rounds put the
+// limit distance at the line between marginal and fine.
+const LIGHTNESS_REFERENCE = 68;
+// The rounds reach down to 25; the gain is held below this, since black would otherwise read far from everything.
+const LIGHTNESS_FLOOR = 20;
+// The gain for a lightness, one at the reference, rising both ways.
+function lightnessGain(L) {
+	const l = Math.max(LIGHTNESS_FLOOR, L);
+	return (Math.max(l, LIGHTNESS_REFERENCE) / Math.min(l, LIGHTNESS_REFERENCE)) ** LIGHTNESS_EXPONENT;
+}
+// The factor on the hue term for a chroma, one at the reference.
+const hueScaleAt = C => (Math.max(CHROMA_FLOOR, C) / CHROMA_REFERENCE) ** (CHROMA_POWER - 1);
+
+// Each hue's share of the circle in the metric, in multiples of its OKLab share, one entry per whole
+// degree at mean 1: OKLab's hue circle is not evenly spaced to the eye. A bump at red and at violet, a
+// trough at yellow and through cyan. Fitted to the hue boundary rounds under the preference question, the
+// output of node data/fit_hue_density.js --own-cuts --ridge 10 --p 0.75 --table over data/boundary-4-log.json
+// to boundary-9-log.json; a retune is a new paste here and in data/identify.js, which must match. Also the
+// hue line the pool's colors follow, see poolFor.
+const HUE_DENSITY = [
+	0.833, 0.857, 0.881, 0.906, 0.932, 0.958, 0.985, 1.013, 1.042, 1.071, 1.101, 1.133, 1.165, 1.198, 1.231, 1.266, 1.302,
+	1.339, 1.377, 1.416, 1.456, 1.497, 1.539, 1.583, 1.628, 1.674, 1.721, 1.77, 1.82, 1.871, 1.924, 1.863, 1.803, 1.746,
+	1.69, 1.636, 1.584, 1.533, 1.484, 1.437, 1.391, 1.347, 1.304, 1.262, 1.222, 1.183, 1.145, 1.109, 1.073, 1.039, 1.006,
+	0.974, 0.943, 0.913, 0.883, 0.855, 0.828, 0.802, 0.776, 0.751, 0.727, 0.717, 0.708, 0.698, 0.689, 0.679, 0.67, 0.661,
+	0.652, 0.644, 0.635, 0.626, 0.618, 0.61, 0.601, 0.593, 0.585, 0.577, 0.57, 0.562, 0.554, 0.547, 0.54, 0.532, 0.525,
+	0.518, 0.511, 0.504, 0.497, 0.491, 0.484, 0.497, 0.511, 0.524, 0.539, 0.553, 0.568, 0.583, 0.599, 0.615, 0.632, 0.649,
+	0.667, 0.685, 0.703, 0.722, 0.742, 0.762, 0.782, 0.804, 0.825, 0.848, 0.871, 0.894, 0.918, 0.943, 0.969, 0.995, 1.022,
+	1.049, 1.078, 1.072, 1.065, 1.059, 1.053, 1.047, 1.041, 1.035, 1.029, 1.023, 1.017, 1.011, 1.005, 0.999, 0.993, 0.987,
+	0.982, 0.976, 0.97, 0.965, 0.959, 0.953, 0.948, 0.942, 0.937, 0.931, 0.926, 0.92, 0.915, 0.91, 0.904, 0.894, 0.884,
+	0.874, 0.864, 0.855, 0.845, 0.836, 0.826, 0.817, 0.808, 0.799, 0.79, 0.781, 0.772, 0.763, 0.755, 0.746, 0.738, 0.73,
+	0.721, 0.713, 0.705, 0.697, 0.689, 0.682, 0.674, 0.666, 0.659, 0.652, 0.644, 0.645, 0.646, 0.646, 0.647, 0.648, 0.648,
+	0.649, 0.65, 0.65, 0.651, 0.652, 0.652, 0.653, 0.654, 0.654, 0.655, 0.656, 0.656, 0.657, 0.658, 0.658, 0.659, 0.66,
+	0.66, 0.661, 0.662, 0.662, 0.663, 0.664, 0.664, 0.672, 0.679, 0.687, 0.694, 0.702, 0.71, 0.718, 0.726, 0.734, 0.742,
+	0.75, 0.758, 0.767, 0.775, 0.784, 0.793, 0.801, 0.81, 0.819, 0.828, 0.838, 0.847, 0.856, 0.866, 0.875, 0.885, 0.895,
+	0.905, 0.915, 0.925, 0.935, 0.946, 0.956, 0.967, 0.977, 0.988, 0.999, 1.01, 1.021, 1.032, 1.044, 1.055, 1.067, 1.079,
+	1.091, 1.103, 1.115, 1.127, 1.14, 1.152, 1.165, 1.178, 1.191, 1.204, 1.217, 1.231, 1.244, 1.258, 1.272, 1.286, 1.302,
+	1.319, 1.336, 1.353, 1.371, 1.388, 1.406, 1.424, 1.442, 1.461, 1.48, 1.499, 1.518, 1.537, 1.557, 1.577, 1.598, 1.618,
+	1.639, 1.66, 1.681, 1.703, 1.725, 1.747, 1.769, 1.792, 1.815, 1.838, 1.862, 1.886, 1.844, 1.803, 1.763, 1.724, 1.685,
+	1.648, 1.611, 1.575, 1.54, 1.506, 1.473, 1.44, 1.408, 1.377, 1.346, 1.316, 1.287, 1.258, 1.23, 1.203, 1.176, 1.15,
+	1.124, 1.1, 1.075, 1.051, 1.028, 1.005, 0.983, 0.961, 0.956, 0.952, 0.947, 0.943, 0.938, 0.934, 0.929, 0.925, 0.921,
+	0.916, 0.912, 0.908, 0.903, 0.899, 0.895, 0.89, 0.886, 0.882, 0.878, 0.874, 0.87, 0.865, 0.861, 0.857, 0.853, 0.849,
+	0.845, 0.841, 0.837];
+
+// The table authored by eye in data/hue-density.html before the measurement, kept for reference; nothing
+// reads it.
+const HUE_DENSITY_AUTHORED = [
+	0.472, 0.487, 0.501, 0.512, 0.52, 0.524, 0.53, 0.541, 0.557, 0.575, 0.595, 0.617, 0.643, 0.669, 0.697, 0.729, 0.768,
+	0.816, 0.873, 0.94, 1.013, 1.091, 1.182, 1.305, 1.491, 1.783, 2.209, 2.72, 3.166, 3.362, 3.217, 2.811, 2.317, 1.878,
+	1.547, 1.315, 1.162, 1.079, 1.05, 1.05, 1.046, 1.015, 0.955, 0.882, 0.816, 0.764, 0.726, 0.694, 0.665, 0.638, 0.616,
+	0.6, 0.588, 0.582, 0.583, 0.589, 0.591, 0.583, 0.568, 0.553, 0.543, 0.538, 0.537, 0.536, 0.536, 0.536, 0.536, 0.538,
+	0.542, 0.553, 0.572, 0.6, 0.633, 0.66, 0.677, 0.681, 0.673, 0.654, 0.635, 0.627, 0.635, 0.655, 0.675, 0.691, 0.703,
+	0.72, 0.743, 0.769, 0.791, 0.805, 0.814, 0.83, 0.855, 0.886, 0.914, 0.935, 0.954, 0.974, 0.997, 1.023, 1.052, 1.08,
+	1.101, 1.117, 1.14, 1.181, 1.228, 1.259, 1.26, 1.235, 1.2, 1.167, 1.144, 1.126, 1.105, 1.081, 1.06, 1.063, 1.102,
+	1.175, 1.262, 1.336, 1.382, 1.395, 1.391, 1.387, 1.397, 1.427, 1.475, 1.537, 1.605, 1.66, 1.679, 1.638, 1.541, 1.441,
+	1.452, 1.705, 2.347, 3.433, 4.793, 5.99, 6.522, 6.193, 5.262, 4.192, 3.307, 2.673, 2.221, 1.875, 1.612, 1.412, 1.268,
+	1.162, 1.079, 1.009, 0.949, 0.9, 0.86, 0.824, 0.79, 0.761, 0.744, 0.74, 0.743, 0.745, 0.742, 0.732, 0.72, 0.708,
+	0.697, 0.684, 0.67, 0.656, 0.643, 0.63, 0.62, 0.611, 0.604, 0.6, 0.599, 0.596, 0.585, 0.569, 0.553, 0.543, 0.538,
+	0.537, 0.536, 0.536, 0.536, 0.535, 0.533, 0.529, 0.523, 0.513, 0.499, 0.481, 0.463, 0.452, 0.448, 0.447, 0.446,
+	0.445, 0.445, 0.445, 0.442, 0.436, 0.433, 0.434, 0.437, 0.441, 0.444, 0.446, 0.446, 0.447, 0.447, 0.447, 0.447,
+	0.447, 0.447, 0.447, 0.447, 0.449, 0.453, 0.462, 0.474, 0.484, 0.486, 0.482, 0.48, 0.488, 0.504, 0.519, 0.529, 0.534,
+	0.536, 0.538, 0.543, 0.554, 0.571, 0.593, 0.615, 0.636, 0.658, 0.682, 0.705, 0.728, 0.755, 0.787, 0.821, 0.85, 0.872,
+	0.89, 0.917, 0.974, 1.076, 1.23, 1.436, 1.681, 1.987, 2.382, 2.846, 3.228, 3.326, 3.063, 2.589, 2.157, 1.917, 1.868,
+	1.9, 1.883, 1.745, 1.478, 1.164, 0.915, 0.81, 0.848, 0.963, 1.067, 1.1, 1.059, 0.979, 0.904, 0.855, 0.837, 0.841,
+	0.852, 0.858, 0.851, 0.837, 0.821, 0.811, 0.806, 0.805, 0.806, 0.811, 0.821, 0.837, 0.854, 0.865, 0.869, 0.871,
+	0.877, 0.885, 0.894, 0.905, 0.917, 0.931, 0.945, 0.959, 0.973, 0.986, 1.001, 1.021, 1.044, 1.062, 1.075, 1.082, 1.09,
+	1.103, 1.124, 1.15, 1.178, 1.197, 1.203, 1.191, 1.148, 1.063, 0.933, 0.779, 0.639, 0.537, 0.479, 0.449, 0.434, 0.425,
+	0.42, 0.416, 0.411, 0.402, 0.391, 0.377, 0.362, 0.349, 0.337, 0.328, 0.321, 0.314, 0.308, 0.306, 0.311, 0.325, 0.348,
+	0.373, 0.395, 0.411, 0.423, 0.438, 0.455];
+
+// The warped hue of each whole degree, 0 to 360: the running integral of HUE_DENSITY.
+const HUE_WARP = (() => {
+	const warp = [0];
+	for (let h = 0; h < 360; ++h)
+		warp.push(warp[h] + HUE_DENSITY[h]);
+	return warp.map(v => v * 360 / warp[360]);
+})();
+// The warped hue of an ab pair, in radians.
+function warpedHue(a, b) {
+	const h = (Math.atan2(b, a) * 180 / Math.PI + 360) % 360;
+	const at = Math.floor(h);
+	return (HUE_WARP[at] + (HUE_WARP[at + 1] - HUE_WARP[at]) * (h - at)) * Math.PI / 180;
+}
+
+// Weighted squared distance in deltaE (OKLab x100): lightness and radial chroma differences by
+// their weights, the tangential hue difference after both points turn to their warped hue, scaled
+// by the pair's mean chroma, the pair's mean lightness as a gain.
+const apart2 = (p, q) => apartWarped2(warpedPoint(p), warpedPoint(q));
+// A position as the distance reads it: lightness, chroma, and the ab pair turned to its warped hue. The generator
+// keeps its points in this form: the turn costs an atan2 and two sines, the distance is taken thousands of times.
+function warpedPoint([L, a, b]) {
+	const C = Math.hypot(a, b), turned = warpedHue(a, b);
+	return { L, C, x: C * Math.cos(turned), y: C * Math.sin(turned) };
+}
+function apartWarped2(p, q) {
+	const dL = (p.L - q.L) * W_L, dC = p.C - q.C, dx = p.x - q.x, dy = p.y - q.y;
+	const hueScale = hueScaleAt((p.C + q.C) / 2), gain = lightnessGain((p.L + q.L) / 2);
+	return (dL * dL + W_C * W_C * dC * dC + Math.max(0, dx * dx + dy * dy - dC * dC) * hueScale * hueScale) * gain * gain;
+}
+
+// Where colors sit is one density over the box: the metric's volume times the cube of a packing scale, the
+// scale a color's vividness and its hue's target factor (data/generator-next.md). Colors are spaced on the packing
+// distance, the metric's times the root of the pair's scales: a sample of the density is uniform in its volume.
+// The report stays on apart2.
+// Vividness enters the scale at this power. Measured at 1 against 1/3, see data/evolution.md.
+const VIVIDNESS_POWER = 1;
+// A grey's vividness is held above zero: at zero its packing distances vanish.
+const VIVIDNESS_FLOOR = 0.05;
+// A color's chroma as a share of `reach`, the gamut's chroma at its lightness and hue.
+const vividness = (C, reach) => reach > 0 ? Math.max(VIVIDNESS_FLOOR, Math.min(1, C / reach)) : VIVIDNESS_FLOOR;
+// The metric's volume per OKLab volume: apart2's scale along lightness, along chroma and along the hue arc.
+const metricVolume = (L, C, h) => W_L * W_C * HUE_DENSITY[Math.floor(h) % 360] * hueScaleAt(C) * lightnessGain(L) ** 3;
+const packed2 = (p, q) => apartWarped2(p, q) * p.scale * q.scale;
+
+// The hue control's coordinate: the metric's length along the ridge, the sRGB cube's six saturated
+// edges walked code by code, per whole degree of OKLab hue, as a running integral normalized to 360.
+// Unlike HUE_WARP it carries the lightness and chroma the ridge moves through at a vertex: blue's
+// vertex is 5 deltaE inside a fifth of a degree, one pixel of a bar spaced by degrees.
+const RIDGE_WARP = (() => {
+	const codes = [];
+	for (let g = 0; g < 255; ++g) codes.push([255, g, 0]);
+	for (let r = 255; r > 0; --r) codes.push([r, 255, 0]);
+	for (let b = 0; b < 255; ++b) codes.push([0, 255, b]);
+	for (let g = 255; g > 0; --g) codes.push([0, g, 255]);
+	for (let r = 0; r < 255; ++r) codes.push([r, 0, 255]);
+	for (let b = 255; b > 0; --b) codes.push([255, 0, b]);
+	const labs = codes.map(rgb => rgbToOklab(rgb.map(v => v / 255)));
+	const points = labs.map(lab => lab.map(v => v * 100));
+	const perDegree = new Array(360).fill(0);
+	labs.forEach((lab, i) => {
+		perDegree[Math.floor(lchOf(lab)[2])] += Math.sqrt(apart2(points[i], points[(i + 1) % points.length]));
+	});
+	const warp = [0];
+	for (let h = 0; h < 360; ++h)
+		warp.push(warp[h] + perDegree[h]);
+	return warp.map(v => v * 360 / warp[360]);
+})();
+
+// Degrees to the control's coordinate and back, both over 0 to 360.
+function ridgeWarp(h) {
+	const at = Math.min(359, Math.floor(h));
+	return RIDGE_WARP[at] + (RIDGE_WARP[at + 1] - RIDGE_WARP[at]) * (h - at);
+}
+
+function ridgeUnwarp(v) {
+	let lo = 0, hi = 360;
+	while (hi - lo > 1) {
+		const mid = (lo + hi) >> 1;
+		if (RIDGE_WARP[mid] <= v)
+			lo = mid;
+		else
+			hi = mid;
+	}
+	return lo + (v - RIDGE_WARP[lo]) / (RIDGE_WARP[lo + 1] - RIDGE_WARP[lo]);
+}
+
+// Abramowitz-Stegun 7.1.26, within 1.5e-7.
+function erfc(x) {
+	const t = 1 / (1 + 0.3275911 * Math.abs(x));
+	const poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+	const tail = poly * Math.exp(-x * x);
+	return x >= 0 ? tail : 2 - tail;
+}
+
+// The chance noise of width `sigma` carries a recall past the midpoint to a color `d` away.
+const swapChance = (d, sigma) => 0.5 * erfc(d / (2 * sigma) / Math.SQRT2);
+
+// The chance a color is wanted for itself: one less the chance of a bad mark in the palette member round, a logistic
+// on absolute chroma and hue with a chroma by hue term, fitted by data/fit_preference.js to data/palette-members-log.json.
+// Chroma is clamped to the round's range: the fit says nothing beyond it.
+const PREFERENCE = {"intercept":2.09931,"chroma":-0.3303,"cos h":-0.1422,"sin h":2.13116,"cos 2h":-0.55858,"sin 2h":-0.27111,"chroma cos h":0.12288,"chroma sin h":-0.06057,"chromaRange":[3,30.3]};
+function preferenceOf(C, h) {
+	const c = Math.min(PREFERENCE.chromaRange[1], Math.max(PREFERENCE.chromaRange[0], C)), turn = h * Math.PI / 180;
+	const bad = PREFERENCE.intercept + PREFERENCE.chroma * c + PREFERENCE["cos h"] * Math.cos(turn) + PREFERENCE["sin h"] * Math.sin(turn)
+		+ PREFERENCE["cos 2h"] * Math.cos(2 * turn) + PREFERENCE["sin 2h"] * Math.sin(2 * turn) + c * (PREFERENCE["chroma cos h"] * Math.cos(turn) + PREFERENCE["chroma sin h"] * Math.sin(turn));
+	return 1 / (1 + Math.exp(bad));
+}
+// A color under the floor is outside the box for the draw and the pushes alike: the pushes spread colors to the box's
+// edges, so a draw density alone leaves the floor's region filled. Above it the draw is still weighted by preference.
+const PREFERENCE_FLOOR = 0.5;
+const wantedLch = (C, h, cfg) => !cfg.preference || preferenceOf(C, h) >= PREFERENCE_FLOOR;
+
+// An avoided color bans what it lacks. In the cusp-relative plane of a hue (lightness relative to the cusp, chroma
+// as a share of the cusp's, the cusp at (CUSP_ANCHOR, 100)) it casts a shadow away from the cusp: the points at
+// least as far from the cusp as it is, within AVOID_CONE degrees of the color's direction, so a dull color bans duller
+// ones, a dark one darker ones, and nothing toward the cusp. The shadow reaches across hues as far as the color's
+// own chroma turns one noise width, the turn within which a recalled color is the avoided one, capped at a half
+// circle: a dull color's hue is barely defined.
+// A shadow is a gate like an excluded name, not a repulsion: a push toward the cusp always leaves it.
+const AVOID_CONE = 20;
+const COS_AVOID_CONE = Math.cos(AVOID_CONE * Math.PI / 180);
+const warpOfHue = h => warpedHue(Math.cos(h * Math.PI / 180), Math.sin(h * Math.PI / 180));
+function shadowsOf(colors, sigma) {
+	return colors.map(color => {
+		const [L, C, h] = color.lch;
+		const away = [relativeL(L, h) - CUSP_ANCHOR, relativeC(C, h) - 100], length = Math.hypot(...away);
+		const perRadian = C * hueScaleAt(C) * lightnessGain(L);
+		return { hue: warpOfHue(h), reach: Math.min(Math.PI, sigma / Math.max(perRadian, 1e-6)), away: away.map(v => v / length), length };
+	}).filter(shadow => shadow.length > 1e-6);
+}
+const shadowsFor = cfg => shadowsOf(cfg.avoid ?? [], Math.max(cfg.scale, 1));
+function shadowed(L, C, h, cfg) {
+	if (!cfg.shadows.length)
+		return false;
+	const away = [relativeL(L, h) - CUSP_ANCHOR, relativeC(C, h) - 100], length = Math.hypot(...away), hue = warpOfHue(h);
+	return cfg.shadows.some(shadow => {
+		const turn = Math.abs(hue - shadow.hue);
+		return Math.min(turn, 2 * Math.PI - turn) <= shadow.reach && length >= shadow.length
+			&& away[0] * shadow.away[0] + away[1] * shadow.away[1] >= length * COS_AVOID_CONE;
+	});
+}
+
+const positionsOf = colors => colors.map(color => color.lab.map(v => v * 100));
+
+// The pool: points of the box drawn from the density, the candidates every attempt throws from. One per box.
+// Raw draws are kept with a chance of their weight over the largest seen in the first RAW_SURVEY usable ones,
+// until POOL_SIZE are kept or RAW_TRIES are spent: a box with little usable room gets a smaller pool.
+const POOL_SIZE = 2000, RAW_SURVEY = 10000, RAW_TRIES = 150000;
+// The thickness given to a range that has none, a lightness range of one value or a chroma range beyond the gamut.
+const SHELL = 1;
+// The hue target is set per bin of this many degrees. A hue with little usable room is boosted at most
+// HUE_BOOST_MAX times over its share by volume: its full share would stack colors in a sliver.
+const HUE_BIN = 10, HUE_BOOST_MAX = 4;
+// 1: the colors' hues follow HUE_DENSITY, the metric's own hue circle. 0: they follow the density's volume.
+const HUE_TARGET_STRENGTH = 1;
+
+// A raw draw, always inside the ranges and the gamut: hue evenly, lightness evenly over the hue's interval, chroma
+// by its square over what the range and the gamut leave at that lightness. `slab` is the OKLab volume the draw
+// stands for, up to a constant: multiplying a weight by it undoes the uneven cover of the raw draws.
+// Null where the chroma range starts more than SHELL beyond the gamut: the box holds no color at that lightness and hue.
+function rawDraw(rnd, cfg) {
+	const h = (cfg.hMin + rnd() * hueSpan(cfg.hMin, cfg.hMax)) % 360;
+	const low = absoluteL(cfg.lMin, h), high = absoluteL(cfg.lMax, h), L = low + rnd() * (high - low);
+	const reach = gamutChroma(L, h);
+	if (absoluteC(cfg.cMin, h) > reach + SHELL)
+		return null;
+	const cHigh = Math.min(absoluteC(cfg.cMax, h), reach), cLow = Math.min(absoluteC(cfg.cMin, h), cHigh);
+	const span2 = cHigh * cHigh - cLow * cLow;
+	return { lch: [L, Math.sqrt(cLow * cLow + rnd() * span2), h], reach, slab: Math.max(high - low, SHELL) * Math.max(span2, 2 * cHigh * SHELL) };
+}
+
+// A generator point: the warped position, the color's lch and its packing scale.
+const pointAt = (lch, scale) => ({ ...warpedPoint(positionOf(lch)), lch, scale });
+
+const poolKey = cfg => [cfg.hMin, cfg.hMax, cfg.lMin, cfg.lMax, cfg.cMin, cfg.cMax, cfg.preference, cfg.included.map(Number).join(""),
+	(cfg.avoid ?? []).map(color => color.hex).join(), cfg.avoid?.length ? cfg.scale : ""].join("|");
+let poolCache = { key: null, pool: null };
+// The pool of a box: its points, and `scaleOf`, the packing scale of any color of the box.
+function poolFor(cfg) {
+	const key = poolKey(cfg);
+	if (poolCache.key === key)
+		return poolCache.pool;
+
+	const rnd = mulberry32(31337), bins = 360 / HUE_BIN, binOf = h => Math.floor(h / HUE_BIN) % bins;
+	const weigh = draw => metricVolume(...draw.lch) * vividness(draw.lch[1], draw.reach) ** (3 * VIVIDNESS_POWER) * draw.slab;
+	// The survey: the hue bins' shares by volume, against the target's shares over the same hues.
+	const survey = [], got = Array(bins).fill(0), want = Array(bins).fill(0);
+	let tries = 0;
+	for (; tries < RAW_TRIES && survey.length < RAW_SURVEY; ++tries) {
+		const draw = rawDraw(rnd, cfg);
+		if (draw && allowedLch(...draw.lch, cfg))
+			survey.push(draw);
+	}
+	for (const draw of survey)
+		got[binOf(draw.lch[2])] += weigh(draw);
+	for (let h = 0; h < 360; ++h)
+		if (hueInRange(h, cfg.hMin, cfg.hMax) && got[binOf(h)] > 0)
+			want[binOf(h)] += HUE_DENSITY[h];
+	const gotSum = got.reduce((a, b) => a + b, 0), wantSum = want.reduce((a, b) => a + b, 0);
+	// A bin with no usable draw holds no pool point; 1 there scales a fixed color of that hue by its vividness alone.
+	const boost = got.map((g, bin) => g > 0 ? Math.min(HUE_BOOST_MAX, (want[bin] / wantSum) / (g / gotSum)) ** HUE_TARGET_STRENGTH : 1);
+	const densityOf = draw => weigh(draw) * boost[binOf(draw.lch[2])];
+	const scaleOf = (lch, reach = gamutChroma(lch[0], lch[2])) => vividness(lch[1], reach) ** VIVIDNESS_POWER * Math.cbrt(boost[binOf(lch[2])]);
+
+	const peak = survey.reduce((most, draw) => Math.max(most, densityOf(draw)), 0), points = [];
+	const keep = draw => { if (rnd() * peak < densityOf(draw)) points.push(pointAt(draw.lch, scaleOf(draw.lch, draw.reach))); };
+	for (const draw of survey)
+		if (points.length < POOL_SIZE)
+			keep(draw);
+	for (; tries < RAW_TRIES && points.length < POOL_SIZE; ++tries) {
+		const draw = rawDraw(rnd, cfg);
+		if (draw && allowedLch(...draw.lch, cfg))
+			keep(draw);
+	}
+	// The scale is relative to the pool's largest: a pastel box ranks its own colors.
+	const top = points.reduce((most, point) => Math.max(most, point.scale), 0);
+	for (const point of points)
+		point.scale /= top;
+	poolCache = { key, pool: { points, scaleOf: lch => Math.min(1, scaleOf(lch) / top) } };
+	return poolCache.pool;
+}
+
+// A color's chance of being misidentified may not exceed this: the start spaces every pair at it,
+// the pushes move a color while its chance summed over the others is above it.
+const ERROR_LIMIT = 0.02;
+// The weighted deltaE at which one pair's swap chance falls to ERROR_LIMIT.
+function limitDistance(sigma) {
+	let below = 0, above = 20 * sigma;
+	for (let n = 0; n < 40; ++n) {
+		const mid = (below + above) / 2;
+		if (swapChance(mid, sigma) > ERROR_LIMIT)
+			below = mid;
+		else
+			above = mid;
+	}
+	return above;
+}
+
+// The throw: the pool's points in the given order, a point seated when its packing distance to every point seated,
+// the fixed ones included, is at least `r`. Null when fewer than `count` find a seat.
+function throwAt(order, fixed, count, r) {
+	const seated = fixed.slice(), r2 = r * r;
+	for (const point of order) {
+		if (seated.length - fixed.length === count)
+			break;
+		if (seated.every(other => packed2(point, other) >= r2))
+			seated.push(point);
+	}
+	return seated.length - fixed.length === count ? seated : null;
+}
+
+// The widest throw: the largest `r` that seats `count`, by bisection to THROW_PRECISION of `r`. A maximal
+// Poisson-disc sample of the density: random, evenly spread. Fewer points than `count` seat them all.
+const THROW_PRECISION = 0.02;
+function widestThrow(order, fixed, count, limit) {
+	let seated = throwAt(order, fixed, Math.min(count, order.length), 0), below = 0, above = limit;
+	// One color and nothing fixed seats at any `r`.
+	while (above < 1000 && throwAt(order, fixed, count, above))
+		above *= 2;
+	while (above - below > THROW_PRECISION * above) {
+		const mid = (below + above) / 2, made = throwAt(order, fixed, count, mid);
+		if (made)
+			[seated, below] = [made, mid];
+		else
+			above = mid;
+	}
+	return seated;
+}
+
+// The relaxation's first step in deltaE, and the step under which it ends.
+const STEP_START = 2, STEP_MIN = 0.25;
+// Directions a color tries per sweep, the first that helps taken: with one, a sweep that keeps nothing is bad
+// luck, not a step too long, and the step halves for nothing.
+const PROPOSALS = 8;
+const SWEEPS_MAX = 400;
+
+// The chance each generated color is misidentified, summed over the others; the floor is the worst
+// color's chance of being identified. The pair is the one likeliest swapped, `apart` its weighted
+// deltaE and `confused` that chance. Null pair below two colors, where no pair exists.
+// The swap chance falls with distance, so `apart` is also the closest pair's distance, which ranks
+// attempts against each other. Pairs of two fixed colors are skipped: generation cannot move
+// either, so such a pair must neither rank an attempt nor be pointed at as the offender.
+// A caller stepping the colors passes the points it already keeps for them.
+function identification(colors, cfg, points = positionsOf(colors).map(warpedPoint)) {
+	const error = colors.map(() => 0);
+	let pair = null, apart = Infinity, confused = -1;
+	for (let i = 0; i < colors.length; ++i)
+		for (let j = i + 1; j < colors.length; ++j) {
+			if (colors[i].fixed && colors[j].fixed)
+				continue;
+
+			const d = Math.sqrt(apartWarped2(points[i], points[j]));
+			const chance = swapChance(d, cfg.sigma);
+			error[i] += chance;
+			error[j] += chance;
+			if (chance > confused) {
+				confused = chance;
+				pair = [colors[i], colors[j]];
+				apart = d;
+			}
+		}
+	let floor = 1;
+	colors.forEach((color, i) => {
+		if (!color.fixed)
+			floor = Math.min(floor, Math.max(0, 1 - error[i]));
+	});
+	return { floor, pair, apart, confused };
+}
+
+// Whether a point is inside the ranges and the gamut. Where the chroma range starts within SHELL beyond the gamut,
+// the SHELL under the gamut's surface is inside, as rawDraw takes it.
+function insideBox([L, C, h], cfg) {
+	if (!hueInRange(h, cfg.hMin, cfg.hMax) || !withinLightness(L, h, cfg))
+		return false;
+	const reach = gamutChroma(L, h), lowest = absoluteC(cfg.cMin, h);
+	return C <= Math.min(absoluteC(cfg.cMax, h), reach) && (C >= lowest || (lowest <= reach + SHELL && C >= reach - SHELL));
+}
+
+// The relaxation, for the colors whose error on the metric is over the limit, worst first: each proposes one position
+// `step` away in a random direction of OKLab. A proposal outside the box or not allowed is dropped, never clamped;
+// one that lowers the color's error on the packing distance is kept, so a paler position has to pay for itself.
+// A sweep that keeps nothing halves the step. Returns the state with the highest floor seen, then the widest closest pair.
+function relax(rnd, colors, points, cfg, scaleOf) {
+	colors = colors.slice();
+	points = points.slice();
+	const errorAt = (i, at, apartOf2) => {
+		let error = 0;
+		for (let j = 0; j < points.length; ++j)
+			if (j !== i)
+				error += swapChance(Math.sqrt(apartOf2(at, points[j])), cfg.sigma);
+		return error;
+	};
+	let best = colors.slice(), bestScore = identification(colors, cfg, points);
+	for (let sweep = 0, step = STEP_START; sweep < SWEEPS_MAX && step >= STEP_MIN; ++sweep) {
+		const confusable = colors.map((color, i) => ({ i, error: color.fixed ? 0 : errorAt(i, points[i], apartWarped2) }))
+			.filter(({ error }) => error > ERROR_LIMIT).sort((p, q) => q.error - p.error);
+		if (!confusable.length)
+			break;
+
+		let kept = 0;
+		for (const { i } of confusable) {
+			const from = positionOf(points[i].lch), error = errorAt(i, points[i], packed2);
+			for (let n = 0; n < PROPOSALS; ++n) {
+				const z = 2 * rnd() - 1, turn = 2 * Math.PI * rnd(), flat = Math.sqrt(1 - z * z);
+				const lch = lchOf([from[0] + step * z, from[1] + step * flat * Math.cos(turn), from[2] + step * flat * Math.sin(turn)].map(v => v / 100));
+				if (!insideBox(lch, cfg) || !allowedLch(...lch, cfg))
+					continue;
+				const at = pointAt(lch, scaleOf(lch));
+				if (errorAt(i, at, packed2) >= error)
+					continue;
+				points[i] = at;
+				colors[i] = colorAt(...lch);
+				++kept;
+				break;
+			}
+		}
+		if (!kept) {
+			step /= 2;
+			continue;
+		}
+		const score = identification(colors, cfg, points);
+		if (score.floor > bestScore.floor || (score.floor === bestScore.floor && score.apart > bestScore.apart)) {
+			best = colors.slice();
+			bestScore = score;
+		}
+	}
+	return best;
+}
+
+// One throw, relaxed, with its scores.
+function attempt(rnd, cfg, pool) {
+	const order = pool.points.slice();
+	for (let i = order.length - 1; i > 0; --i) {
+		const j = Math.floor(rnd() * (i + 1));
+		[order[i], order[j]] = [order[j], order[i]];
+	}
+	const fixed = cfg.fixed.map(color => pointAt(color.lch, pool.scaleOf(color.lch)));
+	const seated = widestThrow(order, fixed, cfg.count, cfg.limit);
+	const thrown = [...cfg.fixed, ...seated.slice(fixed.length).map(point => colorAt(...point.lch))];
+	const colors = relax(rnd, thrown, seated, cfg, pool.scaleOf);
+	return { colors, ...identification(colors, cfg), named: new Set(colors.map(color => color.cell)).size };
+}
+
+// The best of up to ATTEMPTS attempts by floor, then by the closest pair; the first with no confusable color ends
+// them. Null when the box holds no usable color.
+const ATTEMPTS = 4;
+function generate(cfg) {
+	const sigma = Math.max(cfg.scale, 1);
+	const settings = { ...cfg, sigma, limit: limitDistance(sigma), included: cfg.included ?? ALL_INCLUDED, preference: cfg.preference ?? true };
+	settings.shadows = shadowsFor(cfg);
+	const pool = poolFor(settings);
+	if (!pool.points.length)
+		return null;
+	let best = null;
+	for (let n = 0; n < ATTEMPTS && !(best && best.floor >= 1 - ERROR_LIMIT); ++n) {
+		const made = attempt(mulberry32(settings.seed + n * 7919), settings, pool);
+		if (!best || made.floor > best.floor || (made.floor === best.floor && made.apart > best.apart))
+			best = made;
+	}
+	return best;
+}
+
+// ---------- ui ----------
+
+const $ = id => document.getElementById(id);
+let palette = [];
+// The last result and the config that made it: a change to how the palette is shown redraws from
+// these, and the 3D module picks them up when it loads, after the first render.
+let lastResult = null, lastCfg = null;
+// Each chart's canvas, kept field image and drawn marker positions, so a highlight change
+// repaints markers and hovering hit-tests them without recomputing the field.
+// hc and hl name the axes, hue-chroma and hue-lightness. Not the highlight below.
+let hcDraw = null, hlDraw = null;
+// The color hovered in any view, highlighted in all of them.
+let highlightedColor = null;
+
+const ordered = (a, b) => a <= b ? [a, b] : [b, a];
+// A number box enforces its min and max only for arrow steps, so typed values are clamped here.
+const bounded = id => Math.min(+$(id).max, Math.max(+$(id).min, +$(id).value));
+
+function readConfig() {
+	const [cMin, cMax] = ordered(+$("c-min").value, +$("c-max").value);
+	const [lMin, lMax] = ordered(+$("l-min").value, +$("l-max").value);
+	return {
+		count: bounded("count"),
+		scale: +$("strict").value,
+		// The hue sliders run in the ridge coordinate; the config, the labels and the state are in degrees.
+		hMin: Math.round(ridgeUnwarp(+$("h-min").value)), hMax: Math.round(ridgeUnwarp(+$("h-max").value)),
+		cMin, cMax, lMin, lMax,
+		seed: +$("seed").value | 0,
+		fixed: parseHexColors($("fixed-colors").value),
+		avoid: parseHexColors($("avoid-colors").value),
+		included: nameIncluded
+	};
+}
+
+let drawnBarWidth = 0;
+
+// The hue's most vivid sRGB color: the cusp, at the chroma it reaches there.
+function pureHue(h) {
+	const L = searchCuspLightness(h);
+	return colorAt(L, gamutChroma(L, h), h);
+}
+
+function drawHueBar() {
+	const canvas = $("hue-canvas");
+	const w = canvas.clientWidth, h = canvas.clientHeight;
+	if (w === drawnBarWidth || w === 0)
+		return;
+
+	canvas.width = w;
+	canvas.height = h;
+
+	const ctx = canvas.getContext("2d");
+	for (let x = 0; x < w; ++x) {
+		ctx.fillStyle = pureHue(ridgeUnwarp(x / w * 360)).hex;
+		ctx.fillRect(x, 0, 1, h);
+	}
+	drawnBarWidth = w;
+}
+
+// Masks the hues outside the range: two segments when the range sits in the middle, and the
+// single segment between max and min when it wraps. The bar is in the ridge coordinate.
+function maskHueBar(min, max) {
+	const segments = (min <= max ? [[0, min], [max, 360]] : [[max, min], [360, 360]]).map(seg => seg.map(ridgeWarp));
+
+	segments.forEach((seg, i) => {
+		const el = $(i === 0 ? "hue-muted-a" : "hue-muted-b");
+		el.style.left = seg[0] / 3.6 + "%";
+		el.style.width = (seg[1] - seg[0]) / 3.6 + "%";
+	});
+}
+
+const DOT_RADIUS = 4;
+// Larger than the dot: a triangle inscribed in the same circle covers under half the area and reads
+// as the smaller mark.
+const TRIANGLE_RADIUS = 5.5;
+// The furthest a marker of either shape reaches from its centre, which is what decides an edge wrap.
+const MARKER_REACH = Math.max(DOT_RADIUS, TRIANGLE_RADIUS);
+
+// Fixed colors are triangles, generated ones circles.
+function drawMarker(ctx, x, y, color) {
+	ctx.beginPath();
+	if (color.fixed) {
+		// Vertices at -90, 30 and 150 degrees: apex up, flat base.
+		const halfWidth = TRIANGLE_RADIUS * Math.sqrt(3) / 2, drop = TRIANGLE_RADIUS / 2;
+		ctx.moveTo(x, y - TRIANGLE_RADIUS);
+		ctx.lineTo(x + halfWidth, y + drop);
+		ctx.lineTo(x - halfWidth, y + drop);
+		ctx.closePath();
+	} else {
+		ctx.arc(x, y, DOT_RADIUS, 0, Math.PI * 2);
+	}
+	ctx.fillStyle = color.hex;
+	ctx.fill();
+	ctx.lineWidth = 1.5;
+	ctx.strokeStyle = isLightColor(color.rgb) ? "#000000" : "#ffffff";
+	ctx.stroke();
+}
+
+// Hue across, chroma up to CHROMA_MAX, at one cusp-relative lightness, so every column is drawn at
+// its own absolute lightness; pixels sRGB cannot show are left transparent.
+// The lightness bound is not hatched: the caller picks a lightness the range allows, so every pixel
+// is already inside it. The avoided colors' shadows are hatched.
+// The mask is per-pixel because a wrapped hue range is two segments, which overlay bands would
+// have to cross, doubling the hatch where they met.
+function hcField(w, h, relative, cfg) {
+	const image = new ImageData(w, h);
+	const data = image.data;
+	const shade = { shadows: shadowsFor(cfg) };
+
+	for (let x = 0; x < w; ++x) {
+		const hue = ridgeUnwarp(x / w * 360);
+		const inHue = hueInRange(hue, cfg.hMin, cfg.hMax);
+		const lightness = absoluteL(relative, hue);
+		const cLow = absoluteC(cfg.cMin, hue), cHigh = absoluteC(cfg.cMax, hue);
+
+		for (let y = 0; y < h; ++y) {
+			const C = CHROMA_MAX * (1 - y / (h - 1));
+			const rgb = oklabToRgb(...labOfLch(lightness, C, hue));
+			if (!inGamut(rgb))
+				continue;
+			let r = rgb[0] * 255, g = rgb[1] * 255, b = rgb[2] * 255;
+
+			// Same hatch as the CSS masks: 5px of black at 70%, then 5px of white at 32%.
+			if (!inHue || C < cLow || C > cHigh || shadowed(lightness, C, hue, shade)) {
+				if ((x + y) % 10 < 5) {
+					r *= .3; g *= .3; b *= .3;
+				} else {
+					r = r * .68 + 81.6; g = g * .68 + 81.6; b = b * .68 + 81.6;
+				}
+			}
+
+			const at = (y * w + x) * 4;
+			data[at] = r;
+			data[at + 1] = g;
+			data[at + 2] = b;
+			data[at + 3] = 255;
+		}
+	}
+
+	return image;
+}
+
+// The gamut's chroma per pixel of the palette chart: a bisection each, so built once per chart size.
+// The range plane, a third of the width, reads the same table by bilinear interpolation.
+let gamutReachTable = null;
+function gamutTable(w, h) {
+	if (!gamutReachTable || gamutReachTable.w !== w || gamutReachTable.h !== h) {
+		const reach = new Float32Array(w * h);
+		for (let y = 0; y < h; ++y)
+			for (let x = 0; x < w; ++x)
+				reach[y * w + x] = gamutChroma(100 * (1 - y / (h - 1)), ridgeUnwarp(x / w * 360));
+		gamutReachTable = { w, h, reach };
+	}
+	return gamutReachTable;
+}
+
+// The reach a canvas of another size reads at its pixel (x, y): the table's neighbours interpolated,
+// pixel centres aligned across, rows by lightness.
+function reachAt(table, x, y, w, h) {
+	const u = Math.min(table.w - 1, Math.max(0, (x + 0.5) / w * table.w - 0.5)), v = y / (h - 1) * (table.h - 1);
+	const x0 = Math.floor(u), y0 = Math.floor(v), x1 = Math.min(table.w - 1, x0 + 1), y1 = Math.min(table.h - 1, y0 + 1);
+	const fx = u - x0, fy = v - y0, r = table.reach, tw = table.w;
+	return (r[y0 * tw + x0] * (1 - fx) + r[y0 * tw + x1] * fx) * (1 - fy) + (r[y1 * tw + x0] * (1 - fx) + r[y1 * tw + x1] * fx) * fy;
+}
+
+// Hue across, lightness up, each pixel at the box's chroma cap for that hue and lightness: the
+// most vivid color the ranges allow there, the outside of the selected region. Hatched outside
+// the hue and lightness ranges, where the gamut stays below the chroma minimum, and in an avoided
+// color's shadow.
+function hlField(canvas, cfg) {
+	const w = canvas.width, h = canvas.height;
+	const shade = { shadows: shadowsFor(cfg) };
+	// The table is the palette chart's; before its first layout the caller's own size serves.
+	const main = $("hl-canvas"), table = gamutTable(main.clientWidth || w, main.clientHeight || h);
+	const exact = table.w === w && table.h === h;
+	const image = new ImageData(w, h);
+	const data = image.data;
+	for (let x = 0; x < w; ++x) {
+		const hue = ridgeUnwarp(x / w * 360);
+		const inHue = hueInRange(hue, cfg.hMin, cfg.hMax);
+		const cLow = absoluteC(cfg.cMin, hue), cHigh = absoluteC(cfg.cMax, hue);
+		for (let y = 0; y < h; ++y) {
+			const L = 100 * (1 - y / (h - 1)), reach = exact ? table.reach[y * w + x] : reachAt(table, x, y, w, h);
+			if (reach === 0)
+				continue;
+			const C = Math.min(reach, cHigh);
+			const rgb = oklabToRgb(...labOfLch(L, C, hue)).map(v => Math.min(1, Math.max(0, v)));
+			let r = rgb[0] * 255, g = rgb[1] * 255, b = rgb[2] * 255;
+			if (!inHue || !withinLightness(L, hue, cfg) || reach < cLow || shadowed(L, C, hue, shade)) {
+				if ((x + y) % 10 < 5) {
+					r *= .3; g *= .3; b *= .3;
+				} else {
+					r = r * .68 + 81.6; g = g * .68 + 81.6; b = b * .68 + 81.6;
+				}
+			}
+			const at = (y * w + x) * 4;
+			data[at] = r;
+			data[at + 1] = g;
+			data[at + 2] = b;
+			data[at + 3] = 255;
+		}
+	}
+	return image;
+}
+
+// Markers over the kept field: a highlight change repaints without recomputing the field.
+// `draw.place` maps a color to canvas coordinates. The hue axis is cyclic, so a marker within
+// reach of either edge is repeated at the other; the copy is recorded too, so hovering finds it at both.
+function paintChart(draw) {
+	const { canvas, image, colors } = draw;
+	const w = canvas.width;
+	const ctx = canvas.getContext("2d");
+	ctx.putImageData(image, 0, 0);
+	if (draw.faces)
+		strokeFaces(ctx, draw.faces);
+
+	draw.marks = [];
+	for (const color of colors) {
+		const { x, y } = draw.place(color, canvas);
+		draw.marks.push({ x, y, color });
+		if (x < MARKER_REACH)
+			draw.marks.push({ x: x + w, y, color });
+		else if (x > w - MARKER_REACH)
+			draw.marks.push({ x: x - w, y, color });
+	}
+
+	// Read where a ring is drawn, and once: the read resolves style, and most repaints draw none.
+	let accent = null;
+	for (const { x, y, color } of draw.marks) {
+		drawMarker(ctx, x, y, color);
+		if (color === highlightedColor) {
+			accent ??= getComputedStyle(document.body).getPropertyValue("--accent").trim();
+			ctx.beginPath();
+			ctx.arc(x, y, (color.fixed ? TRIANGLE_RADIUS : DOT_RADIUS) + 4, 0, Math.PI * 2);
+			ctx.strokeStyle = accent;
+			ctx.lineWidth = 2;
+			ctx.stroke();
+		}
+	}
+}
+
+function sizedCanvas(id) {
+	const canvas = $(id);
+	canvas.width = canvas.clientWidth;
+	canvas.height = canvas.clientHeight;
+	return canvas;
+}
+
+function drawHCPlane(cfg, colors) {
+	const canvas = sizedCanvas("hc-canvas");
+	if (canvas.width === 0)
+		return;
+	// The most vivid lightness the range allows: the cusp where the range covers it, its nearer edge
+	// otherwise. Chroma over lightness peaks at the cusp, so nothing else in the range reaches further.
+	// Not exactly single-peaked near black, but no range picks up more than 0.006 chroma there.
+	const relative = Math.min(cfg.lMax, Math.max(cfg.lMin, CUSP_ANCHOR));
+	hcDraw = { canvas, colors, image: hcField(canvas.width, canvas.height, relative, cfg), faces: faceCurves(canvas.width, canvas.height, cfg),
+		place: (color, c) => ({ x: ridgeWarp(color.lch[2]) / 360 * c.width, y: (1 - color.lch[1] / CHROMA_MAX) * (c.height - 1) }) };
+	paintChart(hcDraw);
+}
+
+// The lightness range's two faces on the hue-chroma chart: per column, the chroma the gamut reaches at
+// the top lightness and at the bottom one, capped at the chroma maximum. A face inside the hatch is
+// under the chroma minimum, so the range keeps nothing there.
+// The vivid slice is drawn at neither face once the range covers the cusp, so the faces are what the
+// lightness sliders move.
+function faceCurves(w, h, cfg) {
+	return [cfg.lMax, cfg.lMin].map(relative => Array.from({ length: w }, (_, x) => {
+		const hue = ridgeUnwarp(x / w * 360);
+		return (1 - Math.min(gamutChroma(absoluteL(relative, hue), hue), absoluteC(cfg.cMax, hue)) / CHROMA_MAX) * (h - 1);
+	}));
+}
+
+// Top face solid, bottom face dashed; a dark halo under a light line reads on any color of the field.
+function strokeFaces(ctx, faces) {
+	faces.forEach((ys, face) => {
+		ctx.beginPath();
+		ys.forEach((y, x) => x ? ctx.lineTo(x + 0.5, y) : ctx.moveTo(0.5, y));
+		ctx.setLineDash(face ? [4, 3] : []);
+		ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+		ctx.lineWidth = 3;
+		ctx.stroke();
+		ctx.strokeStyle = "#ffffff";
+		ctx.lineWidth = 1.2;
+		ctx.stroke();
+	});
+	ctx.setLineDash([]);
+}
+
+function drawHLPlane(cfg, colors) {
+	const canvas = sizedCanvas("hl-canvas");
+	if (canvas.width === 0)
+		return;
+	hlDraw = { canvas, colors, image: hlField(canvas, cfg),
+		place: (color, c) => ({ x: ridgeWarp(color.lch[2]) / 360 * c.width, y: (1 - color.lch[0] / 100) * (c.height - 1) }) };
+	paintChart(hlDraw);
+}
+
+function drawRangePlane(cfg) {
+	const canvas = sizedCanvas("range-canvas");
+	if (canvas.width === 0)
+		return;
+	canvas.getContext("2d").putImageData(hlField(canvas, cfg), 0, 0);
+}
+
+function refreshBars(cfg) {
+	drawHueBar();
+	maskHueBar(cfg.hMin, cfg.hMax);
+	drawRangePlane(cfg);
+}
+
+function refreshLabels() {
+	const cfg = readConfig();
+	refreshBars(cfg);
+	$("strict-value").textContent = cfg.scale.toFixed(1);
+	$("h-value").textContent = cfg.hMin + "–" + cfg.hMax + "°" + (cfg.hMin > cfg.hMax ? " (wraps)" : "");
+	// Chroma carries its unit, lightness does not: chroma is a plain fraction of the hue's peak,
+	// while lightness is piecewise with 50 pinned to the cusp and so is a landmark, not a percentage.
+	$("c-value").textContent = cfg.cMin + "–" + cfg.cMax + "%";
+	$("l-value").textContent = cfg.lMin + "–" + cfg.lMax;
+	$("fixed-preview").innerHTML = cfg.fixed.map(color => '<span style="background:' + color.hex + '"></span>').join("");
+	$("avoid-preview").innerHTML = cfg.avoid.map(color => '<span style="background:' + color.hex + '"></span>').join("");
+}
+
+const displayName = cell => cellName(cell).replace(/^./, first => first.toUpperCase());
+
+// A tilde marks a color the survey never settled a name for. It records how the color is named, not
+// a fault in the color: those colors are as usable as any other, and some cells hold little else.
+const cellLabel = color => (color.confident ? "" : "~ ") + displayName(color.cell);
+
+const UNSURE_TITLE = ' title="people gave this color no one name"';
+
+// Ordered from the range start, so a wrapped hue range stays contiguous.
+function sortedByHue(colors, hMin) {
+	const offset = c => (c.lch[2] - hMin + 360) % 360;
+	return colors.slice().sort((a, b) => offset(a) - offset(b));
+}
+
+// A null result is an empty box: the views show the ranges and nothing in them.
+function render(result, cfg) {
+	const colors = result ? result.colors : [];
+	palette = $("sort").checked ? sortedByHue(colors, cfg.hMin) : colors;
+	const worstPair = result?.pair ?? null;
+	// Every view is rebuilt below without a highlight; the hovered object may not even survive.
+	highlightedColor = null;
+
+	const status = $("status");
+	// A null pair means no measurable one at all: one color and nothing fixed to place it against.
+	const repeated = result ? result.colors.length - result.named : 0;
+	status.textContent = !result ? "sRGB has no color within these ranges" + (cfg.included.every(Boolean) ? "." : " with a name in use.")
+		: (result.pair ? "Hardest pair to tell apart (outlined): weighted ΔE " + result.apart.toFixed(1)
+			+ ", swapped " + (result.confused * 100).toFixed(1) + "% · worst color identified " + (result.floor * 100).toFixed(0) + "%" + " · " : "")
+		+ result.named + " distinct color name" + (result.named === 1 ? "" : "s")
+		+ (repeated ? ", " + repeated + " repeating one of them" : "");
+
+	const clashing = new Set(worstPair || []);
+	const marks = c => (c.fixed ? " fixed" : "") + (!c.fixed && !cfg.included[c.cell] ? " off-name" : "")
+		+ (clashing.has(c) ? " clash" : "");
+
+	$("swatches").innerHTML = palette.map((c, i) =>
+		'<button class="swatch' + marks(c) + '" data-hex="' + c.hex + '" data-index="' + i + '">'
+			+ '<div class="chip" style="background:' + c.hex + '"></div>'
+			+ '<div class="meta"><div class="hex">' + c.hex.toUpperCase() + '</div>'
+			+ '<div class="name"' + (c.confident ? "" : UNSURE_TITLE) + '>' + cellLabel(c) + '</div>'
+			+ '<div class="coords">' + (c.fixed ? "fixed · " : "") + "lch " + Math.round(c.lch[0]) + ", " + c.lch[1].toFixed(1) + ", " + Math.round(c.lch[2]) + "°</div></div>"
+		+ "</button>").join("");
+
+	// Columns from the square root, so the block's bounding box is the nearest thing to a square.
+	$("tiles").style.setProperty("--cols", Math.max(1, Math.ceil(Math.sqrt(palette.length))));
+	$("tiles").innerHTML = palette.map((c, i) =>
+		'<div class="' + marks(c).trim() + '" data-index="' + i + '" style="background:' + c.hex + '" title="'
+			+ c.hex.toUpperCase() + " · " + cellLabel(c) + (c.fixed ? " (fixed)" : "") + '"></div>').join("");
+
+	drawHLPlane(cfg, palette);
+	drawHCPlane(cfg, palette);
+	if (window.update3D)
+		window.update3D(cfg, palette, worstPair);
+	refreshExport();
+}
+
+// Fixed colors are excluded: the export is the set that was generated, which the caller does not have.
+function refreshExport() {
+	const hexes = palette.filter(c => !c.fixed).map(c => c.hex.toUpperCase());
+	const format = $("format").value;
+	let text;
+	if (format === "hex")
+		text = hexes.join("\n");
+	else if (format === "css")
+		text = ":root {\n" + hexes.map((h, i) => "\t--color-" + (i + 1) + ": " + h + ";").join("\n") + "\n}";
+	else if (format === "json")
+		text = JSON.stringify(hexes, null, "\t");
+	else
+		text = "COLORS = [\n" + hexes.map(h => '\t"' + h + '",').join("\n") + "\n]";
+	$("export").value = text;
+}
+
+// ---------- name controls ----------
+
+// Which cells are excluded: the generator keeps generated colors out of them (see usableLch).
+const nameIncluded = ALL_INCLUDED.slice();
+
+const ALL_CELLS = CELL_NAMES.map((_, cell) => cell);
+
+// How much of the hue/chroma plane each name owns, at every lightness a chip may be drawn at.
+const CENSUS_LEVELS = Array.from({ length: 19 }, (_, n) => (n + 1) * 5);
+const CENSUS_HUES = 90, CENSUS_CHROMAS = 26;
+const CENSUS = CENSUS_LEVELS.map(level => {
+	const counts = new Int32Array(NAME_SLOTS);
+	for (let hi = 0; hi < CENSUS_HUES; ++hi)
+		for (let ci = 0; ci < CENSUS_CHROMAS; ++ci) {
+			const lab = labOfLch(level, CHROMA_MAX * ci / (CENSUS_CHROMAS - 1), hi * 360 / CENSUS_HUES);
+			const rgb = oklabToRgb(...lab);
+			if (inGamut(rgb))
+				++counts[cellOf(rgb.map(v => Math.min(1, Math.max(0, v)))).cell];
+		}
+	return counts;
+});
+
+// The plane where the name covers the most ground. Eleven names - white and black among them - own
+// nothing at mid lightness, so chips drawn at one fixed lightness would be blank for a third of
+// them. Chips are honest about the plane they show rather than comparable across names.
+const CELL_PEAK = ALL_CELLS.map(cell => {
+	let at = 0;
+	for (let n = 1; n < CENSUS_LEVELS.length; ++n)
+		if (CENSUS[n][cell] > CENSUS[at][cell])
+			at = n;
+	return CENSUS_LEVELS[at];
+});
+
+// Chip display order: achromatic swatches first by lightness, chromatics by hue. Grays have no
+// meaningful hue - atan2 collapses them to 0 next to reds - so they get their own group.
+const CELL_ORDER = (() => {
+	const lch = ALL_CELLS.map(cell => lchOf(rgbToOklab(parseHex(CELL_SWATCH[cell]))));
+	const achromatic = c => lch[c][1] < 2;
+	return ALL_CELLS.slice().sort((a, b) => {
+		if (achromatic(a) !== achromatic(b)) return achromatic(a) ? -1 : 1;
+		return achromatic(a) ? lch[a][0] - lch[b][0] : lch[a][2] - lch[b][2];
+	});
+})();
+
+const CHIP_WIDTH = 104, CHIP_HEIGHT = 64;
+
+// The name's territory in its own plane: its colors as they are, the rest ghosted so the panel
+// shows through in either theme, and nothing where sRGB has no color. Hue across, chroma up, as
+// the palette's chart.
+function paintTerritory(canvas, cell) {
+	const w = canvas.width, h = canvas.height, lightness = CELL_PEAK[cell];
+	const image = new ImageData(w, h);
+	const data = image.data;
+
+	for (let x = 0; x < w; ++x) {
+		const hue = ridgeUnwarp(x / w * 360);
+		for (let y = 0; y < h; ++y) {
+			const rgb = oklabToRgb(...labOfLch(lightness, CHROMA_MAX * (1 - y / (h - 1)), hue));
+			if (!inGamut(rgb))
+				continue;
+			const shown = rgb.map(v => Math.min(1, Math.max(0, v)));
+			const at = (y * w + x) * 4;
+			data[at] = shown[0] * 255;
+			data[at + 1] = shown[1] * 255;
+			data[at + 2] = shown[2] * 255;
+			data[at + 3] = cellOf(shown).cell === cell ? 255 : 26;
+		}
+	}
+	canvas.getContext("2d").putImageData(image, 0, 0);
+}
+
+// Territories never change, so each is painted once and its canvas re-parented as chips rebuild.
+const territoryCanvases = new Map();
+
+function territoryCanvas(cell) {
+	let canvas = territoryCanvases.get(cell);
+	if (!canvas) {
+		canvas = document.createElement("canvas");
+		canvas.width = CHIP_WIDTH;
+		canvas.height = CHIP_HEIGHT;
+		paintTerritory(canvas, cell);
+		territoryCanvases.set(cell, canvas);
+	}
+	return canvas;
+}
+
+function nameChip(cell) {
+	const chip = document.createElement("div");
+	chip.className = "name-chip" + (nameIncluded[cell] ? "" : " off");
+	chip.dataset.cell = cell;
+	chip.title = cellName(cell) + (nameIncluded[cell] ? "" : " - excluded");
+
+	const meta = document.createElement("div");
+	meta.className = "meta";
+	const name = document.createElement("div");
+	name.className = "name";
+	name.textContent = displayName(cell);
+	const level = document.createElement("div");
+	level.className = "level";
+	level.textContent = "L " + CELL_PEAK[cell] + "%";
+	const sample = document.createElement("span");
+	sample.className = "sample";
+	sample.style.background = CELL_SWATCH[cell];
+	sample.title = CELL_SWATCH[cell].toUpperCase();
+	meta.append(name, level, sample);
+
+	chip.append(territoryCanvas(cell), meta);
+	return chip;
+}
+
+function renderNames() {
+	$("name-chips").replaceChildren(...CELL_ORDER.map(nameChip));
+	const excluded = ALL_CELLS.filter(cell => !nameIncluded[cell]).length;
+	$("names-summary").textContent = (CELL_NAMES.length - excluded) + " of " + CELL_NAMES.length + " in use";
+}
+
+$("name-chips").addEventListener("click", event => {
+	const chip = event.target.closest(".name-chip");
+	if (!chip)
+		return;
+	const cell = +chip.dataset.cell;
+	nameIncluded[cell] = !nameIncluded[cell];
+	renderNames();
+	scheduleRun();
+});
+
+$("names-toggle").addEventListener("click", () => {
+	const body = $("names-body");
+	body.hidden = !body.hidden;
+	$("names-toggle").textContent = body.hidden ? "Show" : "Hide";
+});
+
+// The included names as a bit per cell, base36. Summed as powers of two: there are more cells than
+// the 32 bits shifts work in.
+function stateNameField() {
+	let mask = 0;
+	for (const cell of ALL_CELLS)
+		if (nameIncluded[cell])
+			mask += 2 ** cell;
+	return mask.toString(36);
+}
+
+// The name table a parsed state describes. An empty field is a string written before the names
+// could be chosen: all included.
+function nameTableFrom(parsed) {
+	const included = ALL_INCLUDED.slice();
+	if (parsed.included) {
+		const mask = parseInt(parsed.included, 36);
+		for (const cell of ALL_CELLS)
+			included[cell] = Math.floor(mask / 2 ** cell) % 2 === 1;
+	}
+	return { included };
+}
+
+function applyNameTable(table) {
+	for (const cell of ALL_CELLS)
+		nameIncluded[cell] = table.included[cell];
+	renderNames();
+}
+
+// ---------- state string ----------
+
+// The string is the version tag, these fields in order, then the sort flag, the backdrop, the
+// custom backdrop color, the export format and the comma-joined fixed colors.
+const STATE_VERSION = "v4";
+const STATE_SEPARATOR = "|";
+const STATE_IDS = ["count", "strict", "h-min", "h-max", "c-min", "c-max", "l-min", "l-max", "seed"];
+
+// The '#' is stripped from both colors: it would truncate the string inside a URL.
+const stripHash = value => value.replace("#", "");
+
+// Carries the config rather than the raw slider values, so chroma and lightness come back
+// ordered. The seed is written unsigned, which mulberry32 treats as identical and which keeps a
+// minus sign out of the fields.
+function stateString(cfg) {
+	return [STATE_VERSION, cfg.count, cfg.scale, cfg.hMin, cfg.hMax, cfg.cMin, cfg.cMax,
+		cfg.lMin, cfg.lMax, cfg.seed >>> 0, $("sort").checked ? 1 : 0,
+		stripHash($("backdrop").value), stripHash($("backdrop-color").value), $("format").value,
+		cfg.fixed.map(color => stripHash(color.hex)).join(","), stateNameField(), cfg.avoid.map(color => stripHash(color.hex)).join(",")
+	].join(STATE_SEPARATOR);
+}
+
+// Matched by stored value rather than by position, so reordering the options cannot remap an old
+// string onto a different one. Null where the value is not offered.
+function findOption(id, stored) {
+	return [...$(id).options].find(option => stripHash(option.value) === stored) || null;
+}
+
+// The fields of a state string, or null when it does not parse. Separate from applying them, so a
+// palette can be generated from a string without disturbing the controls.
+function parseState(text) {
+	const [tag, ...fields] = text.trim().split(STATE_SEPARATOR);
+	// The sort flag, backdrop, custom color and export format always follow the nine control values.
+	// Fixed colors, the included names, then the avoided colors were each added later: a string written
+	// before one of them ends where it was added, and the rest take their defaults.
+	const required = STATE_IDS.length + 4;
+	if (tag !== STATE_VERSION || fields.length < required || fields.length > required + 3)
+		return null;
+
+	const numbers = fields.slice(0, STATE_IDS.length + 1).map(f => f.trim() === "" ? NaN : Number(f));
+	const [backdrop, custom, format, fixed = "", included = "", avoid = ""] = fields.slice(STATE_IDS.length + 1);
+	const backdropOption = findOption("backdrop", backdrop);
+	const formatOption = findOption("format", format);
+	const hexList = /^[0-9a-f]{6}(,[0-9a-f]{6})*$/i;
+
+	if (numbers.some(n => !Number.isFinite(n)) || !backdropOption || !formatOption || !/^[0-9a-f]{6}$/i.test(custom)
+		|| !(fixed === "" || hexList.test(fixed)) || !(avoid === "" || hexList.test(avoid))
+		|| !(included === "" || /^[0-9a-z]{1,8}$/.test(included)))
+		return null;
+
+	return { numbers, backdrop: backdropOption.value, custom, format: formatOption.value, fixed, included, avoid };
+}
+
+const hexesFromField = field => field.split(",").filter(Boolean).map(hex => "#" + hex.toLowerCase());
+
+// The generator's view of a parsed state. Ranges are ordered the same way readConfig orders them,
+// so a palette built from here matches the one the controls produce once the string is applied.
+function configFromState(parsed) {
+	const [count, scale, hMin, hMax, c1, c2, l1, l2, seed] = parsed.numbers;
+	const [cMin, cMax] = ordered(c1, c2);
+	const [lMin, lMax] = ordered(l1, l2);
+	return { count, scale, hMin, hMax, cMin, cMax, lMin, lMax, seed: seed | 0,
+		fixed: hexesFromField(parsed.fixed).map(colorFromHex), avoid: hexesFromField(parsed.avoid).map(colorFromHex), ...nameTableFrom(parsed) };
+}
+
+// Out-of-range numbers are left to the inputs, which clamp to their own min and max.
+function applyStateString(text) {
+	const parsed = parseState(text);
+	if (!parsed)
+		return false;
+
+	STATE_IDS.forEach((id, i) => $(id).value = id === "h-min" || id === "h-max" ? ridgeWarp(parsed.numbers[i]) : parsed.numbers[i]);
+	$("sort").checked = parsed.numbers[STATE_IDS.length] !== 0;
+	$("backdrop").value = parsed.backdrop;
+	$("backdrop-color").value = "#" + parsed.custom.toLowerCase();
+	$("format").value = parsed.format;
+	// One per line: the string carries the parsed colors, not the text they were typed in.
+	$("fixed-colors").value = hexesFromField(parsed.fixed).join("\n");
+	$("avoid-colors").value = hexesFromField(parsed.avoid).join("\n");
+
+	// Assigning a select's value fires no change event, so the backdrop is applied by hand.
+	applyBackdrop(currentBackdrop());
+	applyNameTable(nameTableFrom(parsed));
+	run();
+	return true;
+}
+
+// Not while the field has focus: rewriting it would drop a string being pasted. Refreshing on blur
+// instead would fire on the way to the Apply button, dropping it there.
+function refreshState() {
+	if (document.activeElement !== $("state"))
+		$("state").value = stateString(readConfig());
+}
+
+// Holds the text each element had before its first flash: a repeat inside the window must not
+// restore the transient message.
+const pendingRestore = new WeakMap();
+
+function flashLabel(el, message) {
+	const pending = pendingRestore.get(el);
+	const original = pending ? pending.original : el.textContent;
+	if (pending)
+		clearTimeout(pending.timer);
+
+	el.textContent = message;
+	pendingRestore.set(el, {
+		original,
+		timer: setTimeout(() => { el.textContent = original; pendingRestore.delete(el); }, 900)
+	});
+}
+
+// navigator.clipboard is absent outside a secure context, and writeText rejects on a denied
+// permission or an unfocused document, so both paths fall back to a selection copy.
+function writeClipboard(text) {
+	if (navigator.clipboard)
+		return navigator.clipboard.writeText(text).catch(() => legacyCopy(text));
+	return legacyCopy(text);
+}
+
+function legacyCopy(text) {
+	const field = document.createElement("textarea");
+	field.value = text;
+	field.readOnly = true;
+	field.style.cssText = "position: fixed; top: 0; opacity: 0";
+	document.body.appendChild(field);
+
+	let copied = false;
+	try {
+		field.select();
+		copied = document.execCommand("copy");
+	} catch {
+		copied = false;
+	} finally {
+		field.remove();
+	}
+	return copied ? Promise.resolve() : Promise.reject(new Error("copy rejected"));
+}
+
+function copy(text, label, message) {
+	writeClipboard(text).then(() => flashLabel(label, message), () => flashLabel(label, "failed"));
+}
+
+function run() {
+	refreshLabels();
+	refreshState();
+	lastCfg = readConfig();
+	lastResult = generate(lastCfg);
+	render(lastResult, lastCfg);
+}
+
+// The views again from the last result. Sorting, the theme and the canvas sizes are all settled in
+// render, so none of them needs a new palette, which at high color counts costs seconds.
+function redrawLastResult() {
+	refreshLabels();
+	render(lastResult, lastCfg);
+}
+
+// A control marks the result stale and nothing more; the timer below does the passes. A palette
+// costs up to ~200ms at the top of the ranges, so a pass per event, or even per frame, leaves a
+// dragged slider no time to follow the cursor. Between passes it does.
+// The interval sits just above one pass, where the thumb tracks and the palette still keeps up.
+// A pass arms the next tick only when it finishes, so one longer than the interval cannot queue
+// the tick behind it. Load and the Generate button call `run` directly and wait for none of this.
+const PASS_INTERVAL = 150;
+let passTimer = 0, passPending = false, generatePending = false;
+
+// A generate asked for before the tick wins over a redraw: it ends in one.
+function passTick() {
+	if (!passPending) {
+		passTimer = 0;
+		return;
+	}
+	const generating = generatePending;
+	passPending = generatePending = false;
+	if (generating)
+		run();
+	else
+		redrawLastResult();
+	passTimer = setTimeout(passTick, PASS_INTERVAL);
+}
+
+function schedulePass(full) {
+	generatePending ||= full;
+	passPending = true;
+	// Zero is never a timer id, so it marks the idle timer a tick with nothing to do left behind.
+	if (!passTimer)
+		passTimer = setTimeout(passTick, PASS_INTERVAL);
+}
+
+function scheduleRun() { schedulePass(true); }
+function scheduleRedraw() { schedulePass(false); }
+
+for (const id of [...STATE_IDS, "fixed-colors", "avoid-colors"])
+	$(id).addEventListener("input", () => { refreshLabels(); scheduleRun(); });
+
+// Sorting is settled in render, so the palette itself is unchanged.
+$("sort").addEventListener("change", scheduleRedraw);
+
+// The output panel is flexible, so its canvas needs re-sizing to each new width.
+window.addEventListener("resize", scheduleRedraw);
+$("format").addEventListener("change", () => { refreshExport(); refreshState(); });
+$("generate").addEventListener("click", () => { $("seed").value = (+$("seed").value | 0) + 1; run(); });
+
+// Swatch text and borders read from --ink/--ink-dim/--line, so overriding those on the
+// container re-colors them for whatever backdrop is behind them.
+function applyBackdrop(value) {
+	const el = $("palette-area");
+	const custom = value !== "panel";
+
+	el.style.background = custom ? value : "";
+	el.style.padding = custom ? "10px" : "";
+
+	for (const prop of ["--ink", "--ink-dim", "--line", "--swatch-hover"])
+		el.style.removeProperty(prop);
+
+	if (!custom)
+		return;
+
+	const dark = !isLightColor(parseHex(value));
+	el.style.setProperty("--ink", dark ? "#f2f2f6" : "#15151a");
+	el.style.setProperty("--ink-dim", dark ? "#c8c8d2" : "#3f3f49");
+	el.style.setProperty("--line", dark ? "rgba(255, 255, 255, .3)" : "rgba(0, 0, 0, .3)");
+	el.style.setProperty("--swatch-hover", dark ? "#ffffff" : "#000000");
+}
+
+function currentBackdrop() {
+	const preset = $("backdrop").value;
+	return preset === "custom" ? $("backdrop-color").value : preset;
+}
+
+$("backdrop").addEventListener("change", () => { applyBackdrop(currentBackdrop()); refreshState(); });
+
+$("backdrop-color").addEventListener("input", () => {
+	$("backdrop").value = "custom";
+	applyBackdrop($("backdrop-color").value);
+	refreshState();
+});
+
+// Auto tracks the OS; either explicit choice holds whatever the OS does. Deliberately absent from
+// the state string: a string carries a palette between machines, not how the page is looked at.
+const systemDark = matchMedia("(prefers-color-scheme: dark)");
+
+function applyTheme() {
+	const choice = $("theme").value;
+	document.documentElement.dataset.theme = choice === "auto" ? (systemDark.matches ? "dark" : "light") : choice;
+}
+
+// The 3D materials take their colors when they are built, so a theme change redraws the views.
+const retheme = () => { applyTheme(); scheduleRedraw(); };
+$("theme").addEventListener("change", retheme);
+systemDark.addEventListener("change", retheme);
+
+$("swatches").addEventListener("click", e => {
+	const swatch = e.target.closest(".swatch");
+	if (swatch) copy(swatch.dataset.hex.toUpperCase(), swatch.querySelector(".hex"), "copied");
+});
+// A right-click on a color adds it to the avoided list; the list's input event regenerates.
+for (const id of ["swatches", "tiles"])
+	$(id).addEventListener("contextmenu", e => {
+		const el = e.target.closest("[data-index]");
+		if (!el)
+			return;
+		e.preventDefault();
+		const field = $("avoid-colors"), hex = palette[+el.dataset.index].hex;
+		field.value = (field.value.trim() ? field.value.trimEnd() + "\n" : "") + hex;
+		field.dispatchEvent(new Event("input"));
+	});
+
+// ---------- cross-view highlight ----------
+
+// The hovered color, marked in every view at once: swatch and tile outline, a ring on its chart
+// dot, the enlarged 3D marker. Null clears.
+function setHighlight(color) {
+	if (color === highlightedColor)
+		return;
+	highlightedColor = color;
+	const index = color ? palette.indexOf(color) : -1;
+	for (const box of ["swatches", "tiles"])
+		[...$(box).children].forEach((el, i) => el.classList.toggle("hilite", i === index));
+	for (const draw of [hcDraw, hlDraw])
+		if (draw)
+			paintChart(draw);
+	if (window.highlight3D)
+		window.highlight3D(color);
+}
+
+for (const id of ["swatches", "tiles"]) {
+	$(id).addEventListener("mouseover", e => {
+		const el = e.target.closest("[data-index]");
+		if (el)
+			setHighlight(palette[+el.dataset.index]);
+	});
+	$(id).addEventListener("mouseleave", () => setHighlight(null));
+}
+
+// Chart dots are canvas pixels, so hovering one is a hit-test against the recorded positions.
+const MARK_HIT_RADIUS = 10;
+function hoverMarks(id, drawOf) {
+	const canvas = $(id);
+	canvas.addEventListener("mousemove", e => {
+		const draw = drawOf();
+		if (!draw)
+			return;
+		const rect = canvas.getBoundingClientRect();
+		const x = e.clientX - rect.left, y = e.clientY - rect.top;
+		let hit = null, nearest = MARK_HIT_RADIUS ** 2;
+		for (const mark of draw.marks) {
+			const apart = (mark.x - x) ** 2 + (mark.y - y) ** 2;
+			if (apart < nearest) {
+				nearest = apart;
+				hit = mark.color;
+			}
+		}
+		canvas.style.cursor = hit ? "pointer" : "";
+		canvas.title = hit ? hit.hex.toUpperCase() + " · " + cellLabel(hit) : "";
+		setHighlight(hit);
+	});
+	canvas.addEventListener("mouseleave", () => setHighlight(null));
+}
+hoverMarks("hc-canvas", () => hcDraw);
+hoverMarks("hl-canvas", () => hlDraw);
+
+$("copy").addEventListener("click", e => copy($("export").value, e.currentTarget, "Copied"));
+
+$("state-copy").addEventListener("click", e => copy($("state").value, e.currentTarget, "Copied"));
+
+function applyPastedState() {
+	flashLabel($("state-apply"), applyStateString($("state").value) ? "Applied" : "Bad string");
+}
+
+$("state-apply").addEventListener("click", applyPastedState);
+$("state").addEventListener("keydown", e => { if (e.key === "Enter") applyPastedState(); });
+
+// ---------- pinned palettes ----------
+
+// Kept in localStorage. Each entry keeps the state string that reproduces it; the hexes are the strip
+// drawn in the list and are never read back.
+// The key is namespaced: project sites on GitHub Pages share one origin.
+const PINS_KEY = "color-palette-generator.pins";
+const pins = [];
+let pinCount = 0;
+// The clear button's pending confirmation: renderPins disarms it, so it is initialised before the first render.
+let clearArmed = null;
+
+// The hexes are written into a style attribute, so an entry carrying anything else in them is not usable.
+const isWellFormedPin = entry => typeof entry?.name === "string" && typeof entry.state === "string"
+	&& Array.isArray(entry.hexes) && entry.hexes.every(hex => /^#[0-9a-f]{6}$/i.test(hex));
+
+// Replaces the list in place: the handlers below close over the array.
+// A value that is not a list of well-formed entries is ignored as a whole: the next save replaces it.
+// The count starts past the highest number a stored default name carries, so a restored name is not handed out again.
+function takeStoredPins(json) {
+	let stored;
+	try { stored = JSON.parse(json ?? "[]"); } catch { stored = []; }
+	if (!Array.isArray(stored) || !stored.every(isWellFormedPin))
+		stored = [];
+	pins.length = 0;
+	pins.push(...stored);
+	pinCount = Math.max(0, ...pins.map(entry => +(/^Palette (\d+)$/.exec(entry.name)?.[1] ?? 0)));
+}
+// Storage access throws where site data is blocked. Nothing below depends on it, so the list starts empty.
+try { takeStoredPins(localStorage.getItem(PINS_KEY)); } catch {}
+
+// Same on write, where the store can also be full: the list is then kept for the session only.
+const savePins = () => { try { localStorage.setItem(PINS_KEY, JSON.stringify(pins)); } catch {} };
+
+// The name is user text going into an attribute, so it must not be able to close it.
+const escapeAttribute = text => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+
+const rowIndex = el => +el.closest(".pin").dataset.index;
+
+function renderPins() {
+	disarmClear();
+	$("pin-copy").hidden = pins.length === 0;
+	$("pin-clear").hidden = pins.length === 0;
+	$("pin-list").innerHTML = pins.map((entry, i) =>
+		'<div class="pin" data-index="' + i + '">'
+			+ '<input type="text" class="pin-name" spellcheck="false" value="' + escapeAttribute(entry.name) + '">'
+			+ '<button class="pin-drop" title="Unpin">×</button>'
+			+ '<button class="pin-strip" title="Restore this palette">'
+				+ entry.hexes.map(hex => '<span style="background:' + hex + '"></span>').join("")
+			+ "</button>"
+		+ "</div>").join("");
+}
+
+// Taken from the config rather than from the state field, which is not refreshed while it has focus.
+$("pin-add").addEventListener("click", () => {
+	pins.push({
+		name: "Palette " + (++pinCount),
+		state: stateString(readConfig()),
+		hexes: palette.map(c => c.hex)
+	});
+	renderPins();
+	savePins();
+});
+
+// Tab-separated: a name may contain spaces, and the lines paste into a sheet as two columns.
+$("pin-copy").addEventListener("click", e =>
+	copy(pins.map(entry => entry.name + "\t" + entry.state).join("\n"), e.currentTarget, "Copied"));
+
+// One entry per line, the name before the first tab. A line that is only a state string is taken as
+// one, so a single string pastes in as well. Appends, skipping states already listed.
+// Each entry's strip has to be generated: the copied text carries no colors.
+function loadPins(text) {
+	const known = new Set(pins.map(entry => entry.state));
+	let added = 0;
+
+	for (const line of text.split("\n")) {
+		const tab = line.indexOf("\t");
+		const name = tab < 0 ? "" : line.slice(0, tab).trim();
+		const state = (tab < 0 ? line : line.slice(tab + 1)).trim();
+		if (known.has(state))
+			continue;
+
+		const parsed = parseState(state);
+		if (!parsed)
+			continue;
+
+		const cfg = configFromState(parsed);
+		const colors = generate(cfg).colors;
+		const sorted = parsed.numbers[STATE_IDS.length] !== 0;
+		known.add(state);
+		pins.push({
+			name: name || "Palette " + (++pinCount),
+			state,
+			hexes: (sorted ? sortedByHue(colors, cfg.hMin) : colors).map(c => c.hex)
+		});
+		++added;
+	}
+
+	renderPins();
+	savePins();
+	return added;
+}
+
+// Two presses: the first opens the box, the second reads it. An empty box closes without loading.
+$("pin-load").addEventListener("click", e => {
+	const box = $("pin-paste");
+	if (box.hidden) {
+		box.hidden = false;
+		box.focus();
+		return;
+	}
+
+	const added = loadPins(box.value);
+	box.value = "";
+	box.hidden = true;
+	flashLabel(e.currentTarget, added ? "+" + added : "none");
+});
+
+// Two presses: the first arms the button, the second clears.
+// Any change to the list disarms it: the armed press applies to the list as it stood.
+function disarmClear() {
+	if (!clearArmed)
+		return;
+	clearTimeout(clearArmed.timer);
+	clearArmed = null;
+	$("pin-clear").textContent = "Clear all";
+	$("pin-clear").classList.remove("armed");
+}
+
+$("pin-clear").addEventListener("click", e => {
+	if (!clearArmed) {
+		e.currentTarget.textContent = "Sure?";
+		e.currentTarget.classList.add("armed");
+		clearArmed = { at: performance.now(), timer: setTimeout(disarmClear, 3000) };
+		return;
+	}
+
+	// A press this soon after arming is the second half of a double-click: the button stays armed.
+	if (performance.now() - clearArmed.at < 400)
+		return;
+
+	pins.length = 0;
+	// No name survives the clear, so the next default name starts from one.
+	pinCount = 0;
+	renderPins();
+	savePins();
+});
+
+// Renaming leaves the list alone: rebuilding it would take the focus out of the field mid-word.
+$("pin-list").addEventListener("input", e => {
+	const field = e.target.closest(".pin-name");
+	if (field) {
+		pins[rowIndex(field)].name = field.value;
+		savePins();
+	}
+});
+
+$("pin-list").addEventListener("click", e => {
+	const strip = e.target.closest(".pin-strip");
+	if (strip) {
+		applyStateString(pins[rowIndex(strip)].state);
+		return;
+	}
+
+	const drop = e.target.closest(".pin-drop");
+	if (drop) {
+		pins.splice(rowIndex(drop), 1);
+		renderPins();
+		savePins();
+	}
+});
+
+// Fires in every other tab when one saves, so each tab writes from the latest list.
+window.addEventListener("storage", e => {
+	if (e.key !== PINS_KEY)
+		return;
+	takeStoredPins(e.newValue);
+	renderPins();
+});
+
+renderPins();
+
+// A different palette on every load. Truncated to the 32 bits mulberry32 and the state string both
+// use, so the value in the box survives a save and restore unchanged.
+$("seed").value = Date.now() >>> 0;
+
+renderNames();
+run();
+</script>
+
+<script type="importmap">
+{
+	"imports": {
+		"three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+		"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+	}
+}
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+// OKLab (L, a, b) -> scene (x=a, y=L-0.5, z=b). One OKLab unit along every axis, so on-screen
+// proportions are OKLab proportions up to the rotation.
+const oklabScene = lab => [lab[1], lab[0] - 0.5, lab[2]];
+
+// OKLab -> scene as apart2 measures it, as far as three flat axes allow: the hue at its warped
+// angle, the chroma scaled by the lightness gain and the hue scale, the height the gain and W_L
+// summed from black. Steps along and around the grey axis then read at metric length; radial steps
+// stay at OKLab length, W_C being a radial weight no flat picture can carry with the other two.
+const gainAt = L => lightnessGain(L * 100);
+// Height at every hundredth of lightness, the trapezoid sum of W_L times the gain.
+const METRIC_HEIGHT = [0];
+for (let k = 1; k <= 100; ++k)
+	METRIC_HEIGHT.push(METRIC_HEIGHT[k - 1] + W_L * (gainAt((k - 1) / 100) + gainAt(k / 100)) / 200);
+function metricScene(lab) {
+	const at = Math.min(100, Math.max(0, lab[0] * 100)), k = Math.min(99, Math.floor(at));
+	const height = METRIC_HEIGHT[k] + (METRIC_HEIGHT[k + 1] - METRIC_HEIGHT[k]) * (at - k);
+	const C = Math.hypot(lab[1], lab[2]) * 100;
+	const radius = C * hueScaleAt(C) * gainAt(lab[0]) / 100, angle = warpedHue(lab[1], lab[2]);
+	return [radius * Math.cos(angle), height - METRIC_HEIGHT[100] / 2, radius * Math.sin(angle)];
+}
+// The checkbox survives a reload in some browsers, so the mapping starts from it.
+let toScene = $("metric-3d").checked ? metricScene : oklabScene;
+
+const container = $("gamut-3d");
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+container.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+// Orthographic: rotation is then the only distortion of OKLab distances.
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -10, 10);
+camera.position.set(1.2, 0.55, 1.2);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.enablePan = false;
+controls.minZoom = 0.6;
+controls.maxZoom = 6;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 1.6;
+renderer.domElement.addEventListener("pointerdown", () => { controls.autoRotate = false; });
+
+// Double-click: back to the home view, spinning again. Fires after its own pointerdown, so the
+// resume wins over the stop above.
+const HOME = camera.position.clone();
+renderer.domElement.addEventListener("dblclick", () => {
+	camera.position.copy(HOME);
+	camera.zoom = 1;
+	camera.updateProjectionMatrix();
+	controls.target.set(0, 0, 0);
+	controls.autoRotate = true;
+});
+
+// An indexed (nu x nv) sheet over the unit square: `at` gives the sRGB color, kept as both the
+// OKLab position and the vertex color. Colors are stored linear, the working space of the shaders.
+function sheet(nu, nv, at) {
+	const positions = [], colors = [], index = [];
+	for (let i = 0; i <= nu; ++i)
+		for (let j = 0; j <= nv; ++j) {
+			const rgb = at(i / nu, j / nv);
+			positions.push(...toScene(rgbToOklab(rgb)));
+			colors.push(srgbToLinear(rgb[0]), srgbToLinear(rgb[1]), srgbToLinear(rgb[2]));
+		}
+	for (let i = 0; i < nu; ++i)
+		for (let j = 0; j < nv; ++j) {
+			const k = i * (nv + 1) + j;
+			index.push(k, k + 1, k + nv + 1, k + 1, k + nv + 2, k + nv + 1);
+		}
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+	geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+	geometry.setIndex(index);
+	return geometry;
+}
+
+// The gamut boundary is the image of the RGB cube's six faces: the OKLab map is continuous and
+// one-to-one, so surface maps to surface.
+const SHELL_STEPS = 48;
+const shellMaterial = new THREE.MeshBasicMaterial({
+	vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0.22, depthWrite: false });
+const shell = new THREE.Group();
+// The grey axis: zero chroma at every lightness.
+const greyAxis = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x9298a4 }));
+scene.add(shell, greyAxis);
+function buildShell() {
+	clearGroup(shell);
+	for (let axis = 0; axis < 3; ++axis)
+		for (const side of [0, 1])
+			shell.add(new THREE.Mesh(sheet(SHELL_STEPS, SHELL_STEPS, (u, v) => {
+				const rgb = [];
+				rgb[axis] = side;
+				rgb[(axis + 1) % 3] = u;
+				rgb[(axis + 2) % 3] = v;
+				return rgb;
+			}), shellMaterial));
+	greyAxis.geometry.dispose();
+	greyAxis.geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...toScene([0, 0, 0])), new THREE.Vector3(...toScene([1, 0, 0]))]);
+}
+buildShell();
+
+const regionGroup = new THREE.Group(), markerGroup = new THREE.Group(),
+	pairGroup = new THREE.Group(), zoneGroup = new THREE.Group();
+scene.add(regionGroup, markerGroup, pairGroup, zoneGroup);
+
+// Nothing in these groups outlives its rebuild, so a clear disposes what it finds. Meshes of one
+// rebuild do share geometries and materials, so those disposes repeat, which three.js ignores.
+function clearGroup(group) {
+	group.traverse(object => {
+		if (object.geometry) object.geometry.dispose();
+		if (object.material) object.material.dispose();
+	});
+	group.clear();
+}
+
+// The faces of the L/C/h box as sRGB shows them: chroma past the gamut is pulled back to its
+// surface, so the selected volume is drawn as the part of it sRGB can show. A full hue span is a
+// closed band and needs no hue end caps.
+function regionMeshes(cfg) {
+	const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+	const span = hueSpan(cfg.hMin, cfg.hMax);
+	const hue = t => (cfg.hMin + t * span) % 360;
+	// Both bounds follow each hue's cusp, so the lightness and chroma faces are curved, not flat.
+	const chroma = (t, h) => absoluteC(cfg.cMin + t * (cfg.cMax - cfg.cMin), h);
+	const light = (t, h) => absoluteL(cfg.lMin + t * (cfg.lMax - cfg.lMin), h);
+	const shown = (L, C, h) => colorAt(L, Math.min(C, gamutChroma(L, h)), h).rgb;
+
+	const sheets = [];
+	for (const t of [0, 1]) {
+		if (span < 360)
+			sheets.push(sheet(16, 16, (u, v) => shown(light(v, hue(t)), chroma(u, hue(t)), hue(t))));
+		sheets.push(sheet(64, 16, (u, v) => shown(light(v, hue(u)), chroma(t, hue(u)), hue(u))));
+		sheets.push(sheet(64, 16, (u, v) => shown(light(t, hue(u)), chroma(v, hue(u)), hue(u))));
+	}
+	return sheets.map(geometry => new THREE.Mesh(geometry, material));
+}
+
+// Generated colors are spheres, fixed ones cones - the chart's dots and triangles. The contrast
+// shell is a back-face copy, black over light colors and white over dark, as drawMarker strokes.
+// The ghosted copies invert the depth test, drawing exactly where the solid ones are buried: a
+// marker inside the region body dims instead of vanishing. renderOrder keeps them after the
+// gamut shell, so they also show through it.
+function markerMeshes(colors) {
+	return colors.map(color => {
+		const geometry = color.fixed
+			? new THREE.ConeGeometry(0.015, 0.034, 24)
+			: new THREE.SphereGeometry(0.013, 20, 14);
+		const contrast = isLightColor(color.rgb) ? 0x000000 : 0xffffff;
+		const ghosted = { transparent: true, opacity: 0.45, depthFunc: THREE.GreaterDepth, depthWrite: false };
+
+		const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: color.hex }));
+		mesh.userData.color = color;
+		mesh.position.set(...toScene(color.lab));
+		for (const [settings, order, scale] of [
+			[{ color: contrast, side: THREE.BackSide }, 0, 1.35],
+			[{ color: contrast, side: THREE.BackSide, ...ghosted }, 2, 1.35],
+			[{ color: color.hex, ...ghosted }, 3, 1]
+		]) {
+			const part = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial(settings));
+			part.renderOrder = order;
+			part.scale.setScalar(scale);
+			mesh.add(part);
+		}
+		return mesh;
+	});
+}
+
+// The hardest pair, joined in the warning amber of the swatch outlines. Depth testing is off:
+// the line is an annotation over the scene, not a body in it.
+function pairMesh(pair) {
+	const ends = pair.map(color => new THREE.Vector3(...toScene(color.lab)));
+	const direction = ends[1].clone().sub(ends[0]);
+	if (direction.length() < 1e-4)
+		return null;
+
+	// Trimmed at both ends: drawn over everything, the line would otherwise cross the markers.
+	const trim = Math.min(0.018, direction.length() / 3);
+	const warn = getComputedStyle(document.body).getPropertyValue("--warn").trim();
+	const mesh = new THREE.Mesh(
+		new THREE.CylinderGeometry(0.004, 0.004, direction.length() - 2 * trim, 8),
+		new THREE.MeshBasicMaterial({ color: warn, transparent: true, opacity: 0.9, depthTest: false }));
+	mesh.position.copy(ends[0]).add(ends[1]).multiplyScalar(0.5);
+	mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+	mesh.renderOrder = 4;
+	return mesh;
+}
+
+// The recall metric's reach around a color, centred on the origin: a unit sphere's vertices walked
+// out along their OKLab directions until `apart2` reads `radius` deltaE, each then placed by the
+// scene mapping. The metric grows monotonically along a ray, so each crossing brackets and bisects.
+function haloGeometry(color, radius) {
+	const geometry = new THREE.SphereGeometry(1, 24, 16);
+	const p = color.lab.map(v => v * 100), centre = toScene(color.lab);
+	const target = radius * radius, vertices = geometry.attributes.position;
+	for (let i = 0; i < vertices.count; ++i) {
+		const dir = [vertices.getY(i), vertices.getX(i), vertices.getZ(i)]; // sphere axes as L, a, b
+		const reach = t => apart2(p, p.map((x, k) => x + t * dir[k]));
+		let below = 0, above = radius;
+		while (reach(above) < target)
+			above *= 2;
+		for (let n = 0; n < 20; ++n) {
+			const mid = (below + above) / 2;
+			if (reach(mid) < target) below = mid; else above = mid;
+		}
+		const point = toScene(p.map((x, k) => (x + above * dir[k]) / 100));
+		vertices.setXYZ(i, point[0] - centre[0], point[1] - centre[1], point[2] - centre[2]);
+	}
+	return geometry;
+}
+
+// Half the generator's limit distance around every color, so two zones meet where the pair sits
+// at the limit. Annotations like the pair line: depth testing off, drawn between the shell and the
+// marker ghosts.
+function zoneMeshes(colors, radius) {
+	return colors.map(color => {
+		const zone = new THREE.Mesh(haloGeometry(color, radius),
+			new THREE.MeshBasicMaterial({
+				color: color.hex, transparent: true, opacity: 0.3, depthTest: false, depthWrite: false }));
+		zone.position.set(...toScene(color.lab));
+		zone.renderOrder = 1;
+		return zone;
+	});
+}
+
+window.update3D = (cfg, colors, pair) => {
+	clearGroup(regionGroup);
+	regionGroup.add(...regionMeshes(cfg));
+	clearGroup(markerGroup);
+	if (colors.length)
+		markerGroup.add(...markerMeshes(colors));
+	clearGroup(pairGroup);
+	const line = pair ? pairMesh(pair) : null;
+	if (line)
+		pairGroup.add(line);
+	clearGroup(zoneGroup);
+	const radius = limitDistance(cfg.scale) / 2;
+	if (radius > 0 && colors.length)
+		zoneGroup.add(...zoneMeshes(colors, radius));
+};
+
+window.highlight3D = color => {
+	for (const marker of markerGroup.children)
+		marker.scale.setScalar(marker.userData.color === color ? 1.7 : 1);
+};
+
+// Marker hover: the shared highlight, plus a pointer cursor and a hex-and-name tooltip.
+const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
+renderer.domElement.addEventListener("pointermove", e => {
+	// Buttons down means the pointer is steering the camera.
+	if (e.buttons)
+		return;
+
+	const rect = renderer.domElement.getBoundingClientRect();
+	pointer.set((e.clientX - rect.left) / rect.width * 2 - 1, 1 - (e.clientY - rect.top) / rect.height * 2);
+	raycaster.setFromCamera(pointer, camera);
+	const hit = raycaster.intersectObjects(markerGroup.children, true)[0];
+	let marker = hit ? hit.object : null;
+	while (marker && marker.parent !== markerGroup)
+		marker = marker.parent;
+
+	const color = marker ? marker.userData.color : null;
+	renderer.domElement.style.cursor = color ? "pointer" : "";
+	renderer.domElement.title = color ? color.hex.toUpperCase() + " · " + cellLabel(color) : "";
+	setHighlight(color);
+});
+renderer.domElement.addEventListener("pointerleave", () => setHighlight(null));
+
+function resize() {
+	const w = container.clientWidth, h = container.clientHeight;
+	// Either side at zero leaves the frustum degenerate; the next resize with a real size sets it.
+	if (w === 0 || h === 0)
+		return;
+
+	const half = 0.62, aspect = w / h;
+	// Read here rather than once at load: a move to a monitor of another density changes it.
+	renderer.setPixelRatio(window.devicePixelRatio);
+	renderer.setSize(w, h);
+	camera.left = -half * aspect;
+	camera.right = half * aspect;
+	camera.top = half;
+	camera.bottom = -half;
+	camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize);
+resize();
+
+// The classic script has already generated and drawn: pick up its state, then follow its hooks.
+const showPageState = () => window.update3D(lastCfg, palette, lastResult?.pair ?? null);
+showPageState();
+$("metric-3d").addEventListener("change", e => {
+	toScene = e.target.checked ? metricScene : oklabScene;
+	buildShell();
+	showPageState();
+});
+
+// The loop runs only while the panel is on screen. A hidden tab needs no handling of its own:
+// the loop is requestAnimationFrame-driven and the browser stalls it there.
+const animate = () => { controls.update(); renderer.render(scene, camera); };
+new IntersectionObserver(entries => renderer.setAnimationLoop(entries.at(-1).isIntersecting ? animate : null))
+	.observe(container);
+</script>
+
+</body>
+</html>

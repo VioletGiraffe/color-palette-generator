@@ -31,8 +31,8 @@ notice be kept; `index.html` carries it above the tables.
    rarity (`SPECIFICITY`). Unweighted plurality hands generic words everything — everyone falls
    back on `green`, so `green` narrowly out-polls `light green` even at its pale edge, and owns
    84x `mauve`'s territory; weighting returns specific words their regions and flattens the ratio
-   to 3.7x. The territories are arbitrary shapes, which is why the table cannot be replaced by a
-   list of representative colors — a nearest-centroid partition reproduces only 60% of it.
+   to 3.7x. The territories are arbitrary shapes: a list of representative colors cannot replace the
+   table, a nearest-centroid partition reproduces only 60% of it.
 3. A bin is flagged when people split their votes between names (`UNSURE_LEAD`) or when the
    weighted winner barely beat the runner-up (`UNSURE_RATIO`). Those colors have no name people
    agree on; the page marks them with a tilde. They are not excluded from palettes — being hard to
@@ -65,7 +65,8 @@ node data/make_boundary_deal.js [--boundaries red,yellow,green,cyan,blue,magenta
 node data/make_boundary_deal.js --sweep 10 [--turns 20,30,45,60,45] [--light 50] [--chroma 85] [--placement shared|own-chroma|own|own-reversed|low|high[,more]] [--ranges 230-340,120-190] # the same, swept around the circle or over hue ranges at even centres; a turn listed twice is dealt again at centres half a step over; several placements deal every pair under each
 node data/make_boundary_deal.js --axis lightness [--hues 30] [--centres 35,50,65] [--turns 10,20,30,45,60] [--chroma 85] # lightness pairs instead: one hue, a turn apart in cusp-relative lightness
 node data/make_boundary_deal.js --axis chroma [--hues 30] [--centres 30,50,70] [--turns 10,20,30,40,50] [--light 50] # chroma pairs: one hue and lightness, a turn apart in chroma share of the reach
-node data/fit_boundaries.js log.json          # grades by turn and offset per boundary hue and the boundary's excess on the metric, from a calibrate-boundaries.html log
+node data/make_boundary_deal.js --axis mixed [--ranges 0-360] [--windows 20-80] [--kinds mixed] [--by metric] [--distances 2-18] [--bands 6] [--each 30] [--seed 1] # validation pairs in cells of hue range, lightness window, kind (hue alone, or hue, lightness and chroma at once) and distance band, the bands on the metric or on OKLab deltaE; the defaults deal round 16
+node data/fit_boundaries.js log.json          # grades by turn and offset per boundary hue and the boundary's excess on the metric, from a calibrate-boundaries.html log; for a mixed deal, per kind the grades by distance band and by hue range and lightness window, and the ranking quality of the metric against OKLab deltaE
 node data/fit_hue_density.js [--p 0.75] [--ridge 2] [--knots 12] [--own-cuts] [--wl 0.35] [--wc 0.6] [--gain 0.5] [--placement own] [--table] log.json [more.json ...] # memory-scale hue density from calibrate-boundaries.html logs, the hue term in the metric's distance form: ranking quality flat, fitted and cross-validated, the density at each knot and the grade cuts on the metric, per log with --own-cuts
 node data/make_member_deal.js [--palettes 120] [--count 8] [--box 20 60 20 100] [--shared 0.5] # deal calibrate-members.html's palettes into the page
 node data/fit_members.js log.json             # where the bad colors live and whether bad is the color or its company, from a calibrate-members.html log
@@ -161,15 +162,15 @@ Its constants (noise width, the two weights, swatch size) are measured, not assu
    mix stand in for lightness.
    Colors not in the same probe pair keep 12 weighted deltaE apart, two softness units past the
    fine threshold. A wider clearance leaves no room: at 14 the gamut places only a third of the
-   four pairs a palette asks for.
+   four pairs a palette needs.
 2. `node data/fit.js log.json` fits an ordered probit over the weighted pair distance (too close
    below one threshold, marginal up to a second, fine above, boundaries blurred by a softness) by
    maximum likelihood over a grid, with a lapse rate for stray marks. It prints the lines to paste
    into `identify.js` and the page, a likelihood profile per parameter, and observed against
-   predicted verdicts per probe condition. It then asks whether the metric's scale depends on
+   predicted verdicts per probe condition. It then tests whether the metric's scale depends on
    position, refitting with the distance scaled by relative chroma and relative lightness each
    raised to an exponent, the other parameters free nearby. Zero exponents are the flat metric, so
-   the profiles say directly whether the data asks for anything else; on judged palettes the
+   the profiles show directly whether the data departs from it; on judged palettes the
    exponents and the chroma weight trade off, so a shape shows up more reliably than its split
    against the weight does. The noise width puts a lone pair's swap chance at the
    generator's limit two softness units past the fine threshold, where a pair is judged fine
@@ -208,9 +209,9 @@ the both-grounds log above, and they are what the `LIGHTNESS_EXPONENT` comes fro
 lightness, two of them below the cusp. `chroma-log.json`, 24 palettes from `calibrate-chroma.html`:
 chroma and hue probes at three chroma levels. `hue-log.json`, 36 palettes from `calibrate-hue.html`:
 hue probes over six sectors and two chroma levels, lightness drawn across the whole span the gamut
-allows at each hue, which is what decorrelates the three candidates. `cusp-log.json` and
+allows at each hue: that span decorrelates the three candidates. `cusp-log.json` and
 `cusp-log-new.json`, 33 and 26 palettes from `calibrate-cusp.html`: hue probes at four hues crossed
-with absolute lightness bands shared by all four, which is what tells the lightness coordinate apart
+with absolute lightness bands shared by all four: the shared bands tell the lightness coordinate apart
 (below).
 
 Fitted together by `node data/fit_hue.js --warped` over the five probe logs, 443 pairs, the ordered
@@ -320,6 +321,10 @@ sitting, each record tagged with its placement. Round 15 deals violet 260 to 340
 five ways each: one lightness at the mean (`own-chroma`), each at its own cusp (`own`), each at the other's
 (`own-reversed`), both at the lower (`low`), both at the higher (`high`), every color at 85% of its reach there.
 `boundary-1-log.json` to `boundary-15-log.json` follow the same record format.
+`boundary-16-log.json` is a mixed deal, `axis` mixed: 180 pairs anywhere in lightness 20 to 80 and 30 to 100% of the
+reach, the two colors differing in hue, lightness and chroma at once, 30 pairs per band of distance 2 to 18 on the
+metric. A record carries the pair's index in the deal, its hexes, hues and grade; the stamp carries the box, the
+distance range, the bands and the seed. It validates the metric on pairs of a kind no earlier round dealt.
 
 - `node data/fit_boundaries.js log.json` tables one deal's grades by turn and placement.
 - `node data/fit_hue_density.js data/boundary-1-log.json data/boundary-2-log.json data/boundary-3-log.json` pools every log into the memory-scale hue density; a

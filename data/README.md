@@ -20,6 +20,8 @@ the generator or the metric: most of the obvious alternatives have been measured
 - `calibrate-*.html` are the calibration pages, `make_*_deal.js` the dealers that write a deal into a page,
   `fit_*.js` the fits, `*-log.json` the judged logs. `past-experiments/` keeps one working page per step of
   `evolution.md`. `scripts.md` lists all of them.
+- `generator-next.html` at the root is a clone of the page with the generation stage rebuilt from the end state;
+  `generator-next.md` here is its spec and its measurements against this page. The sections below describe `index.html`.
 - `tmp/` at the project root is gitignored scratch for experiment scripts and pages; `exp.html` at the root is
   a gitignored live scratch copy of the page. `demo.html` is untracked and not part of the project.
 

@@ -446,7 +446,9 @@ function loadPage(pagePath, densities = null) {
 			patch("const weight = HUE_DENSITY.map(", "const weight = " + JSON.stringify(densities.draw) + ".map(");
 		globalThis.atob = s => Buffer.from(s, "base64").toString("binary");
 		const page = (0, eval)(source
-			+ "; ({ generate, cellOf, colorFromHex, CELL_NAMES, CELL_OVERLAP, boxCells, samplePoint, mulberry32, SPARSE_FRACTION, oklabToRgb, labOfLch, HUE_DENSITY: typeof HUE_DENSITY === 'undefined' ? null : HUE_DENSITY })");
+			+ "; ({ generate, cellOf, colorFromHex, CELL_NAMES, CELL_OVERLAP, mulberry32, oklabToRgb, labOfLch, HUE_DENSITY: typeof HUE_DENSITY === 'undefined' ? null : HUE_DENSITY,"
+			// The box sampler of pages before generator-next.html, for hue-marginals.js.
+			+ " ...(typeof boxCells === 'undefined' ? {} : { boxCells, samplePoint, SPARSE_FRACTION }) })");
 		// A page respacing hue differently from this file is scored on a metric other than its own.
 		if (!densities && (!page.HUE_DENSITY || page.HUE_DENSITY.some((d, h) => d !== HUE_DENSITY[h])))
 			console.warn(path.basename(pagePath) + ": its hue density is not this file's; scores are on this file's metric");

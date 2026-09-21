@@ -1603,6 +1603,30 @@ term is 0.003 cross-validated: few pairs anywhere carry both a hue turn and a li
 built: a rho table would be the correct form, and the case for it is one stretch of the circle and a few
 thousandths of ranking. Recorded here for the day palettes show light purples beside dark blues too often.
 
+Round 16, the metric on pairs of a kind it was not fitted to: 180 pairs differing in hue, lightness and chroma at
+once, anywhere in lightness 20 to 80 and 30 to 100% of the reach, 30 per band of distance 2 to 18
+(`tmp/score-round16.js`, `tmp/round16-variants.js`). The judge reported a tighter criterion than before, and the
+cuts show it: marginal from 7.6 and fine from 12.0 at an even chance, against 5.5 and 10.6 predicted from rounds 6
+to 13 before the deal; the predicted cuts give the exact grade for 67% of pairs, the round's own for 76%. Ranking,
+which a criterion does not touch: not-close 0.941, fine 0.943, against 0.934 and 0.943 for OKLab deltaE. The
+residual, the judged grade less the grade expected at the pair's distance from the round's own cuts, negative
+where the metric overstates the distance:
+
+| variant | AUC not-close | AUC fine | both in 250-330 (28) | of those L under 45 (13) | L 45 up (15) | other pairs L under 45 (23) | rest |
+|---|---|---|---|---|---|---|---|
+| built | 0.941 | 0.943 | -0.33 | -0.58 | -0.12 | -0.07 | +0.09 |
+| gain exponent 0.25 | 0.951 | 0.951 | -0.27 | -0.41 | -0.15 | +0.02 | +0.05 |
+| no gain | 0.955 | 0.954 | -0.23 | -0.28 | -0.18 | +0.12 | +0.03 |
+| flat hue circle | 0.943 | 0.956 | -0.10 | -0.32 | +0.09 | -0.09 | +0.04 |
+| flat hue circle, no gain | 0.952 | 0.967 | -0.02 | -0.09 | +0.03 | +0.10 | -0.01 |
+| shared-placement table | 0.948 | 0.951 | -0.16 | -0.37 | +0.03 | -0.10 | +0.05 |
+| shared-placement table, gain exponent 0.25 | 0.955 | 0.960 | -0.10 | -0.23 | +0.01 | 0.00 | +0.02 |
+
+The metric overstates blue to magenta, and dark blue to magenta by more than half a grade: there the hue table's
+stretch and the dark gain multiply, and the verdicts carry neither. Dark pairs of other hues want a gain, smaller
+than the built one. On mixed pairs neither the hue table nor the gain improves the ranking; an AUC step of 0.01 is
+within this round's noise, the violet residual, three standard errors, is not. Nothing built from one round of 180.
+
 ## Live palettes under the preference metric
 
 The first palettes generated on the built metric came out pale: the state
@@ -1709,7 +1733,28 @@ it dislikes moderate-chroma yellows and greens and likes blues and violets at an
 chroma 8 being 0.16 at hue 90 and 0.84 at 270, at chroma 12 0.48 and 0.94, and even at 16 0.81 against 0.98.
 That is the member rounds' verdict on pale yellows and olives, and as a packing weight it empties the yellows.
 Neither weight moves the violet count, which is the metric's volume: 5.9 of 14 by the density and the gain
-against 3.8 by OKLab. Not built; the share weight is the candidate.
+against 3.8 by OKLab. Built as the packing metric, see `data/README.md`.
+
+The pair verdicts are at their ceiling (`tmp/ceiling.js`). On a repeated deal, the first sitting's verdict
+predicts the second's 73% (rounds 8 to 12), 76% (9 to 13) and 70% (3 to 4) of the time; the metric's distance with
+two cuts set on the first sitting predicts the second 75%, 77% and 73%. The metric explains a repeat sitting as
+well as the judge's own earlier verdicts do, so no further pair round, an additivity round included, has reliable
+variance left to find. What the pair rounds constrain weakly is the volume: a violet density of 1.9 or 1.15
+changes the ranking by thousandths and the violet share of a palette by 9 points of 100. The hue balance of
+palettes needs an instrument that shows palettes.
+
+What the stages of the current generator contribute (`tmp/pushes.js`, `tmp/start-vs-final.js`, the exposed copies
+in `tmp/`). The seats decide the hue balance and the pushes keep it: blue to magenta 6.2 of 14 seated, 6.3 final;
+26% of the colors move at all in a roomy box, by under one unit of the metric, 92% by about two units at 24 colors.
+The floor of the seats alone against the final palette: 0.970 to 0.980 in the reported box, 0.855 to 0.967 at 24
+colors in a wide box, 0.574 to 0.865 at 40 in 8 s, 0.247 to 0.516 in a pastel box. The pool counts the hue table
+twice, once as the draw's acceptance and once inside the volume element: its points are 33% blue to magenta, its
+weight 45%. The heaviest tenth of the pool's points hold 30% of the weight.
+
+The generator rebuilt from the end state, `generator-next.html`, its spec and its measurements against this page in
+`data/generator-next.md`: one density, a pool drawn from it, the widest Poisson-disc throw, a relaxation of random
+steps for the confusable colors. With its hue target off it reproduces this page's floors and hue bins at a twentieth
+of the time; the hue target moves blue to magenta from 45% to the hue line's 31% and costs floor in a crowded box.
 
 ## Files
 
