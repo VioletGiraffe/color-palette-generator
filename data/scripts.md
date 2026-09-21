@@ -99,7 +99,7 @@ range boxes as OKLCh ranges, so it needs a page whose controls are OKLCh. `build
   file's metric, the page's generator runs on its own.
 - `generate(cfg)` takes `{ count, scale, hMin, hMax, cMin, cMax, lMin, lMax, seed, fixed, avoid }` with
   `fixed` and `avoid` as arrays of `colorFromHex` results, plus the optional `included` (name mask, all
-  by default), `preference` (true). It returns `{ colors, floor, pair, apart,
+  by default), `preference` (true), `lAbsolute` (false: the lightness range in absolute OKLab L). It returns `{ colors, floor, pair, apart,
   confused, named }` or null for an empty box; a color is `{ lch, lab, rgb, hex, cell, confident }`.
   The ranges are the page's cusp-relative ones, see `README.md`.
 
