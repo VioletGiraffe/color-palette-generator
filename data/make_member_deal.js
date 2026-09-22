@@ -37,7 +37,7 @@ function main(args) {
 		const previous = dealt[seed - 2];
 		const fixedHex = previous && seed % 2 === 0 && (seed / 2) <= Math.round(palettes * shared) ? previous.hexes[Math.floor(page.mulberry32(seed)() * previous.hexes.length)] : null;
 		const fixed = fixedHex ? [page.colorFromHex(fixedHex)] : [];
-		const colors = page.generate({ count: count - fixed.length, scale: 3, hMin: 0, hMax: 360, ...box, seed, fixed }).colors
+		const colors = page.generate({ count: count - fixed.length, hMin: 0, hMax: 360, ...box, seed, fixed }).colors
 			.slice().sort((p, q) => hueOf(p.lab) - hueOf(q.lab));
 		dealt.push({ seed, count, hexes: colors.map(c => c.hex), names: colors.map(c => CELL_NAMES[c.cell] ?? "unnamed"), fixed: fixedHex });
 	}

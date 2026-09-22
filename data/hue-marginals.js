@@ -61,7 +61,7 @@ function main(args) {
 		let total = 0;
 		for (const count of counts)
 			for (let seed = 1; seed <= seeds; ++seed)
-				for (const color of page.generate({ count, scale: 3, hMin: 0, hMax: 360, ...box, seed, fixed: [] }).colors) {
+				for (const color of page.generate({ count, hMin: 0, hMax: 360, ...box, seed, fixed: [] }).colors) {
 					++bins[Math.floor(hueOf(color.lab) / 30)];
 					++total;
 					tally(perName, page.CELL_NAMES[color.cell] ?? "unnamed");

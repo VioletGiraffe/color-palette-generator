@@ -57,10 +57,12 @@ the archived generator and the scripts.
 - the sum times the square of `lightnessGain` of the pair's mean lightness, one at `LIGHTNESS_REFERENCE` (68) and
   rising as the ratio to `LIGHTNESS_EXPONENT` (0.21) toward black (floored at 20) and toward white.
 
-The Distinctness control is the noise width `sigma`; a pair at distance `d` swaps with `swapChance(d, sigma)`,
-half the complementary error function of `d / (2 sigma)` in standard units, and `limitDistance(sigma)` is where
-that chance falls to `ERROR_LIMIT` (0.02). The control's default puts the limit where "fine" begins in the strict
-pair rounds (21 to 23), the recall calibration (`calibrate.html`, `fit.js`) having set the earlier one; the level
+The noise width `SIGMA` (3.3) is fixed; a pair at distance `d` swaps with `swapChance(d, SIGMA)`, half the
+complementary error function of `d / (2 SIGMA)` in standard units, and `limitDistance(SIGMA)` is where that chance
+falls to `ERROR_LIMIT` (0.02): 13.5, where "fine" begins in the strict pair rounds (21 to 23), the recall calibration
+(`calibrate.html`, `fit.js`) having set the earlier one. The Min distance control, `minApart`, is a floor on top of
+that: a color with a pair under it is stepped like one over the error limit, and an attempt ends the search only
+with every pair at or above it. Below 13.5 the error limit already keeps pairs apart, so the control starts there. The level
 densities, the weight tables and the gain's exponent are one fit to the pair rounds under the preference question
 (`calibrate-boundaries.html`, `fit_hue_density.js`), the chroma power from the same rounds; the sources and numbers are
 in `scripts.md` and `evolution.md`. `W_L` and `W_C` in `identify.js` are the tables' means, for the recall-era scoring only.
@@ -130,10 +132,10 @@ random step never lands inside it.
 
 `stateString` writes, `parseState` reads and `configFromState` turns into a generator config:
 
-    v4|count|strict|hMin|hMax|cMin|cMax|lMin|lMax|seed|sort|backdrop|custom|format|fixed|names|avoid|lAbsolute|rerolls|vividness
+    v5|count|minApart|hMin|hMax|cMin|cMax|lMin|lMax|seed|sort|backdrop|custom|format|fixed|names|avoid|lAbsolute|rerolls|vividness
 
-- `strict` is the Distinctness value, `sigma`; the ranges are in the control coordinates above (hue in degrees,
-  not the ridge coordinate); `seed` is written unsigned.
+- `minApart` is the Min distance value in weighted deltaE; the ranges are in the control coordinates above (hue in
+  degrees, not the ridge coordinate); `seed` is written unsigned.
 - `sort` is 0 or 1; `backdrop` and `format` are option values matched by value, not position; `custom` is the
   custom backdrop's hex without `#`.
 - `fixed` and `avoid` are comma-joined hexes without `#`; `names` is the included-name mask, one bit

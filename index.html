@@ -272,11 +272,11 @@
 	<div class="group">
 		<div class="range-pair" style="grid-template-columns: auto 1fr; align-items: center; margin-bottom: 0">
 			<label for="count">Colors</label>
-			<label for="strict" class="row" style="margin: 0"><span>Distinctness</span><span class="value" id="strict-value">3.3</span></label>
+			<label for="min-apart" class="row" style="margin: 0"><span>Min distance</span><span class="value" id="min-apart-value">13.5</span></label>
 			<input type="number" id="count" min="1" max="40" step="1" value="8">
-			<input type="range" id="strict" min="1" max="10" step="0.1" value="3.3">
+			<input type="range" id="min-apart" min="13.5" max="40" step="0.5" value="13.5">
 		</div>
-		<div class="hint">Width of the memory noise the colors are spread against, in ΔE. Low pushes only the closest pairs apart; high trades that for an even spread.</div>
+		<div class="hint">The closest any two colors may come, in ΔE. The memory noise alone keeps every pair at 13.5 where the ranges allow; raise it for palettes that survive a longer gap between seeing a color and naming it.</div>
 		<label for="vivid" class="row" style="margin: 10px 0 0"><span>Vividness</span><span class="value" id="vivid-value"></span></label>
 		<input type="range" id="vivid" min="0" max="1" step="0.05">
 		<div class="hint">How much saturated colors are preferred over an even spread of the range. 0 spreads on the distance alone; higher buys saturation with a little of the worst color's identification.</div>
@@ -408,7 +408,7 @@
 		<label class="row" style="margin:0"><span>In the metric</span><input type="checkbox" id="metric-3d"></label>
 	</div>
 	<div class="plane" id="gamut-3d"></div>
-	<div class="hint">The sRGB gamut in OKLab, lightness up. Solid body: what the selected ranges allow. Cones: fixed colors. Amber line: hardest pair. Halos reach half the distance the generator keeps colors apart at this Distinctness, so two meeting mark a pair right at its limit; they stand tall since lightness counts for less, and grow toward black. In the metric: the same body as the generator measures it, each hue turned to its calibrated angle, chroma and height scaled by the lightness gain and height by the lightness weight too; only distances straight in or out from the grey axis stay at OKLab scale, so a halo still stretches that way. Drag to rotate, double-click to reset.</div>
+	<div class="hint">The sRGB gamut in OKLab, lightness up. Solid body: what the selected ranges allow. Cones: fixed colors. Amber line: hardest pair. Halos reach half the distance the generator keeps colors apart, the noise limit or the Min distance, so two meeting mark a pair right at it; they stand tall since lightness counts for less, and grow toward black. In the metric: the same body as the generator measures it, each hue turned to its calibrated angle, chroma and height scaled by the lightness gain and height by the lightness weight too; only distances straight in or out from the grey axis stay at OKLab scale, so a halo still stretches that way. Drag to rotate, double-click to reset.</div>
 </div>
 
 <div class="panel" id="side">
@@ -864,7 +864,7 @@ function parseHexColors(text) {
 }
 
 // Distance model, as in data/identify.js: how far apart two colors read as palette members, in
-// units of the noise width the Distinctness slider sets. A lightness or chroma difference counts the weight at the
+// weighted deltaE, the units of the noise width SIGMA. A lightness or chroma difference counts the weight at the
 // pair's hue times its size against a hue difference, hues first respaced by the level densities, HUE_LEVELS. The weight
 // tables, LIGHTNESS_EXPONENT and the level densities are one fit to the preference rounds; see HUE_DENSITY_AT_30 and data/scripts.md.
 // Per whole degree of OKLab hue, read by weightAt at the hue of the pair's summed ab, so a grey defers to its partner.
@@ -1183,6 +1183,9 @@ function erfc(x) {
 
 // The chance noise of width `sigma` carries a recall past the midpoint to a color `d` away.
 const swapChance = (d, sigma) => 0.5 * erfc(d / (2 * sigma) / Math.SQRT2);
+// The memory noise width in weighted deltaE: a lone pair's swap chance falls to ERROR_LIMIT at 13.5, where "fine"
+// begins in the strict pair rounds (21 to 23). Also in data/identify.js, which must match.
+const SIGMA = 3.3;
 
 // The chance a color is wanted for itself: one less the chance of a bad mark in the palette member round, a logistic
 // on absolute chroma and hue with a chroma by hue term, fitted by data/fit_preference.js to data/palette-members-log.json.
@@ -1218,7 +1221,7 @@ function shadowsOf(colors, sigma) {
 		return { level, hue: warpOfHue(h, level), reach: Math.min(Math.PI, sigma / Math.max(perRadian, 1e-6)), away: away.map(v => v / length), length };
 	}).filter(shadow => shadow.length > 1e-6);
 }
-const shadowsFor = cfg => shadowsOf(cfg.avoid ?? [], Math.max(cfg.scale, 1));
+const shadowsFor = cfg => shadowsOf(cfg.avoid ?? [], SIGMA);
 function shadowed(L, C, h, cfg) {
 	if (!cfg.shadows.length)
 		return false;
@@ -1259,7 +1262,7 @@ function rawDraw(rnd, cfg) {
 const pointAt = (lch, scale) => ({ ...warpedPoint(positionOf(lch)), lch, scale });
 
 const poolKey = cfg => [cfg.hMin, cfg.hMax, cfg.lMin, cfg.lMax, cfg.lAbsolute ? "abs" : "rel", cfg.cMin, cfg.cMax, cfg.vividness, cfg.preference,
-	cfg.included.map(Number).join(""), (cfg.avoid ?? []).map(color => color.hex).join(), cfg.avoid?.length ? cfg.scale : ""].join("|");
+	cfg.included.map(Number).join(""), (cfg.avoid ?? []).map(color => color.hex).join()].join("|");
 let poolCache = { key: null, pool: null };
 // The pool of a box: its points, and `scaleOf`, the packing scale of any color of the box.
 function poolFor(cfg) {
@@ -1366,7 +1369,7 @@ function identification(colors, cfg, points = positionsOf(colors).map(warpedPoin
 				continue;
 
 			const d = Math.sqrt(apartWarped2(points[i], points[j]));
-			const chance = swapChance(d, cfg.sigma);
+			const chance = swapChance(d, SIGMA);
 			error[i] += chance;
 			error[j] += chance;
 			if (chance > confused) {
@@ -1395,7 +1398,9 @@ function insideBox([L, C, h], cfg) {
 // The relaxation, for the colors whose error on the metric is over the limit, worst first: each proposes one position
 // `step` away in a random direction of OKLab. A proposal outside the box or not allowed is dropped, never clamped;
 // one that lowers the color's error on the packing distance is kept, so a paler position has to pay for itself.
-// A sweep that keeps nothing halves the step. Returns the state with the highest floor seen, then the widest closest pair.
+// A color with a pair under cfg.minApart is stepped like one over the error limit: its error is dominated by that
+// pair, so a lower error is a wider pair. A sweep that keeps nothing halves the step. Returns the state with the
+// highest floor seen, then the widest closest pair.
 function relax(rnd, colors, points, cfg, scaleOf) {
 	colors = colors.slice();
 	points = points.slice();
@@ -1403,13 +1408,14 @@ function relax(rnd, colors, points, cfg, scaleOf) {
 		let error = 0;
 		for (let j = 0; j < points.length; ++j)
 			if (j !== i)
-				error += swapChance(Math.sqrt(apartOf2(at, points[j])), cfg.sigma);
+				error += swapChance(Math.sqrt(apartOf2(at, points[j])), SIGMA);
 		return error;
 	};
+	const nearest2 = i => Math.min(...points.map((point, j) => j === i ? Infinity : apartWarped2(points[i], point)));
 	let best = colors.slice(), bestScore = identification(colors, cfg, points);
 	for (let sweep = 0, step = STEP_START; sweep < SWEEPS_MAX && step >= STEP_MIN; ++sweep) {
 		const confusable = colors.map((color, i) => ({ i, error: color.fixed ? 0 : errorAt(i, points[i], apartWarped2) }))
-			.filter(({ error }) => error > ERROR_LIMIT).sort((p, q) => q.error - p.error);
+			.filter(({ i, error }) => error > ERROR_LIMIT || (!colors[i].fixed && nearest2(i) < cfg.minApart ** 2)).sort((p, q) => q.error - p.error);
 		if (!confusable.length)
 			break;
 
@@ -1483,21 +1489,23 @@ function reroll(result, cfg, slot, rnd, pool) {
 	return scored(relax(rnd, next, nextPoints, cfg, pool.scaleOf), cfg);
 }
 
-// The best of up to ATTEMPTS attempts by floor, then by the closest pair; the first with no confusable color ends
-// them; then the config's rerolls, each of a slot of the result so far, on the seeds after the attempts'. Null when
-// the box holds no usable color. A slot past the count or of a fixed color is skipped: the string it came from
-// was written by hand.
+// The best of up to ATTEMPTS attempts by floor, then by the closest pair; the first with no confusable color and no
+// pair under cfg.minApart ends them; then the config's rerolls, each of a slot of the result so far, on the seeds
+// after the attempts'. Null when the box holds no usable color. A slot past the count or of a fixed color is skipped:
+// the string it came from was written by hand.
 const ATTEMPTS = 4;
+// The closest a pair may come, in weighted deltaE, for a config without `minApart` (the Min distance control): the
+// error limit's own spacing, so the requirement adds nothing.
+const MIN_APART_DEFAULT = 13.5;
 function generate(cfg) {
-	const sigma = Math.max(cfg.scale, 1);
-	const settings = { ...cfg, sigma, limit: limitDistance(sigma), included: cfg.included ?? ALL_INCLUDED, preference: cfg.preference ?? true,
-		vividness: cfg.vividness ?? VIVIDNESS_DEFAULT };
+	const settings = { ...cfg, limit: limitDistance(SIGMA), included: cfg.included ?? ALL_INCLUDED, preference: cfg.preference ?? true,
+		vividness: cfg.vividness ?? VIVIDNESS_DEFAULT, minApart: cfg.minApart ?? MIN_APART_DEFAULT };
 	settings.shadows = shadowsFor(cfg);
 	const pool = poolFor(settings);
 	if (!pool.points.length)
 		return null;
 	let best = null;
-	for (let n = 0; n < ATTEMPTS && !(best && best.floor >= 1 - ERROR_LIMIT); ++n) {
+	for (let n = 0; n < ATTEMPTS && !(best && best.floor >= 1 - ERROR_LIMIT && best.apart >= settings.minApart); ++n) {
 		const made = attempt(mulberry32(settings.seed + n * 7919), settings, pool);
 		if (!best || made.floor > best.floor || (made.floor === best.floor && made.apart > best.apart))
 			best = made;
@@ -1534,7 +1542,7 @@ function readConfig() {
 	const [lMin, lMax] = ordered(+$("l-min").value, +$("l-max").value);
 	return {
 		count: bounded("count"),
-		scale: +$("strict").value,
+		minApart: +$("min-apart").value,
 		vividness: +$("vivid").value,
 		// The hue sliders run in the ridge coordinate; the config, the labels and the state are in degrees.
 		hMin: Math.round(ridgeUnwarp(+$("h-min").value)), hMax: Math.round(ridgeUnwarp(+$("h-max").value)),
@@ -1827,7 +1835,7 @@ function refreshBars(cfg) {
 function refreshLabels() {
 	const cfg = readConfig();
 	refreshBars(cfg);
-	$("strict-value").textContent = cfg.scale.toFixed(1);
+	$("min-apart-value").textContent = cfg.minApart.toFixed(1);
 	$("vivid-value").textContent = cfg.vividness.toFixed(2);
 	$("h-value").textContent = cfg.hMin + "–" + cfg.hMax + "°" + (cfg.hMin > cfg.hMax ? " (wraps)" : "");
 	// Chroma carries its unit, lightness does not: chroma is a plain fraction of the hue's peak,
@@ -2076,9 +2084,9 @@ function applyNameTable(table) {
 
 // The string is the version tag, these fields in order, then the sort flag, the backdrop, the
 // custom backdrop color, the export format and the comma-joined fixed colors.
-const STATE_VERSION = "v4";
+const STATE_VERSION = "v5";
 const STATE_SEPARATOR = "|";
-const STATE_IDS = ["count", "strict", "h-min", "h-max", "c-min", "c-max", "l-min", "l-max", "seed"];
+const STATE_IDS = ["count", "min-apart", "h-min", "h-max", "c-min", "c-max", "l-min", "l-max", "seed"];
 
 // The '#' is stripped from both colors: it would truncate the string inside a URL.
 const stripHash = value => value.replace("#", "");
@@ -2087,7 +2095,7 @@ const stripHash = value => value.replace("#", "");
 // ordered. The seed is written unsigned, which mulberry32 treats as identical and which keeps a
 // minus sign out of the fields.
 function stateString(cfg) {
-	return [STATE_VERSION, cfg.count, cfg.scale, cfg.hMin, cfg.hMax, cfg.cMin, cfg.cMax,
+	return [STATE_VERSION, cfg.count, cfg.minApart, cfg.hMin, cfg.hMax, cfg.cMin, cfg.cMax,
 		cfg.lMin, cfg.lMax, cfg.seed >>> 0, $("sort").checked ? 1 : 0,
 		stripHash($("backdrop").value), stripHash($("backdrop-color").value), $("format").value,
 		cfg.fixed.map(color => stripHash(color.hex)).join(","), stateNameField(), cfg.avoid.map(color => stripHash(color.hex)).join(","),
@@ -2134,10 +2142,10 @@ const hexesFromField = field => field.split(",").filter(Boolean).map(hex => "#" 
 // The generator's view of a parsed state. Ranges are ordered the same way readConfig orders them,
 // so a palette built from here matches the one the controls produce once the string is applied.
 function configFromState(parsed) {
-	const [count, scale, hMin, hMax, c1, c2, l1, l2, seed] = parsed.numbers;
+	const [count, minApart, hMin, hMax, c1, c2, l1, l2, seed] = parsed.numbers;
 	const [cMin, cMax] = ordered(c1, c2);
 	const [lMin, lMax] = ordered(l1, l2);
-	return { count, scale, hMin, hMax, cMin, cMax, lMin, lMax, lAbsolute: parsed.lAbsolute, seed: seed | 0,
+	return { count, minApart, hMin, hMax, cMin, cMax, lMin, lMax, lAbsolute: parsed.lAbsolute, seed: seed | 0,
 		fixed: hexesFromField(parsed.fixed).map(colorFromHex), avoid: hexesFromField(parsed.avoid).map(colorFromHex), ...nameTableFrom(parsed),
 		rerolls: parsed.rerolls, vividness: parsed.vividness };
 }
@@ -2832,9 +2840,9 @@ function haloGeometry(color, radius) {
 	return geometry;
 }
 
-// Half the generator's limit distance around every color, so two zones meet where the pair sits
-// at the limit. Annotations like the pair line: depth testing off, drawn between the shell and the
-// marker ghosts.
+// Half the generator's spacing around every color, the limit distance or the Min distance control, whichever is
+// wider, so two zones meet where the pair sits at it. Annotations like the pair line: depth testing off, drawn
+// between the shell and the marker ghosts.
 function zoneMeshes(colors, radius) {
 	return colors.map(color => {
 		const zone = new THREE.Mesh(haloGeometry(color, radius),
@@ -2857,7 +2865,7 @@ window.update3D = (cfg, colors, pair) => {
 	if (line)
 		pairGroup.add(line);
 	clearGroup(zoneGroup);
-	const radius = limitDistance(cfg.scale) / 2;
+	const radius = Math.max(limitDistance(SIGMA), cfg.minApart) / 2;
 	if (radius > 0 && colors.length)
 		zoneGroup.add(...zoneMeshes(colors, radius));
 };

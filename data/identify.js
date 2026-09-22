@@ -25,10 +25,10 @@
 const fs = require("fs");
 const path = require("path");
 
-// Memory noise, standard deviation in OKLab x100 along hue, for swatches of CALIBRATED_PX.
-// SIGMA is fitted by data/fit.js to data/calibration-log.json. The weight tables, LIGHTNESS_EXPONENT and the level
-// densities are one fit to the preference rounds; see HUE_DENSITY_AT_30 and data/scripts.md.
-const SIGMA = 3;
+// Memory noise, standard deviation in weighted deltaE, for swatches of CALIBRATED_PX: a lone pair's swap chance falls
+// to the page's error limit at 13.5, where "fine" begins in the strict pair rounds (21 to 23). The weight tables,
+// LIGHTNESS_EXPONENT and the level densities are one fit to the preference rounds; see HUE_DENSITY_AT_30 and data/scripts.md.
+const SIGMA = 3.3;
 // A lightness or chroma difference counts the weight at the pair's hue times its size: below 1 the axis is a weaker
 // cue than hue there. Per whole degree of OKLab hue, read by weightAt at pairHue.
 const HUE_WEIGHT_L = [
@@ -672,7 +672,7 @@ function benchmarkPage(pagePath) {
 		for (const count of counts) {
 			let floor = 0, mean = 0, gap = 0, least = 1, namedFloor = 0, namedMean = 0, leastNamed = 1;
 			for (const seed of seeds) {
-				const hexes = generate({ count, seed, fixed: [], scale: SIGMA, ...box }).colors.map(color => color.hex);
+				const hexes = generate({ count, seed, fixed: [], ...box }).colors.map(color => color.hex);
 				const result = score(hexes);
 				const naming = nameCollision(hexes, page);
 				floor += result.floor;

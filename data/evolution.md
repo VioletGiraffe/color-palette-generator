@@ -2015,6 +2015,15 @@ lavender/magenta is lilac/pink, and the pairs the judge finds more confusable ar
 too. So a kind boundary is not what sets those pairs apart, and the pair-level effect of the previous section stays
 without a term. Kinds are dead as a metric term; the map stands as a record of the judge's vocabulary.
 
+## Min distance in place of Distinctness
+
+The Distinctness slider set the noise width, so a lower setting spread colors against a noise the calibration never
+measured and reported identification chances under it. The noise width is now fixed at 3.3, the value the strict rounds
+put the 2% limit at 13.5 with, and the control is a floor on the closest pair in weighted deltaE, from 13.5 up: a pair
+under it steps like one over the error limit, and an attempt ends the search only with every pair at or above it. Below
+13.5 the error limit already holds every pair apart where the ranges allow, so the floor starts there. The identification
+chances the page reports are at the one calibrated noise at every setting. State strings are v5; v4 strings are not read.
+
 ## Files
 
 - `index.html`: the generator rebuilt from the end state on the preference metric by lightness, with the

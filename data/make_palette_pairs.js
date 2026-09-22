@@ -54,7 +54,7 @@ function main(args) {
 	for (const count of counts)
 		for (let seed = 1; seed <= seeds; ++seed) {
 			const dealt = names.map(condition => {
-				const colors = conditions[condition].page.generate({ count, scale: 3, hMin: 0, hMax: 360, ...box, seed, fixed: [], ...conditions[condition].settings }).colors
+				const colors = conditions[condition].page.generate({ count, hMin: 0, hMax: 360, ...box, seed, fixed: [], ...conditions[condition].settings }).colors
 					.slice().sort((p, q) => hueOf(p.lab) - hueOf(q.lab));
 				palettes.push({ condition, seed, count, hexes: colors.map(c => c.hex), names: colors.map(c => CELL_NAMES[c.cell] ?? "unnamed") });
 				return palettes.length - 1;
