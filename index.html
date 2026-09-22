@@ -178,7 +178,12 @@
 
 	.swatch { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; cursor: pointer; background: none; padding: 0; text-align: left; display: block; width: 100%; }
 	.swatch:hover { border-color: var(--swatch-hover); }
-	.swatch .chip { height: 64px; }
+	.swatch .chip { height: 64px; position: relative; }
+	/* The reroll glyph, shown on hover: a white disc with a dark rim reads on any chip color. */
+	.swatch .reroll { position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; border-radius: 50%; background: rgba(255, 255, 255, .85);
+	   box-shadow: 0 0 0 1px rgba(0, 0, 0, .35); color: #111; font-size: 15px; line-height: 22px; text-align: center; opacity: 0; transition: opacity .1s; }
+	.swatch:hover .reroll { opacity: 1; }
+	.swatch .reroll:hover { background: #fff; }
 	.swatch .meta { padding: 5px 7px; font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1.35; color: var(--ink); }
 	.swatch .meta .hex { font-weight: 600; letter-spacing: .02em; }
 	.swatch .meta .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1382,22 +1387,50 @@ function relax(rnd, colors, points, cfg, scaleOf) {
 	return best;
 }
 
-// One throw, relaxed, with its scores.
-function attempt(rnd, cfg, pool) {
-	const order = pool.points.slice();
+function shuffled(list, rnd) {
+	const order = list.slice();
 	for (let i = order.length - 1; i > 0; --i) {
 		const j = Math.floor(rnd() * (i + 1));
 		[order[i], order[j]] = [order[j], order[i]];
 	}
+	return order;
+}
+
+// A result: the colors with their scores and the count of distinct names among them.
+const scored = (colors, cfg) => ({ colors, ...identification(colors, cfg), named: new Set(colors.map(color => color.cell)).size });
+
+// One throw, relaxed, with its scores.
+function attempt(rnd, cfg, pool) {
+	const order = shuffled(pool.points, rnd);
 	const fixed = cfg.fixed.map(color => pointAt(color.lch, pool.scaleOf(color.lch)));
 	const seated = widestThrow(order, fixed, cfg.count, cfg.limit);
 	const thrown = [...cfg.fixed, ...seated.slice(fixed.length).map(point => colorAt(...point.lch))];
-	const colors = relax(rnd, thrown, seated, cfg, pool.scaleOf);
-	return { colors, ...identification(colors, cfg), named: new Set(colors.map(color => color.cell)).size };
+	return scored(relax(rnd, thrown, seated, cfg, pool.scaleOf), cfg);
+}
+
+// A reroll of the color at `slot` of a result: it and its REROLL_VICINITY nearest generated colors are thrown again
+// among the rest, from the pool less the rejected color's confusion zone, so the replacement is a color one could
+// tell from the rejected one; then relaxed. The rest keep their slots. Removing the color alone would seat a
+// near-twin: in a maximal throw the room a color leaves behind is smaller than the spacing.
+const REROLL_VICINITY = 2;
+function reroll(result, cfg, slot, rnd, pool) {
+	const colors = result.colors, points = colors.map(color => pointAt(color.lch, pool.scaleOf(color.lch)));
+	const rejected = points[slot];
+	const nearest = colors.map((color, i) => i).filter(i => i !== slot && !colors[i].fixed)
+		.sort((a, b) => apartWarped2(rejected, points[a]) - apartWarped2(rejected, points[b])).slice(0, REROLL_VICINITY);
+	const removed = [slot, ...nearest], kept = points.filter((point, i) => !removed.includes(i));
+	const order = shuffled(pool.points.filter(point => apartWarped2(point, rejected) >= cfg.limit ** 2), rnd);
+	const fresh = widestThrow(order, kept, removed.length, cfg.limit).slice(kept.length);
+	// A pool with fewer points outside the zone than slots seats fewer: the slots left over keep their color.
+	const next = colors.slice(), nextPoints = points.slice();
+	fresh.forEach((point, n) => { next[removed[n]] = colorAt(...point.lch); nextPoints[removed[n]] = point; });
+	return scored(relax(rnd, next, nextPoints, cfg, pool.scaleOf), cfg);
 }
 
 // The best of up to ATTEMPTS attempts by floor, then by the closest pair; the first with no confusable color ends
-// them. Null when the box holds no usable color.
+// them; then the config's rerolls, each of a slot of the result so far, on the seeds after the attempts'. Null when
+// the box holds no usable color. A slot past the count or of a fixed color is skipped: the string it came from
+// was written by hand.
 const ATTEMPTS = 4;
 function generate(cfg) {
 	const sigma = Math.max(cfg.scale, 1);
@@ -1412,6 +1445,10 @@ function generate(cfg) {
 		if (!best || made.floor > best.floor || (made.floor === best.floor && made.apart > best.apart))
 			best = made;
 	}
+	(cfg.rerolls ?? []).forEach((slot, n) => {
+		if (slot < best.colors.length && !best.colors[slot].fixed)
+			best = reroll(best, settings, slot, mulberry32(settings.seed + (ATTEMPTS + n) * 7919), pool);
+	});
 	return best;
 }
 
@@ -1419,6 +1456,8 @@ function generate(cfg) {
 
 const $ = id => document.getElementById(id);
 let palette = [];
+// The slots rerolled on the current generation, in order; a control change or a new seed empties it.
+let rerolls = [];
 // The last result and the config that made it: a change to how the palette is shown redraws from
 // these, and the 3D module picks them up when it loads, after the first render.
 let lastResult = null, lastCfg = null;
@@ -1445,7 +1484,8 @@ function readConfig() {
 		seed: +$("seed").value | 0,
 		fixed: parseHexColors($("fixed-colors").value),
 		avoid: parseHexColors($("avoid-colors").value),
-		included: nameIncluded
+		included: nameIncluded,
+		rerolls: rerolls.slice()
 	};
 }
 
@@ -1753,6 +1793,8 @@ function sortedByHue(colors, hMin) {
 	return colors.slice().sort((a, b) => offset(a) - offset(b));
 }
 
+const REROLL_GLYPH = '<span class="reroll" title="Reroll this color; its two nearest may move too">↻</span>';
+
 // A null result is an empty box: the views show the ranges and nothing in them.
 function render(result, cfg) {
 	const colors = result ? result.colors : [];
@@ -1776,7 +1818,7 @@ function render(result, cfg) {
 
 	$("swatches").innerHTML = palette.map((c, i) =>
 		'<button class="swatch' + marks(c) + '" data-hex="' + c.hex + '" data-index="' + i + '">'
-			+ '<div class="chip" style="background:' + c.hex + '"></div>'
+			+ '<div class="chip" style="background:' + c.hex + '">' + (c.fixed ? "" : REROLL_GLYPH) + "</div>"
 			+ '<div class="meta"><div class="hex">' + c.hex.toUpperCase() + '</div>'
 			+ '<div class="name"' + (c.confident ? "" : UNSURE_TITLE) + '>' + cellLabel(c) + '</div>'
 			+ '<div class="coords">' + (c.fixed ? "fixed · " : "") + "lch " + Math.round(c.lch[0]) + ", " + c.lch[1].toFixed(1) + ", " + Math.round(c.lch[2]) + "°</div></div>"
@@ -1990,7 +2032,7 @@ function stateString(cfg) {
 		cfg.lMin, cfg.lMax, cfg.seed >>> 0, $("sort").checked ? 1 : 0,
 		stripHash($("backdrop").value), stripHash($("backdrop-color").value), $("format").value,
 		cfg.fixed.map(color => stripHash(color.hex)).join(","), stateNameField(), cfg.avoid.map(color => stripHash(color.hex)).join(","),
-		cfg.lAbsolute ? 1 : 0
+		cfg.lAbsolute ? 1 : 0, cfg.rerolls.join(",")
 	].join(STATE_SEPARATOR);
 }
 
@@ -2005,24 +2047,25 @@ function findOption(id, stored) {
 function parseState(text) {
 	const [tag, ...fields] = text.trim().split(STATE_SEPARATOR);
 	// The sort flag, backdrop, custom color and export format always follow the nine control values.
-	// Fixed colors, the included names, the avoided colors, then the absolute-lightness flag were each added
-	// later: a string written before one of them ends where it was added, and the rest take their defaults.
+	// Fixed colors, the included names, the avoided colors, the absolute-lightness flag, then the rerolls were each
+	// added later: a string written before one of them ends where it was added, and the rest take their defaults.
 	const required = STATE_IDS.length + 4;
-	if (tag !== STATE_VERSION || fields.length < required || fields.length > required + 4)
+	if (tag !== STATE_VERSION || fields.length < required || fields.length > required + 5)
 		return null;
 
 	const numbers = fields.slice(0, STATE_IDS.length + 1).map(f => f.trim() === "" ? NaN : Number(f));
-	const [backdrop, custom, format, fixed = "", included = "", avoid = "", lAbsolute = "0"] = fields.slice(STATE_IDS.length + 1);
+	const [backdrop, custom, format, fixed = "", included = "", avoid = "", lAbsolute = "0", rerolls = ""] = fields.slice(STATE_IDS.length + 1);
 	const backdropOption = findOption("backdrop", backdrop);
 	const formatOption = findOption("format", format);
 	const hexList = /^[0-9a-f]{6}(,[0-9a-f]{6})*$/i;
 
 	if (numbers.some(n => !Number.isFinite(n)) || !backdropOption || !formatOption || !/^[0-9a-f]{6}$/i.test(custom)
 		|| !(fixed === "" || hexList.test(fixed)) || !(avoid === "" || hexList.test(avoid))
-		|| !(included === "" || /^[0-9a-z]{1,8}$/.test(included)) || !/^[01]$/.test(lAbsolute))
+		|| !(included === "" || /^[0-9a-z]{1,8}$/.test(included)) || !/^[01]$/.test(lAbsolute) || !(rerolls === "" || /^\d+(,\d+)*$/.test(rerolls)))
 		return null;
 
-	return { numbers, backdrop: backdropOption.value, custom, format: formatOption.value, fixed, included, avoid, lAbsolute: lAbsolute === "1" };
+	return { numbers, backdrop: backdropOption.value, custom, format: formatOption.value, fixed, included, avoid, lAbsolute: lAbsolute === "1",
+		rerolls: rerolls === "" ? [] : rerolls.split(",").map(Number) };
 }
 
 const hexesFromField = field => field.split(",").filter(Boolean).map(hex => "#" + hex.toLowerCase());
@@ -2034,7 +2077,8 @@ function configFromState(parsed) {
 	const [cMin, cMax] = ordered(c1, c2);
 	const [lMin, lMax] = ordered(l1, l2);
 	return { count, scale, hMin, hMax, cMin, cMax, lMin, lMax, lAbsolute: parsed.lAbsolute, seed: seed | 0,
-		fixed: hexesFromField(parsed.fixed).map(colorFromHex), avoid: hexesFromField(parsed.avoid).map(colorFromHex), ...nameTableFrom(parsed) };
+		fixed: hexesFromField(parsed.fixed).map(colorFromHex), avoid: hexesFromField(parsed.avoid).map(colorFromHex), ...nameTableFrom(parsed),
+		rerolls: parsed.rerolls };
 }
 
 // Out-of-range numbers are left to the inputs, which clamp to their own min and max.
@@ -2056,6 +2100,7 @@ function applyStateString(text) {
 	// Assigning a select's value fires no change event, so the backdrop is applied by hand.
 	applyBackdrop(currentBackdrop());
 	applyNameTable(nameTableFrom(parsed));
+	rerolls = parsed.rerolls.slice();
 	run();
 	return true;
 }
@@ -2162,7 +2207,8 @@ function schedulePass(full) {
 		passTimer = setTimeout(passTick, PASS_INTERVAL);
 }
 
-function scheduleRun() { schedulePass(true); }
+// A control change ends the rerolls: they index the colors of one generation.
+function scheduleRun() { rerolls = []; schedulePass(true); }
 function scheduleRedraw() { schedulePass(false); }
 
 for (const id of [...STATE_IDS, "fixed-colors", "avoid-colors", "l-absolute"])
@@ -2174,7 +2220,7 @@ $("sort").addEventListener("change", scheduleRedraw);
 // The output panel is flexible, so its canvas needs re-sizing to each new width.
 window.addEventListener("resize", scheduleRedraw);
 $("format").addEventListener("change", () => { refreshExport(); refreshState(); });
-$("generate").addEventListener("click", () => { $("seed").value = (+$("seed").value | 0) + 1; run(); });
+$("generate").addEventListener("click", () => { $("seed").value = (+$("seed").value | 0) + 1; rerolls = []; run(); });
 
 // Swatch text and borders read from --ink/--ink-dim/--line, so overriding those on the
 // container re-colors them for whatever backdrop is behind them.
@@ -2225,9 +2271,16 @@ const retheme = () => { applyTheme(); scheduleRedraw(); };
 $("theme").addEventListener("change", retheme);
 systemDark.addEventListener("change", retheme);
 
+// The reroll's slot is the color's index in the result, not in the palette, which may be sorted.
 $("swatches").addEventListener("click", e => {
 	const swatch = e.target.closest(".swatch");
-	if (swatch) copy(swatch.dataset.hex.toUpperCase(), swatch.querySelector(".hex"), "copied");
+	if (!swatch)
+		return;
+	if (e.target.closest(".reroll")) {
+		rerolls.push(lastResult.colors.indexOf(palette[+swatch.dataset.index]));
+		run();
+	} else
+		copy(swatch.dataset.hex.toUpperCase(), swatch.querySelector(".hex"), "copied");
 });
 // A right-click on a color adds it to the avoided list; the list's input event regenerates.
 for (const id of ["swatches", "tiles"])

@@ -1879,27 +1879,6 @@ the judge's call, and the constant is the place to make it.
 
 ## On the metric by lightness
 
-Measured again on the metric with the hue table by lightness (`tmp/strength-check.js`, `tmp/compare-generators.js`,
-six and four seeds): with the hue target at 1 the rebuilt page gives up 1.7 to 21 points of floor to the current
-page (95.9 against 97.6 at 15 colors, 56.9 against 77.8 at 40) and reads duller; at 0 it matches or beats the
-current page on floor (97.7 / 97.8 / 94.8 / 81.3 against 97.6 / 97.7 / 94.7 / 77.8) with the same hue balance,
-blue to magenta 29 to 36%: the metric by lightness left the target little to correct, and it is removed. The
-dullness that remained,
-most in magenta to red, was vividness as the share of the reach at the color's own lightness, which counts a dark
-red on the gamut's surface as vivid; the rebuilt page samples the volume as it is, where the current page's pushes
-park colors at the cusps. Vividness as the share of the hue's cusp chroma, a hundred palettes of 15 in chroma 46 to
-100, lightness 20 to 60, the current page for reference (`tmp/palette-set.js`, `tmp/dullness.js`, `tmp/red-sector.js`):
-
-| page | floor | mean chroma | colors of 15 at 90% of the cusp's chroma | magenta to red: mean L, C | dark ones of them |
-|---|---|---|---|---|---|
-| current page | 97.7% | 18.0 | 4.8 | 53.0, 19.9 | 0.92 |
-| rebuilt, share of the reach | 97.5% | 17.3 | 3.5 | 49.7, 18.8 | 1.32 |
-| cusp share, power 1/4 | 97.8% | 17.7 | 4.3 | 52.3, 19.5 | 0.99 |
-| cusp share, power 1/2 | 97.5% | 18.7 | 6.1 | 53.7, 20.7 | 0.81 |
-| cusp share, power 1 | 95.9% | 20.4 | 9.0 | 56.5, 22.5 | 0.56 |
-
-The judge chose the power 1/2: as vivid as the current page and a little more, at its floor, in a tenth of the time.
-
 The first build's known gap, vividness as the share of the reach at the color's own lightness, so that a near-white or
 near-black color on the gamut's surface counts as fully vivid, is what the cusp share below fixes.
 
@@ -1923,6 +1902,30 @@ park colors at the cusps. Vividness as the share of the hue's cusp chroma, a hun
 | cusp share, power 1 | 95.9% | 20.4 | 9.0 | 56.5, 22.5 | 0.56 |
 
 The judge chose the power 1/2: as vivid as the current page and a little more, at its floor, in a tenth of the time.
+
+## Rerolling one color
+
+A reroll replaces one color the user rejects and leaves the rest. Removing the color alone cannot do it: the throw is a
+maximal Poisson-disc sample, so the room a color leaves behind is smaller than the spacing, and a replacement seated at
+the palette's spacing lands 5 ΔE from the rejected one, a near-twin. The options measured (`tmp/reroll-experiment.js`),
+a hundred palettes of 15 in the box above, one slot rerolled ten times each; `k` is how many nearest generated colors
+are thrown again with the slot, "excluded" means the pool points within the limit distance (12.3 ΔE at Distinctness 3)
+of the rejected color are not offered; the widest throw seats the removed ones, then the relaxation runs:
+
+| policy | variety, mean ΔE between the ten replacements | replacement from the rejected | floor drop | colors changed over 3 ΔE, the removed ones included |
+|---|---|---|---|---|
+| k=0, escalating to 3 only when nothing seats at the palette's spacing | 5.0 | 5.3 | 0.03 pts | 0.4 |
+| k=1, rejected excluded | 7.5 | 15.8 | 0.62 | 1.6 |
+| k=2, rejected excluded | 12.2 | 15.4 | 0.59 | 2.6 |
+| k=3, rejected excluded | 13.6 | 16.1 | 0.61 | 3.7 |
+| k=2, excluded at half the limit | 11.3 | 12.1 | 0.25 | 2.4 |
+| k=2, nothing excluded | 10.8 | 10.8 | 0.17 | 2.3 |
+| k escalating 0 to 3, rejected excluded | 11.6 | 19.0 | 0.59 | 2.9 |
+
+The exclusion is what makes a reroll a reroll: with it the replacement is a color one could tell from the rejected
+one, without it a near-twin comes back often. Escalation ends at its last `k` 72% of the time and matches a fixed
+`k`. `k` = 2 is the knee: half the variety at 1, one more color changed at 3. Shipped: `k` = 2, the exclusion at the
+limit distance, the widest throw, the relaxation; the rerolls are part of the state string, replayed after the attempts.
 
 ## Files
 

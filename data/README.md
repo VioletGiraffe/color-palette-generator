@@ -103,6 +103,12 @@ then `apart`; an attempt is a throw and a relaxation:
    halves the step, from `STEP_START`; the relaxation ends when no color is confusable, the step is under `STEP_MIN`
    or `SWEEPS_MAX` sweeps are spent. The best state by floor, then `apart`, is kept.
 
+A reroll (`reroll`, for each slot in the config's `rerolls`, replayed after the attempts on the seeds after theirs): the
+slot's color and its `REROLL_VICINITY` nearest generated colors are thrown again among the rest, from the pool less the
+points within the limit distance of the rejected color, then relaxed; the other colors keep their slots. Removing the
+color alone would seat a near-twin: in a maximal throw the room a color leaves behind is smaller than the spacing
+(`evolution.md`). A slot past the count or of a fixed color is skipped.
+
 Where the metric enters, so a change to it moves all of these: `metricVolume` (the density, so the pool and the
 throw), the packing distance (the throw's spacing and a proposal's acceptance), `identification`, the shadows' hue
 reach, `RIDGE_WARP` (the hue control's coordinate), and the 3D module's metric view. The preference model
@@ -120,7 +126,7 @@ random step never lands inside it; the pool is shared by every seed of a box, so
 
 `stateString` writes, `parseState` reads and `configFromState` turns into a generator config:
 
-    v4|count|strict|hMin|hMax|cMin|cMax|lMin|lMax|seed|sort|backdrop|custom|format|fixed|names|avoid|lAbsolute
+    v4|count|strict|hMin|hMax|cMin|cMax|lMin|lMax|seed|sort|backdrop|custom|format|fixed|names|avoid|lAbsolute|rerolls
 
 - `strict` is the Distinctness value, `sigma`; the ranges are in the control coordinates above (hue in degrees,
   not the ridge coordinate); `seed` is written unsigned.
@@ -128,8 +134,8 @@ random step never lands inside it; the pool is shared by every seed of a box, so
   custom backdrop's hex without `#`.
 - `fixed` and `avoid` are comma-joined hexes without `#`; `names` is the included-name mask, one bit
   per cell, as a base-36 number (`stateNameField`, `nameTableFrom`); `lAbsolute` is 0 or 1, the lightness range's
-  coordinate. These four were added later in that order, so an older string ends earlier and the missing ones take
-  their defaults.
+  coordinate; `rerolls` is the comma-joined slots rerolled, in order, indexes into the result. These five were added
+  later in that order, so an older string ends earlier and the missing ones take their defaults.
 - `STATE_VERSION` changes only when a field's meaning changes; an added field goes at the end.
 
 ## After a change
