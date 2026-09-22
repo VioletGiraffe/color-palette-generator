@@ -20,11 +20,11 @@ by a distance metric calibrated on the author's own judgements. The calibration 
   Measurement output goes to a file in `tmp/`, the aggregate to the screen.
 - Tracked data files are documented in `data/scripts.md`: what a log holds, which script reads it. "We store"
   means: stage the files, the user commits.
-- Calibration rounds on `data/calibrate-boundaries.html`: the dealer writes one deal into the page, so the
+- Calibration rounds on `data/calibrate-boundaries.html` and `data/calibrate-kinds.html`: the dealer writes one deal into the page, so the
   page holds one deal at a time and is reloaded for the next. The user force-reloads and presses Start with no
   parameter changes; if a round needs one, say so explicitly before the round. Swatch size stays 80 px across
   rounds. No expectations or analysis before a round, only after: the judge must not be biased. The downloaded
-  log is stored as the next `data/boundary-N-log.json`.
+  log is stored as the next `data/boundary-N-log.json` or `data/kinds-N-log.json`.
 - `demo.html` at the root is untracked and not part of the project; leave it alone.
 
 ## Browser checks

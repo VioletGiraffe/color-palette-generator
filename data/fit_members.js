@@ -15,7 +15,7 @@
 
 "use strict";
 const fs = require("fs");
-const { labOf, recallDistance, W_L, W_C } = require("./identify.js");
+const { labOf, recallDistance } = require("./identify.js");
 
 const hueOf = lab => (Math.atan2(lab[2], lab[1]) * 180 / Math.PI + 360) % 360;
 const mean = xs => xs.reduce((a, x) => a + x, 0) / xs.length;
@@ -42,7 +42,7 @@ function colorsOf(records) {
 		const labs = r.hexes.map(labOf);
 		r.hexes.forEach((hex, k) => {
 			const lab = labs[k];
-			const nearest = Math.min(...labs.map((other, j) => j === k ? Infinity : recallDistance(lab, other, W_L, W_C)));
+			const nearest = Math.min(...labs.map((other, j) => j === k ? Infinity : recallDistance(lab, other)));
 			rows.push({ hex, record: r, L: lab[0], C: Math.hypot(lab[1], lab[2]), hue: hueOf(lab), name: r.names[k], nearest,
 				sameName: r.names.filter(n => n === r.names[k]).length - 1, bad: r.bad.includes(hex) ? 1 : 0 });
 		});

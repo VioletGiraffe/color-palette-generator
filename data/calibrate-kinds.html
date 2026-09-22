@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Color kind calibration</title>
+<style>
+	/* Dark in either scheme: the page is a grey ground with dark grey panels, nothing bright beside the color. */
+	:root {
+		color-scheme: dark;
+		--bg: #2a2a2a; --panel: #363636; --ink: #e6e6e6; --ink-dim: #c4c4c4; --line: #4a4a4a; --accent: #6ea0d8; --warn: #e06a5e;
+	}
+	* { box-sizing: border-box; }
+	/* The ground the color is judged on is the whole page, the Ground field's color; the session panel is open to it. */
+	body { margin: 0; padding: 16px; font: 14px/1.45 system-ui, sans-serif; color: var(--ink); background: #808080; }
+	/* The color sits centred on the page, above the panels, so the eye rests on it alone while judging. */
+	#session { background: transparent; border: none; padding: 0; text-align: center; }
+	#session .actions { justify-content: center; }
+	h1 { font-size: 18px; margin: 0 0 6px; }
+	h2 { font-size: 14px; margin: 0 0 8px; }
+	p, .hint { margin: 0 0 8px; }
+	.hint { font-size: 12px; color: var(--ink-dim); }
+	#layout { width: 300px; }
+	@media (max-width: 800px) { #layout { width: auto; } }
+	.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+	label.row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+	label.row input[type=number] { width: 70px; }
+	label.row input[type=text] { width: 90px; }
+	textarea { width: 100%; font: 12px/1.4 ui-monospace, monospace; }
+	button { font: inherit; padding: 5px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); cursor: pointer; }
+	button:hover { border-color: var(--accent); }
+	button:disabled { opacity: 0.5; cursor: default; }
+	button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+	.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+	#arena { display: flex; justify-content: center; border-radius: 6px; padding: 20px 16px; user-select: none; }
+	.swatch { width: var(--size); aspect-ratio: 1; border-radius: 4px; }
+	/* The kinds in two columns, read down the first then the second; a button large enough to hit with the mouse without aiming */
+	#kind-buttons { display: grid; grid-auto-flow: column; grid-template-columns: repeat(2, 200px); gap: 8px; justify-content: center; margin: 12px 0; }
+	#kind-buttons button { display: flex; align-items: center; gap: 12px; padding: 10px 14px; font-size: 16px; text-align: left; }
+	.kind-swatch { width: 24px; height: 24px; border-radius: 4px; flex: none; }
+	#progress { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+	[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<h1>Color kind calibration</h1>
+<p class="hint">What kind of color is this? Each color is shown alone; answer with the kind you would call it, the first
+that comes, from the kinds set below. A color between two kinds takes both: Space, then the two kinds. No kind is an
+answer too. The colors are dealt by <code>make_kind_deal.js</code>, a grid over hue, cusp-relative lightness and
+chroma share, and come in random order. A pass names every color once; the map is two passes on different days:
+download the first pass's log, clear it, run the second. The log is kept in this browser between visits and can be
+downloaded and loaded back.</p>
+
+<div class="panel" id="session" hidden>
+	<h2>Color <span id="progress"></span></h2>
+	<div id="arena"><div class="swatch" id="swatch"></div></div>
+	<div class="hint">Keys: Space before the two kinds of a color between them; Backspace takes the last answer back and shows its color again.</div>
+	<div id="kind-buttons"></div>
+	<div class="actions">
+		<button id="between">Between two kinds</button>
+		<button id="none">No kind</button>
+		<button id="undo" disabled>Undo</button>
+	</div>
+</div>
+
+<div id="layout">
+<div>
+	<div class="panel" id="setup">
+		<h2>Setup</h2>
+		<label class="row">Swatch, px <input type="number" id="swatch-px" value="80" min="12" max="300"></label>
+		<label class="row">Ground <input type="text" id="ground" value="#808080"></label>
+		<label class="row">Colors per round <input type="number" id="round-colors" min="1" max="1000"></label>
+		<div class="hint">A round is one sitting; the next Start takes the next colors not yet named.</div>
+		<h2>Kinds</h2>
+		<textarea id="kinds" rows="5">red #e02020, burgundy #7a1830, orange #f28c1e, yellow #f2e11e, green #3cb043, swamp #6b7a2a, turquoise #30d5a8, cyan #22c8f0, blue #2050e0, purple #8030c0, lilac #b8a0e8, pink #f080c0, brown #8b5a2b, cream #f5ecc8, white #f4f4f4, grey #909090</textarea>
+		<div class="hint">Comma-separated, each kind with the hex of the swatch on its button, or none; fixed once a color is named, until the log is cleared.</div>
+		<div class="hint" id="deal-status"></div>
+		<div class="actions"><button class="primary" id="start">Start</button></div>
+	</div>
+	<div class="panel">
+		<h2>Log</h2>
+		<div id="log-status" class="hint"></div>
+		<div class="actions">
+			<button id="export">Show JSON</button>
+			<button id="download">Download</button>
+			<button id="load">Load JSON</button>
+			<button id="clear">Clear</button>
+		</div>
+		<input type="file" id="file" accept="application/json,.json" hidden>
+		<textarea id="json" rows="6" hidden></textarea>
+	</div>
+</div>
+</div>
+
+<script>
+"use strict";
+// ---------- deal ----------
+const KIND_DEAL = {"version":1,"page":"index.html","hueStep":10,"lights":[25,50,75],"shares":[50,100],"colors":[{"hue":0,"light":25,"share":50,"L":32.4,"C":6.6,"hex":"#4e2432"},{"hue":0,"light":25,"share":100,"L":32.4,"C":13.1,"hex":"#630031"},{"hue":0,"light":50,"share":50,"L":64.8,"C":13.1,"hex":"#cd698b"},{"hue":0,"light":50,"share":100,"L":64.8,"C":26.3,"hex":"#ff0088"},{"hue":0,"light":75,"share":50,"L":82.4,"C":5.3,"hex":"#e4b8c4"},{"hue":0,"light":75,"share":100,"L":82.4,"C":10.7,"hex":"#ffa8c2"},{"hue":10,"light":25,"share":50,"L":32,"C":6.4,"hex":"#4e242b"},{"hue":10,"light":25,"share":100,"L":32,"C":12.8,"hex":"#630023"},{"hue":10,"light":50,"share":50,"L":63.9,"C":12.8,"hex":"#cc687a"},{"hue":10,"light":50,"share":100,"L":63.9,"C":25.6,"hex":"#ff0068"},{"hue":10,"light":75,"share":50,"L":82,"C":5.2,"hex":"#e3b7bc"},{"hue":10,"light":75,"share":100,"L":82,"C":10.4,"hex":"#ffa8b5"},{"hue":20,"light":25,"share":50,"L":31.6,"C":6.4,"hex":"#4d2324"},{"hue":20,"light":25,"share":100,"L":31.6,"C":12.7,"hex":"#630014"},{"hue":20,"light":50,"share":50,"L":63.3,"C":12.7,"hex":"#cb6769"},{"hue":20,"light":50,"share":100,"L":63.3,"C":25.4,"hex":"#ff0044"},{"hue":20,"light":75,"share":50,"L":81.6,"C":5.2,"hex":"#e3b6b5"},{"hue":20,"light":75,"share":100,"L":81.6,"C":10.3,"hex":"#ffa8a7"},{"hue":30,"light":25,"share":50,"L":31.7,"C":6.4,"hex":"#4e241e"},{"hue":30,"light":25,"share":100,"L":31.7,"C":12.7,"hex":"#640300"},{"hue":30,"light":50,"share":50,"L":63.5,"C":12.6,"hex":"#cb6b5c"},{"hue":30,"light":50,"share":100,"L":63.5,"C":25.1,"hex":"#ff1c08"},{"hue":30,"light":75,"share":50,"L":81.7,"C":5.2,"hex":"#e3b8b0"},{"hue":30,"light":75,"share":100,"L":81.7,"C":10.3,"hex":"#ffaa9c"},{"hue":40,"light":25,"share":50,"L":34,"C":5.3,"hex":"#502e22"},{"hue":40,"light":25,"share":100,"L":34,"C":10.7,"hex":"#631e00"},{"hue":40,"light":50,"share":50,"L":68.1,"C":10.7,"hex":"#d18165"},{"hue":40,"light":50,"share":100,"L":68.1,"C":21.4,"hex":"#ff5a00"},{"hue":40,"light":75,"share":50,"L":84,"C":4.6,"hex":"#e6c1b5"},{"hue":40,"light":75,"share":100,"L":84,"C":9.1,"hex":"#ffb79e"},{"hue":50,"light":25,"share":50,"L":36,"C":4.8,"hex":"#523626"},{"hue":50,"light":25,"share":100,"L":36,"C":9.5,"hex":"#632b00"},{"hue":50,"light":50,"share":50,"L":72.1,"C":9.5,"hex":"#d5936e"},{"hue":50,"light":50,"share":100,"L":72.1,"C":19.1,"hex":"#ff7900"},{"hue":50,"light":75,"share":50,"L":86,"C":4.2,"hex":"#e9cab9"},{"hue":50,"light":75,"share":100,"L":86,"C":8.4,"hex":"#ffc2a0"},{"hue":60,"light":25,"share":50,"L":37.8,"C":4.4,"hex":"#533c29"},{"hue":60,"light":25,"share":100,"L":37.8,"C":8.9,"hex":"#633400"},{"hue":60,"light":50,"share":50,"L":75.6,"C":8.9,"hex":"#daa376"},{"hue":60,"light":50,"share":100,"L":75.6,"C":17.7,"hex":"#ff9000"},{"hue":60,"light":75,"share":50,"L":87.8,"C":4,"hex":"#ecd1bd"},{"hue":60,"light":75,"share":100,"L":87.8,"C":8,"hex":"#ffcba2"},{"hue":70,"light":25,"share":50,"L":39.5,"C":4.3,"hex":"#55422d"},{"hue":70,"light":25,"share":100,"L":39.5,"C":8.6,"hex":"#633d00"},{"hue":70,"light":50,"share":50,"L":79,"C":8.6,"hex":"#deb17e"},{"hue":70,"light":50,"share":100,"L":79,"C":17.1,"hex":"#ffa400"},{"hue":70,"light":75,"share":50,"L":89.5,"C":4,"hex":"#eed8c1"},{"hue":70,"light":75,"share":100,"L":89.5,"C":7.9,"hex":"#ffd4a3"},{"hue":80,"light":25,"share":50,"L":41.3,"C":4.3,"hex":"#574930"},{"hue":80,"light":25,"share":100,"L":41.3,"C":8.5,"hex":"#634500"},{"hue":80,"light":50,"share":50,"L":82.5,"C":8.5,"hex":"#e3c086"},{"hue":80,"light":50,"share":100,"L":82.5,"C":17.1,"hex":"#ffb700"},{"hue":80,"light":75,"share":50,"L":91.3,"C":4.1,"hex":"#f1e0c4"},{"hue":80,"light":75,"share":100,"L":91.3,"C":8.2,"hex":"#ffdda4"},{"hue":90,"light":25,"share":50,"L":43.2,"C":4.4,"hex":"#5a4f34"},{"hue":90,"light":25,"share":100,"L":43.2,"C":8.8,"hex":"#634d00"},{"hue":90,"light":50,"share":50,"L":86.4,"C":8.8,"hex":"#e9d08e"},{"hue":90,"light":50,"share":100,"L":86.4,"C":17.6,"hex":"#ffcb01"},{"hue":90,"light":75,"share":50,"L":93.2,"C":4.3,"hex":"#f4e8c8"},{"hue":90,"light":75,"share":100,"L":93.2,"C":8.7,"hex":"#ffe7a5"},{"hue":100,"light":25,"share":50,"L":45.5,"C":4.7,"hex":"#5d5738"},{"hue":100,"light":25,"share":100,"L":45.5,"C":9.5,"hex":"#635700"},{"hue":100,"light":50,"share":50,"L":91,"C":9.4,"hex":"#efe399"},{"hue":100,"light":50,"share":100,"L":91,"C":18.9,"hex":"#ffe203"},{"hue":100,"light":75,"share":50,"L":95.5,"C":4.9,"hex":"#f7f2cc"},{"hue":100,"light":75,"share":100,"L":95.5,"C":9.7,"hex":"#fff2a5"},{"hue":110,"light":25,"share":50,"L":48,"C":5.2,"hex":"#5f613d"},{"hue":110,"light":25,"share":100,"L":48,"C":10.5,"hex":"#626200"},{"hue":110,"light":50,"share":50,"L":96.1,"C":10.5,"hex":"#f6f9a5"},{"hue":110,"light":50,"share":100,"L":96.1,"C":21,"hex":"#fcfd00"},{"hue":110,"light":75,"share":50,"L":98,"C":4.8,"hex":"#fafcd7"},{"hue":110,"light":75,"share":100,"L":98,"C":9.5,"hex":"#fcffb4"},{"hue":120,"light":25,"share":50,"L":47,"C":5.6,"hex":"#57603b"},{"hue":120,"light":25,"share":100,"L":47,"C":11.2,"hex":"#536300"},{"hue":120,"light":50,"share":50,"L":93.9,"C":11.2,"hex":"#e1f7a1"},{"hue":120,"light":50,"share":100,"L":93.9,"C":22.3,"hex":"#d9ff00"},{"hue":120,"light":75,"share":50,"L":97,"C":4.6,"hex":"#f1fad8"},{"hue":120,"light":75,"share":100,"L":97,"C":9.2,"hex":"#edffb8"},{"hue":130,"light":25,"share":50,"L":45.5,"C":6.1,"hex":"#4b5e39"},{"hue":130,"light":25,"share":100,"L":45.5,"C":12.2,"hex":"#3f6300"},{"hue":130,"light":50,"share":50,"L":91,"C":12.2,"hex":"#c6f29a"},{"hue":130,"light":50,"share":100,"L":91,"C":24.5,"hex":"#a9ff00"},{"hue":130,"light":75,"share":50,"L":95.5,"C":5.3,"hex":"#e5f8d3"},{"hue":130,"light":75,"share":100,"L":95.5,"C":10.5,"hex":"#d9ffb3"},{"hue":140,"light":25,"share":50,"L":43.8,"C":7.1,"hex":"#3c5c36"},{"hue":140,"light":25,"share":100,"L":43.8,"C":14.1,"hex":"#1a6300"},{"hue":140,"light":50,"share":50,"L":87.6,"C":14.1,"hex":"#a3ed93"},{"hue":140,"light":50,"share":100,"L":87.6,"C":28.2,"hex":"#52ff03"},{"hue":140,"light":75,"share":50,"L":93.8,"C":6.1,"hex":"#d6f5cf"},{"hue":140,"light":75,"share":100,"L":93.8,"C":12.1,"hex":"#bfffb1"},{"hue":150,"light":25,"share":50,"L":43.7,"C":6,"hex":"#395b40"},{"hue":150,"light":25,"share":100,"L":43.7,"C":12,"hex":"#00632a"},{"hue":150,"light":50,"share":50,"L":87.4,"C":12,"hex":"#9aecab"},{"hue":150,"light":50,"share":100,"L":87.4,"C":24.1,"hex":"#00ff78"},{"hue":150,"light":75,"share":50,"L":93.7,"C":5.4,"hex":"#d2f5d8"},{"hue":150,"light":75,"share":100,"L":93.7,"C":10.7,"hex":"#b6ffc4"},{"hue":160,"light":25,"share":50,"L":44.1,"C":5,"hex":"#3a5c49"},{"hue":160,"light":25,"share":100,"L":44.1,"C":10,"hex":"#00633f"},{"hue":160,"light":50,"share":50,"L":88.2,"C":10,"hex":"#9cedc2"},{"hue":160,"light":50,"share":100,"L":88.2,"C":20,"hex":"#00ffa9"},{"hue":160,"light":75,"share":50,"L":94.1,"C":4.5,"hex":"#d2f6e1"},{"hue":160,"light":75,"share":100,"L":94.1,"C":9.1,"hex":"#b6ffd7"},{"hue":170,"light":25,"share":50,"L":44.5,"C":4.4,"hex":"#3a5c50"},{"hue":170,"light":25,"share":100,"L":44.5,"C":8.8,"hex":"#00634c"},{"hue":170,"light":50,"share":50,"L":88.9,"C":8.8,"hex":"#9eeed2"},{"hue":170,"light":50,"share":100,"L":88.9,"C":17.6,"hex":"#00ffc9"},{"hue":170,"light":75,"share":50,"L":94.5,"C":4.1,"hex":"#d3f6e9"},{"hue":170,"light":75,"share":100,"L":94.5,"C":8.1,"hex":"#b6ffe4"},{"hue":180,"light":25,"share":50,"L":44.8,"C":4.1,"hex":"#3b5c55"},{"hue":180,"light":25,"share":100,"L":44.8,"C":8.1,"hex":"#006356"},{"hue":180,"light":50,"share":50,"L":89.6,"C":8.1,"hex":"#a0efdf"},{"hue":180,"light":50,"share":100,"L":89.6,"C":16.3,"hex":"#00ffe1"},{"hue":180,"light":75,"share":50,"L":94.8,"C":3.7,"hex":"#d4f7ef"},{"hue":180,"light":75,"share":100,"L":94.8,"C":7.5,"hex":"#b6fff0"},{"hue":190,"light":25,"share":50,"L":45.1,"C":3.9,"hex":"#3c5d5a"},{"hue":190,"light":25,"share":100,"L":45.1,"C":7.8,"hex":"#00635f"},{"hue":190,"light":50,"share":50,"L":90.2,"C":7.8,"hex":"#a1f0ea"},{"hue":190,"light":50,"share":100,"L":90.2,"C":15.6,"hex":"#00fff6"},{"hue":190,"light":75,"share":50,"L":95.1,"C":3.6,"hex":"#d5f7f4"},{"hue":190,"light":75,"share":100,"L":95.1,"C":7.2,"hex":"#b7fff9"},{"hue":200,"light":25,"share":50,"L":44.1,"C":3.7,"hex":"#39595b"},{"hue":200,"light":25,"share":100,"L":44.1,"C":7.5,"hex":"#005f63"},{"hue":200,"light":50,"share":50,"L":88.2,"C":7.5,"hex":"#9ce8ec"},{"hue":200,"light":50,"share":100,"L":88.2,"C":15,"hex":"#00f5ff"},{"hue":200,"light":75,"share":50,"L":94.1,"C":3.7,"hex":"#d0f4f5"},{"hue":200,"light":75,"share":100,"L":94.1,"C":7.4,"hex":"#b0fbff"},{"hue":210,"light":25,"share":50,"L":42.1,"C":3.6,"hex":"#355358"},{"hue":210,"light":25,"share":100,"L":42.1,"C":7.3,"hex":"#005863"},{"hue":210,"light":50,"share":50,"L":84.1,"C":7.3,"hex":"#92d8e5"},{"hue":210,"light":50,"share":100,"L":84.1,"C":14.5,"hex":"#00e4ff"},{"hue":210,"light":75,"share":50,"L":92.1,"C":3.5,"hex":"#cbecf2"},{"hue":210,"light":75,"share":100,"L":92.1,"C":7.1,"hex":"#adf2ff"},{"hue":220,"light":25,"share":50,"L":40.1,"C":3.7,"hex":"#314d56"},{"hue":220,"light":25,"share":100,"L":40.1,"C":7.3,"hex":"#005163"},{"hue":220,"light":50,"share":50,"L":80.2,"C":7.3,"hex":"#88cadf"},{"hue":220,"light":50,"share":100,"L":80.2,"C":14.6,"hex":"#00d3ff"},{"hue":220,"light":75,"share":50,"L":90.1,"C":3.5,"hex":"#c6e4ef"},{"hue":220,"light":75,"share":100,"L":90.1,"C":7.1,"hex":"#aaeaff"},{"hue":230,"light":25,"share":50,"L":38.1,"C":3.8,"hex":"#2d4753"},{"hue":230,"light":25,"share":100,"L":38.1,"C":7.6,"hex":"#004963"},{"hue":230,"light":50,"share":50,"L":76.2,"C":7.6,"hex":"#7ebbd9"},{"hue":230,"light":50,"share":100,"L":76.2,"C":15.2,"hex":"#00c2ff"},{"hue":230,"light":75,"share":50,"L":88.1,"C":3.6,"hex":"#c0ddec"},{"hue":230,"light":75,"share":100,"L":88.1,"C":7.3,"hex":"#a6e2ff"},{"hue":240,"light":25,"share":50,"L":35.9,"C":4.1,"hex":"#284050"},{"hue":240,"light":25,"share":100,"L":35.9,"C":8.2,"hex":"#004163"},{"hue":240,"light":50,"share":50,"L":71.7,"C":8.2,"hex":"#73abd2"},{"hue":240,"light":50,"share":100,"L":71.7,"C":16.4,"hex":"#00aeff"},{"hue":240,"light":75,"share":50,"L":85.9,"C":3.9,"hex":"#bad5e8"},{"hue":240,"light":75,"share":100,"L":85.9,"C":7.8,"hex":"#a2d8ff"},{"hue":250,"light":25,"share":50,"L":33,"C":4.7,"hex":"#22374d"},{"hue":250,"light":25,"share":100,"L":33,"C":9.4,"hex":"#003763"},{"hue":250,"light":50,"share":50,"L":66.1,"C":9.4,"hex":"#6597ca"},{"hue":250,"light":50,"share":100,"L":66.1,"C":18.7,"hex":"#0095ff"},{"hue":250,"light":75,"share":50,"L":83,"C":4.4,"hex":"#b3cae4"},{"hue":250,"light":75,"share":100,"L":83,"C":8.8,"hex":"#9cccff"},{"hue":260,"light":25,"share":50,"L":28.5,"C":5.8,"hex":"#182a47"},{"hue":260,"light":25,"share":100,"L":28.5,"C":11.6,"hex":"#002562"},{"hue":260,"light":50,"share":50,"L":57,"C":11.6,"hex":"#4d77bb"},{"hue":260,"light":50,"share":100,"L":57,"C":23.3,"hex":"#006bfd"},{"hue":260,"light":75,"share":50,"L":78.5,"C":5.5,"hex":"#a5badd"},{"hue":260,"light":75,"share":100,"L":78.5,"C":10.9,"hex":"#90baff"},{"hue":270,"light":25,"share":50,"L":23.3,"C":7.6,"hex":"#101941"},{"hue":270,"light":25,"share":100,"L":23.3,"C":15.2,"hex":"#0c0063"},{"hue":270,"light":50,"share":50,"L":46.5,"C":15.2,"hex":"#3a4fad"},{"hue":270,"light":50,"share":100,"L":46.5,"C":30.5,"hex":"#3000ff"},{"hue":270,"light":75,"share":50,"L":73.3,"C":6.9,"hex":"#97a7d5"},{"hue":270,"light":75,"share":100,"L":73.3,"C":13.8,"hex":"#87a3ff"},{"hue":280,"light":25,"share":50,"L":24.5,"C":7.4,"hex":"#1b1a42"},{"hue":280,"light":25,"share":100,"L":24.5,"C":14.8,"hex":"#1c0063"},{"hue":280,"light":50,"share":50,"L":48.9,"C":14.8,"hex":"#5351b1"},{"hue":280,"light":50,"share":100,"L":48.9,"C":29.6,"hex":"#5500ff"},{"hue":280,"light":75,"share":50,"L":74.5,"C":6.7,"hex":"#a3a8d7"},{"hue":280,"light":75,"share":100,"L":74.5,"C":13.4,"hex":"#9ca2ff"},{"hue":290,"light":25,"share":50,"L":25.9,"C":7.3,"hex":"#241c44"},{"hue":290,"light":25,"share":100,"L":25.9,"C":14.6,"hex":"#290063"},{"hue":290,"light":50,"share":50,"L":51.8,"C":14.6,"hex":"#6955b5"},{"hue":290,"light":50,"share":100,"L":51.8,"C":29.3,"hex":"#7400ff"},{"hue":290,"light":75,"share":50,"L":75.9,"C":6.6,"hex":"#b0aad9"},{"hue":290,"light":75,"share":100,"L":75.9,"C":13.3,"hex":"#b0a1ff"},{"hue":300,"light":25,"share":50,"L":27.6,"C":7.4,"hex":"#2e1e46"},{"hue":300,"light":25,"share":100,"L":27.6,"C":14.7,"hex":"#360063"},{"hue":300,"light":50,"share":50,"L":55.2,"C":14.7,"hex":"#805aba"},{"hue":300,"light":50,"share":100,"L":55.2,"C":29.5,"hex":"#9301ff"},{"hue":300,"light":75,"share":50,"L":77.6,"C":6.7,"hex":"#bcaddb"},{"hue":300,"light":75,"share":100,"L":77.6,"C":13.4,"hex":"#c4a2ff"},{"hue":310,"light":25,"share":50,"L":29.8,"C":7.5,"hex":"#392149"},{"hue":310,"light":25,"share":100,"L":29.8,"C":15,"hex":"#440063"},{"hue":310,"light":50,"share":50,"L":59.5,"C":15,"hex":"#9a61c1"},{"hue":310,"light":50,"share":100,"L":59.5,"C":30.1,"hex":"#b401ff"},{"hue":310,"light":75,"share":50,"L":79.8,"C":6.9,"hex":"#cbb1df"},{"hue":310,"light":75,"share":100,"L":79.8,"C":13.8,"hex":"#d8a3ff"},{"hue":320,"light":25,"share":50,"L":32.4,"C":7.8,"hex":"#45254c"},{"hue":320,"light":25,"share":100,"L":32.4,"C":15.5,"hex":"#540063"},{"hue":320,"light":50,"share":50,"L":64.8,"C":15.5,"hex":"#b76cc9"},{"hue":320,"light":50,"share":100,"L":64.8,"C":31.1,"hex":"#da01ff"},{"hue":320,"light":75,"share":50,"L":82.4,"C":7.2,"hex":"#dbb7e3"},{"hue":320,"light":75,"share":100,"L":82.4,"C":14.3,"hex":"#eea6ff"},{"hue":330,"light":25,"share":50,"L":34.8,"C":7.9,"hex":"#50294d"},{"hue":330,"light":25,"share":100,"L":34.8,"C":15.8,"hex":"#63005f"},{"hue":330,"light":50,"share":50,"L":69.5,"C":15.8,"hex":"#d275cb"},{"hue":330,"light":50,"share":100,"L":69.5,"C":31.7,"hex":"#fe00f6"},{"hue":330,"light":75,"share":50,"L":84.8,"C":6.8,"hex":"#e7bee2"},{"hue":330,"light":75,"share":100,"L":84.8,"C":13.6,"hex":"#ffacf7"},{"hue":340,"light":25,"share":50,"L":33.8,"C":7.3,"hex":"#502743"},{"hue":340,"light":25,"share":100,"L":33.8,"C":14.7,"hex":"#63004e"},{"hue":340,"light":50,"share":50,"L":67.5,"C":14.7,"hex":"#d170b3"},{"hue":340,"light":50,"share":100,"L":67.5,"C":29.3,"hex":"#ff00cd"},{"hue":340,"light":75,"share":50,"L":83.8,"C":6.1,"hex":"#e6bbd6"},{"hue":340,"light":75,"share":100,"L":83.8,"C":12.2,"hex":"#ffaae3"},{"hue":350,"light":25,"share":50,"L":33,"C":6.9,"hex":"#4f253a"},{"hue":350,"light":25,"share":100,"L":33,"C":13.8,"hex":"#63003f"},{"hue":350,"light":50,"share":50,"L":65.9,"C":13.8,"hex":"#cf6c9e"},{"hue":350,"light":50,"share":100,"L":65.9,"C":27.5,"hex":"#ff00a9"},{"hue":350,"light":75,"share":50,"L":83,"C":5.6,"hex":"#e5b9cc"},{"hue":350,"light":75,"share":100,"L":83,"C":11.3,"hex":"#ffa9d1"}]};
+// ---------- end deal ----------
+// Written by make_kind_deal.js between the markers above; the page cannot fetch a file when opened from disk.
+
+const $ = id => document.getElementById(id);
+const DEAL = KIND_DEAL;
+
+// ---------- log ----------
+
+const LOG_VERSION = 1;
+const STORAGE_KEY = "kinds-log-1";
+// Stored between visits: a pass may take several rounds. Every record carries its color, so the analysis reads the log
+// alone; the deal's stamp says which deal a pass was, and a stored log of another deal is left alone: its color
+// indices mean other colors. The kinds are fixed once a record exists: a pass is named under one vocabulary.
+// swatches: the hex shown on each kind's button, "" for none, kept with the answers given beside them.
+const log = { version: LOG_VERSION, deal: { version: DEAL.version, page: DEAL.page, hueStep: DEAL.hueStep, lights: DEAL.lights, shares: DEAL.shares }, kinds: [], swatches: [], records: [] };
+try {
+	const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
+	if (stored && stored.version === LOG_VERSION && JSON.stringify(stored.deal) === JSON.stringify(log.deal) && stored.records.length) {
+		log.kinds = stored.kinds;
+		log.swatches = stored.swatches;
+		log.records = stored.records;
+	}
+} catch {}
+
+const judged = () => new Set(log.records.map(r => r.color));
+const remaining = () => DEAL.colors.map((_, i) => i).filter(i => !judged().has(i));
+// An entry of the field: the kind, then its swatch hex or nothing
+const entriesTyped = () => $("kinds").value.split(",").map(entry => entry.trim().match(/^(.*?)\s*(#[0-9a-f]{6})?$/i)).filter(m => m[1]).map(m => ({ kind: m[1], swatch: m[2] ?? "" }));
+const entriesText = () => log.kinds.map((kind, i) => log.swatches[i] ? kind + " " + log.swatches[i] : kind).join(", ");
+
+function saveLog() {
+	try { localStorage.setItem(STORAGE_KEY, JSON.stringify(log)); } catch {}
+	$("log-status").textContent = log.records.length + " colors named, " + remaining().length + " of " + DEAL.colors.length + " to go.";
+	$("undo").disabled = !log.records.length;
+	$("kinds").disabled = log.records.length > 0;
+	if (log.records.length)
+		$("kinds").value = entriesText();
+	if (!$("json").hidden)
+		$("json").value = JSON.stringify(log);
+}
+
+$("export").onclick = () => {
+	$("json").hidden = !$("json").hidden;
+	$("json").value = JSON.stringify(log);
+};
+$("download").onclick = () => {
+	const url = URL.createObjectURL(new Blob([JSON.stringify(log)], { type: "application/json" }));
+	const link = Object.assign(document.createElement("a"), { href: url, download: "kinds-log.json" });
+	link.click();
+	URL.revokeObjectURL(url);
+};
+$("load").onclick = () => $("file").click();
+$("file").onchange = async () => {
+	const file = $("file").files[0];
+	$("file").value = "";
+	if (!file)
+		return;
+	let loaded;
+	try {
+		loaded = JSON.parse(await file.text());
+	} catch {
+		alert("Not a JSON file.");
+		return;
+	}
+	if (!loaded || loaded.version !== LOG_VERSION || !Array.isArray(loaded.records) || !Array.isArray(loaded.kinds)) {
+		alert("Not a log of this page.");
+		return;
+	}
+	if (log.records.length && !confirm("Replace the " + log.records.length + " colors named here with the file's " + loaded.records.length + "?"))
+		return;
+	log.kinds = loaded.kinds;
+	log.swatches = loaded.swatches ?? [];
+	log.records = loaded.records;
+	saveLog();
+	restart();
+};
+$("clear").onclick = () => {
+	if (confirm("Discard every color named? Download first if they are wanted.")) {
+		log.records = [];
+		saveLog();
+		restart();
+	}
+};
+
+// ---------- running ----------
+
+// held: the first kind picked for a color between two kinds; between: Space pressed, the next two picks are its kinds
+let schedule = [], roundSize = 0, trial = null, shownAt = 0, buttons = [], held = null, between = false;
+
+function shuffled(items) {
+	const out = items.slice();
+	for (let i = out.length - 1; i > 0; --i) {
+		const j = Math.floor(Math.random() * (i + 1));
+		[out[i], out[j]] = [out[j], out[i]];
+	}
+	return out;
+}
+
+function restart() {
+	if (!log.records.length) {
+		const entries = entriesTyped();
+		log.kinds = entries.map(entry => entry.kind);
+		log.swatches = entries.map(entry => entry.swatch);
+	}
+	buttons = log.kinds.map((kind, i) => {
+		const button = Object.assign(document.createElement("button"), { onclick: () => pick(kind) });
+		if (log.swatches[i])
+			button.append(Object.assign(document.createElement("span"), { className: "kind-swatch", style: "background: " + log.swatches[i] }));
+		button.append(kind);
+		return button;
+	});
+	$("kind-buttons").style.gridTemplateRows = "repeat(" + Math.ceil(buttons.length / 2) + ", auto)";
+	$("kind-buttons").replaceChildren(...buttons);
+	schedule = shuffled(remaining()).slice(0, +$("round-colors").value);
+	roundSize = schedule.length;
+	trial = null;
+	if (!$("session").hidden)
+		next();
+}
+
+function next() {
+	held = null;
+	between = false;
+	showHeld();
+	if (!schedule.length) {
+		trial = null;
+		$("session").hidden = true;
+		const left = remaining().length;
+		$("deal-status").textContent = (left ? "Round done, " + left + " colors left for the next. " : "Every color is named. ") + "Download the log.";
+		return;
+	}
+	const color = schedule.pop();
+	trial = { color, hex: DEAL.colors[color].hex };
+	$("progress").textContent = (roundSize - schedule.length) + " of " + roundSize + " this round, " + log.records.length + " of " + DEAL.colors.length + " named";
+	render();
+	shownAt = performance.now();
+}
+
+// The one color, no other on the page: the ground is the whole page.
+function render() {
+	document.body.style.background = $("ground").value;
+	$("arena").style.setProperty("--size", $("swatch-px").value + "px");
+	$("swatch").style.background = trial.hex;
+}
+
+function showHeld() {
+	$("between").classList.toggle("primary", between);
+	buttons.forEach((button, i) => button.classList.toggle("primary", log.kinds[i] === held));
+}
+
+function pick(kind) {
+	if (!trial || kind === held)
+		return;
+	if (between && held === null) {
+		held = kind;
+		showHeld();
+		return;
+	}
+	const dealt = DEAL.colors[trial.color];
+	log.records.push({ color: trial.color, hex: dealt.hex, hue: dealt.hue, light: dealt.light, share: dealt.share, kind: held ?? kind, ...(held === null ? {} : { second: kind }),
+		ms: Math.round(performance.now() - shownAt), at: new Date().toISOString() });
+	saveLog();
+	next();
+}
+
+function pickNone() {
+	between = false;
+	held = null;
+	pick("none");
+}
+
+function toggleBetween() {
+	if (!trial)
+		return;
+	between = !between;
+	held = null;
+	showHeld();
+}
+
+function undo() {
+	const last = log.records.pop();
+	if (!last)
+		return;
+	saveLog();
+	schedule.push(last.color);
+	$("session").hidden = false;
+	next();
+}
+
+$("between").onclick = toggleBetween;
+$("none").onclick = pickNone;
+$("undo").onclick = undo;
+$("swatch-px").oninput = () => { if (trial) render(); };
+$("ground").oninput = () => { document.body.style.background = $("ground").value; };
+$("start").onclick = () => {
+	$("session").hidden = false;
+	restart();
+};
+
+document.addEventListener("keydown", e => {
+	if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")
+		return;
+	if (e.key === "Backspace")
+		undo();
+	else if ($("session").hidden)
+		return;
+	else if (e.key === " ")
+		toggleBetween();
+	else
+		return;
+	e.preventDefault();
+});
+
+$("round-colors").value = DEAL.colors.length;
+$("deal-status").textContent = DEAL.colors.length + " colors from " + DEAL.page + ": hues every " + DEAL.hueStep + " degrees, lightness " + DEAL.lights.join(", ")
+	+ " of the cusp, chroma " + DEAL.shares.join(", ") + "% of the reach.";
+saveLog();
+</script>
+</body>
+</html>

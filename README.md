@@ -8,7 +8,8 @@ Use live online in your browser: https://violetgiraffe.github.io/color-palette-g
 ## What you can do
 
 - **Choose how many colors** you need, from 1 to 40.
-- **Set how distinct they have to be**: the Distinctness slider is the width of the memory noise the colors are spread against, in OKLab ΔE. The default comes from a calibration run (see `data/scripts.md`); raise it for palettes that survive a longer gap between seeing a color and naming it, lower it to fit more colors into a narrow range.
+- **Set how distinct they have to be**: the Distinctness slider is the width of the memory noise the colors are spread against, in OKLab ΔE. The default is where the author's strictest judging rounds stop calling a pair too close for one palette (see `data/scripts.md`); raise it for palettes that survive a longer gap between seeing a color and naming it, lower it to fit more colors into a narrow range.
+- **Set how much saturation is preferred**: the Vividness slider is the weight of a color's saturation in where the colors land. At 0 they spread over the range on distinctness alone; higher buys saturation with a little of the worst color's identification. The default suits most ranges; a pastel range gains more from it than a wide one.
 - **See what each color is called**: every swatch carries the name people most often give that color, from the [xkcd color survey](https://blog.xkcd.com/2010/05/03/color-survey-results/). A tilde marks a color people never settled a name for - as usable as any other, just harder to call something. The names panel shows every name's territory; switching a name off keeps the generated colors out of it.
 - **Restrict the color space**: min and max sliders for hue, chroma and lightness in OKLCh. Both chroma and lightness are relative to each hue's own peak, so one setting selects the same standing in every hue's gamut. Lightness: 50 is the most vivid sRGB reaches at that hue, 0 is black and 100 is white - yellow peaks near absolute lightness 97 and blue near 45, so one absolute range would clip the first and admit only washed-out colors at the second. Chroma: 100 is all the hue has - teal peaks at absolute chroma 14.5 and magenta at 32.2, so an absolute floor above 14.5 drops teal from the palette while leaving magenta almost untouched. The hue range wraps around, so 300-60 covers magenta through orange. The lightness range can be switched to plain OKLab lightness, the same at every hue, when a fixed band of lightness matters more than every hue's best. Any value some sRGB color reaches is selectable; where a range runs past what sRGB can show, the gamut is the limit, and a range that holds no sRGB color at all says so instead of generating.
 - **Generate around colors you already have**: paste any number of hex values as fixed colors. New colors are kept distinct from them. They are shown alongside the result but not counted in Colors and not exported.
@@ -31,7 +32,9 @@ for that isolated recognition, not just pairwise difference.
 
 - Two colors are as far apart as the author would want them in one palette, measured as a distance in
   OKLab with a noise width the Distinctness slider sets. The distance is anisotropic: a lightness
-  difference counts about half of an equal hue difference, a chroma difference a little under it; a hue
+  difference counts about half of an equal hue difference, a chroma difference a little under it, and both
+  weights turn with hue, lightness counting up to half again as much from blue through magenta to red and
+  chroma more among greens and cyans; a hue
   difference grows with chroma at the 0.75 power; a pair toward black or toward white needs somewhat less
   distance than one at the lightness of the most saturated colors. Hue differences are taken on a respaced
   circle, each hue's share measured by the author's verdicts on thousands of pairs and different by lightness:
@@ -44,8 +47,9 @@ for that isolated recognition, not just pairwise difference.
   has none; any color still confused too often steps off in random directions until none is. A few
   throws are made and the one whose worst color does best is kept.
 - Vividness is a preference, not a restriction: colors are spaced on the distance times their chroma's share
-  of the most saturated color of their hue, so a pale or a dark placement has to buy more distance than a vivid one
-  to be taken. What counts as distinct, and what is reported, stays on the distance itself.
+  of the most saturated color of their hue, to the power the Vividness slider sets, so a pale or a dark placement
+  has to buy more distance than a vivid one to be taken. What counts as distinct, and what is reported, stays on
+  the distance itself.
 - The selected range is a box in OKLCh, cut by the sRGB gamut and by the excluded names: draws
   outside it are discarded, and a step that would leave it is refused.
 - Names are looked up in a partition of color space derived from the xkcd survey's millions of

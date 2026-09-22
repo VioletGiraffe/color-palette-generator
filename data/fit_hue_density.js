@@ -7,12 +7,15 @@
 // quality (AUC of not-close against close and of fine against the rest) and the loss per verdict of the built metric,
 // of the flat density, of the fit in sample and of the fit under 6-fold cross-validation, then the fitted numbers.
 //
-//     node data/fit_hue_density.js [--p 0.75] [--ridge 2] [--knots 12] [--levels 30,58,85] [--level-ridge 10] [--own-cuts] [--same-cuts 13-17] [--wl 0.46] [--wc 0.86] [--gain 0.19] [--free wl,wc,gain] [--placement own] [--table] log.json [more.json ...]
+//     node data/fit_hue_density.js [--p 0.75] [--ridge 2] [--knots 12] [--levels 30,58,85] [--level-ridge 10] [--weight-knots 16] [--weight-ridge 2] [--own-cuts] [--same-cuts 13-17] [--wl 0.46] [--wc 0.86] [--gain 0.19] [--free wl,wc,gain] [--placement own] [--table] log.json [more.json ...]
 //
 // --table prints the fitted density per whole degree at mean 1, in the format of HUE_DENSITY in index.html and
-// identify.js. --placement keeps only the records dealt under that placement, for a deal that mixed several.
+// identify.js, and the weight tables. --placement keeps only the records dealt under that placement, for a deal that mixed several.
 // --levels fits a density per lightness named, the pair's the mix of the two around its mean lightness: each is the
 // one density times offsets of its own, ridged toward none by --level-ridge.
+// --weight-knots fits the lightness and the chroma weight as profiles over hue, read at the pair's hue: each is the
+// base weight (--wl, --wc, or free) times a log-profile piecewise linear between that many knots, ridged toward flat by
+// --weight-ridge. Without it both weights are one number over every hue.
 //
 // p is chroma's exponent on a hue difference, fixed per run, the metric's CHROMA_POWER by default. Every log's records
 // add up, whatever their deal. The grade cuts, the distances at which marginal and fine begin, are fitted exactly for
@@ -34,6 +37,7 @@ const FREE = ["wl", "wc", "gain"];
 
 function main(args) {
 	let p = CHROMA_POWER, ridge = 2, knots = 12, ownCuts = false, wL = W_L, wC = W_C, gainExponent = LIGHTNESS_EXPONENT, free = [], table = false, placement = null, sameCuts = [], levels = [], levelRidge = 10;
+	let weightKnots = 0, weightRidge = 2;
 	const paths = [];
 	for (let i = 0; i < args.length; ++i) {
 		if (args[i] === "--p")
@@ -42,6 +46,10 @@ function main(args) {
 			ridge = +args[++i];
 		else if (args[i] === "--knots")
 			knots = +args[++i];
+		else if (args[i] === "--weight-knots")
+			weightKnots = +args[++i];
+		else if (args[i] === "--weight-ridge")
+			weightRidge = +args[++i];
 		else if (args[i] === "--own-cuts")
 			ownCuts = true;
 		else if (args[i] === "--levels")
@@ -74,7 +82,6 @@ function main(args) {
 		console.error("usage: node data/fit_hue_density.js [--p 0.75] [--ridge 2] [--knots 12] [--levels 30,58,85] [--own-cuts] [--free wl,wc,gain] log.json [more.json ...]");
 		process.exit(1);
 	}
-	const step = 360 / knots;
 	// A record tagged with no placement was dealt under its deal's one; a deal stamped with none is shared
 	const records = paths.flatMap((path, source) => { const log = JSON.parse(fs.readFileSync(path, "utf8")); return log.records.map(r => ({ ...r, source, placement: r.placement ?? log.deal.placement ?? "shared" })); })
 		.filter(r => placement === null || r.placement === placement);
@@ -83,16 +90,20 @@ function main(args) {
 	const firsts = [...new Set(paths.map((_, source) => firstOf(source)))], cutPairOf = paths.map((_, source) => firsts.indexOf(firstOf(source))), cutPairs = firsts.length;
 	// A row is the pair's grade, its two colors and the cut pair it is graded against
 	const rows = records.map(r => ({ g: GRADES.indexOf(r.grade), a: labOf(r.a), b: labOf(r.b), cuts: cutPairOf[r.source] }));
-	const densityAt = (logs, h) => { const x = h / step, i = Math.floor(x) % knots, t = x - Math.floor(x); return Math.exp(logs[i] * (1 - t) + logs[(i + 1) % knots] * t); };
-	// theta: the knot logs, then per level of --levels its knot logs' offsets from them, then the free parameters in
-	// --free's order, the weights as logs
-	const tables = 1 + levels.length;
+	// A log-profile piecewise linear between knots evenly around the circle, at a hue
+	const profileAt = (logs, h) => { const x = h / (360 / logs.length), i = Math.floor(x) % logs.length, t = x - Math.floor(x); return Math.exp(logs[i] * (1 - t) + logs[(i + 1) % logs.length] * t); };
+	const perDegree = logs => Array.from({ length: 360 }, (_, h) => profileAt(logs, h));
+	// theta: the knot logs, then per level of --levels its knot logs' offsets from them, then the lightness and the chroma
+	// weight profiles' knot logs (--weight-knots each), then the free parameters in --free's order, the weights as logs
+	const tables = 1 + levels.length, profilesAt = knots * tables, freeAt = profilesAt + 2 * weightKnots;
 	const levelLogs = (theta, k) => theta.slice(0, knots).map((x, i) => x + theta[knots * (1 + k) + i]);
-	const perDegree = logs => Array.from({ length: 360 }, (_, h) => densityAt(logs, h));
+	const profileLogs = (theta, which) => theta.slice(profilesAt + which * weightKnots, profilesAt + (which + 1) * weightKnots);
 	const candidate = theta => {
-		const at = name => theta[knots * tables + free.indexOf(name)];
-		return { density: perDegree(theta), ...(levels.length ? { levels: levels.map((L, k) => ({ L, density: perDegree(levelLogs(theta, k)) })) } : {}), power: p,
-			wL: free.includes("wl") ? Math.exp(at("wl")) : wL, wC: free.includes("wc") ? Math.exp(at("wc")) : wC, gainExponent: free.includes("gain") ? at("gain") : gainExponent };
+		const at = name => theta[freeAt + free.indexOf(name)];
+		const baseL = free.includes("wl") ? Math.exp(at("wl")) : wL, baseC = free.includes("wc") ? Math.exp(at("wc")) : wC;
+		const weighed = (base, which) => weightKnots ? perDegree(profileLogs(theta, which)).map(f => base * f) : base;
+		return { density: perDegree(theta.slice(0, knots)), ...(levels.length ? { levels: levels.map((L, k) => ({ L, density: perDegree(levelLogs(theta, k)) })) } : {}), power: p,
+			wL: weighed(baseL, 0), wC: weighed(baseC, 1), gainExponent: free.includes("gain") ? at("gain") : gainExponent };
 	};
 	const logDistances = (metric, set) => set.map(row => Math.log(Math.max(1e-6, metric(row.a, row.b))));
 	const sigmoid = x => 1 / (1 + Math.exp(-x));
@@ -132,11 +143,13 @@ function main(args) {
 	const slopeOf = theta => Math.exp(theta[theta.length - 1]);
 	const objective = (theta, set) => {
 		const ds = logDistances(metricWith(candidate(theta)), set), logs = theta.slice(0, knots), m = logs.reduce((a, b) => a + b, 0) / knots, S = slopeOf(theta);
+		// A weight profile's mean log is held at zero: its level is the base weight's
+		const profileRidge = which => { const logs = profileLogs(theta, which), mean = logs.reduce((a, b) => a + b, 0) / (logs.length || 1); return weightRidge * logs.reduce((a, x) => a + (x - mean) ** 2, 0) + 100 * mean * mean; };
 		return lossUnder(cutsFor(set, ds, S), set, ds, S) + ridge * logs.reduce((a, x) => a + (x - m) ** 2, 0) + 100 * m * m
-			+ levelRidge * theta.slice(knots, knots * tables).reduce((a, x) => a + x * x, 0);
+			+ levelRidge * theta.slice(knots, knots * tables).reduce((a, x) => a + x * x, 0) + profileRidge(0) + profileRidge(1);
 	};
 	// theta ends with the log of the slope of the grade transitions in log distance, fitted with every model
-	const start = () => [...Array(knots * tables).fill(0), ...free.map(name => name === "wl" ? Math.log(wL) : name === "wc" ? Math.log(wC) : gainExponent), Math.log(CUT_SLOPE)];
+	const start = () => [...Array(freeAt).fill(0), ...free.map(name => name === "wl" ? Math.log(wL) : name === "wc" ? Math.log(wC) : gainExponent), Math.log(CUT_SLOPE)];
 	// A model is a metric and a slope from a training set
 	const fittedModel = set => { const theta = descend(t => objective(t, set), start(), FIT_STEPS); return { metric: metricWith(candidate(theta)), S: slopeOf(theta), theta }; };
 	const fixedModel = metric => set => { const ds = logDistances(metric, set), [logS] = descend(([x]) => lossUnder(cutsFor(set, ds, Math.exp(x)), set, ds, Math.exp(x)), [Math.log(CUT_SLOPE)], FIT_STEPS); return { metric, S: Math.exp(logS) }; };
@@ -169,14 +182,18 @@ function main(args) {
 	assess("the built metric", fixedModel(metricWith({})));
 	assess("flat density", fixedModel(metricWith(candidate(start()))));
 	const { theta, metric, S } = assess("fitted", fittedModel), best = candidate(theta);
-	console.log("wL " + best.wL.toFixed(3) + ", wC " + best.wC.toFixed(3) + ", gain exponent " + best.gainExponent.toFixed(3) + ", slope " + S.toFixed(2));
-	const knotLine = logs => { const mean = perDegree(logs).reduce((a, b) => a + b, 0) / 360; return logs.map((x, i) => (i * step) + ":" + (Math.exp(x) / mean).toFixed(2)).join(" "); };
+	const meanOf = table => table.reduce((a, b) => a + b, 0) / table.length, baseOf = w => typeof w === "number" ? w : meanOf(w);
+	console.log("wL " + baseOf(best.wL).toFixed(3) + ", wC " + baseOf(best.wC).toFixed(3) + (weightKnots ? " (means over hue)" : "") + ", gain exponent " + best.gainExponent.toFixed(3) + ", slope " + S.toFixed(2));
+	const knotLine = logs => { const mean = meanOf(perDegree(logs)); return logs.map((x, i) => (i * 360 / logs.length) + ":" + (Math.exp(x) / mean).toFixed(2)).join(" "); };
 	console.log("density at knots: " + knotLine(theta.slice(0, knots)));
 	levels.forEach((L, k) => console.log("density at knots, lightness " + L + ": " + knotLine(levelLogs(theta, k))));
+	if (weightKnots)
+		["lightness", "chroma"].forEach((axis, which) => console.log(axis + " weight at knots, over its mean: " + knotLine(profileLogs(theta, which))));
 	cutsFor(rows, logDistances(metric, rows), S).forEach(([cut1, cut2], k) => console.log("cuts of " + paths.filter((_, source) => cutPairOf[source] === k).join(", ") + ": marginal from " + Math.exp(cut1).toFixed(1)
 		+ ", fine from " + Math.exp(cut2).toFixed(1) + " on the metric"));
-	const printTable = (name, density) => {
-		const mean = density.reduce((a, b) => a + b, 0) / 360, entries = density.map(d => +(d / mean).toFixed(3));
+	// A density prints at mean 1, a weight table as it is
+	const printTable = (name, values, scale = meanOf(values)) => {
+		const entries = values.map(v => +(v / scale).toFixed(3));
 		console.log("const " + name + " = [");
 		for (let h = 0; h < 360; h += 17)
 			console.log("\t" + entries.slice(h, h + 17).join(", ") + (h + 17 < 360 ? "," : "];"));
@@ -184,6 +201,10 @@ function main(args) {
 	if (table) {
 		printTable("HUE_DENSITY", best.density);
 		best.levels?.forEach(level => printTable("HUE_DENSITY_AT_" + level.L, level.density));
+		if (weightKnots) {
+			printTable("HUE_WEIGHT_L", best.wL, 1);
+			printTable("HUE_WEIGHT_C", best.wC, 1);
+		}
 	}
 }
 

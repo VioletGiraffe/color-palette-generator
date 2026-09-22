@@ -6,9 +6,7 @@
 //     node data/make_cell_deal.js [--sectors 20]
 
 "use strict";
-const fs = require("fs");
-const path = require("path");
-const { HUE_DENSITY } = require("./identify.js");
+const { HUE_DENSITY, writeDeal } = require("./identify.js");
 
 function main(args) {
 	let sectors = 20;
@@ -33,12 +31,8 @@ function main(args) {
 	};
 	const bounds = Array.from({ length: sectors + 1 }, (_, k) => unwarp(k / sectors));
 	const data = { version: 1, sectors: bounds.slice(0, -1).map((h, k) => [h, bounds[k + 1]]) };
-	const out = path.join(__dirname, "calibrate-cells.html"), OPEN = "// ---------- deal ----------\n", CLOSE = "// ---------- end deal ----------";
-	const source = fs.readFileSync(out, "utf8"), from = source.indexOf(OPEN), to = source.indexOf(CLOSE);
-	if (from < 0 || to < from)
-		throw new Error(path.basename(out) + " lacks the deal markers");
-	fs.writeFileSync(out, source.slice(0, from + OPEN.length) + "const CELL_DEAL = " + JSON.stringify(data) + ";\n" + source.slice(to));
-	console.log(sectors + " sectors, " + data.sectors.map(([a, b]) => (b - a).toFixed(1)).join(" ") + " degrees wide; written into " + path.relative(process.cwd(), out));
+	writeDeal("calibrate-cells.html", "CELL_DEAL", data);
+	console.log(sectors + " sectors, " + data.sectors.map(([a, b]) => (b - a).toFixed(1)).join(" ") + " degrees wide; written into data/calibrate-cells.html");
 }
 
 main(process.argv.slice(2));

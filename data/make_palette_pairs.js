@@ -15,9 +15,8 @@
 // Every palette is sorted by hue from 0, as the page shows it with sorting on.
 
 "use strict";
-const fs = require("fs");
 const path = require("path");
-const { loadPage, HUE_DENSITY } = require("./identify.js");
+const { loadPage, HUE_DENSITY, writeDeal } = require("./identify.js");
 const { densityTables } = require("./fit_hue_steps.js");
 
 const HUE_LOGS = ["hue-1-steps-log.json", "hue-2-steps-log.json", "hue-3-c70-steps-log.json", "hue-4-c80-steps-log.json", "hue-5-c80-steps-log.json"]
@@ -66,13 +65,9 @@ function main(args) {
 		}
 	const about = Object.fromEntries(names.map(n => [n, conditions[n].about]));
 	const data = { version: 1, page: path.basename(pagePath), box, seeds, counts, conditions: about, palettes, pairs };
-	const out = path.join(__dirname, "calibrate-palettes.html"), OPEN = "// ---------- deal ----------\n", CLOSE = "// ---------- end deal ----------";
-	const source = fs.readFileSync(out, "utf8"), from = source.indexOf(OPEN), to = source.indexOf(CLOSE);
-	if (from < 0 || to < from)
-		throw new Error(path.basename(out) + " lacks the deal markers");
-	fs.writeFileSync(out, source.slice(0, from + OPEN.length) + "const PALETTE_PAIRS = " + JSON.stringify(data) + ";\n" + source.slice(to));
+	writeDeal("calibrate-palettes.html", "PALETTE_PAIRS", data);
 	console.log(palettes.length + " palettes, " + pairs.length + " pairs, " + names.length + " conditions at " + counts.join(", ") + " colors over " + seeds
-		+ " seeds; box L " + box.lMin + "-" + box.lMax + ", C " + box.cMin + "-" + box.cMax + "%; written into " + path.relative(process.cwd(), out));
+		+ " seeds; box L " + box.lMin + "-" + box.lMax + ", C " + box.cMin + "-" + box.cMax + "%; written into data/calibrate-palettes.html");
 }
 
 main(process.argv.slice(2));

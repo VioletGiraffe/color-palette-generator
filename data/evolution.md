@@ -1927,6 +1927,94 @@ one, without it a near-twin comes back often. Escalation ends at its last `k` 72
 `k`. `k` = 2 is the knee: half the variety at 1, one more color changed at 3. Shipped: `k` = 2, the exclusion at the
 limit distance, the widest throw, the relaxation; the rerolls are part of the state string, replayed after the attempts.
 
+## Weights by hue
+
+Five pairs from live palettes read wrong to the judge: lavender/magenta at 10.8 much farther than pink/magenta at 12.3
+and three blue and violet pairs at 10.4 to 11.6. Round 21 (blue through magenta to red, lightness 38 to 64 of the cusp,
+hue, chroma and mixed pairs at 8 to 16, the five pairs dealt blind among 144) graded them as the palette page had:
+lavender/magenta fine, pink/magenta marginal, the three blues close. Tests on the pooled rounds (`tmp/name-term-fit.js`,
+`tmp/norm-test.js`, `tmp/light-weights.js`, `tmp/round21-features.js`):
+
+- a name term, the pair's cells' territory overlap in the grade model: real but small, a one-name pair reads 4.5%
+  closer and a nearly unrelated-name pair 5% farther, 0.004 of cross-validated loss where the hue table is worth
+  0.06; inside round 21 the overlap has no effect at all, and the five pairs sit where the term is zero;
+- another norm for combining the three terms, p from 1 to 3: the root of the sum of squares stays best;
+- weights or a hue scale changing with lightness: every variant worse than the built metric.
+
+What round 21 does show is the lightness difference predicting the grade beyond the distance, and the chroma
+difference against it. Fitted per cell (`tmp/sector-fit.js`, two log-factors on the built weights per cell, jointly
+with the grade model, a mild ridge, 6-fold cross-validated), rounds 4 to 21, 2965 verdicts, built 0.5877:
+
+| cells | cross-validated loss |
+|---|---|
+| 16 hue sectors | 0.5552 |
+| 24 hue sectors | 0.5563 |
+| 16 hue x 3 lightness or 3 chroma grades, absolute or cusp-relative, terciles or fixed cuts | 0.5579 to 0.5666 |
+| 16 hue x 3 x 3 | 0.5718 |
+
+Two lobes: blue through magenta to red weighs lightness up to 1.5 and chroma 0.7 to 0.8; green through cyan the
+reverse, chroma 1.4 to 1.6 in cyan, lightness 0.82. Neighbour jumps average 18% with one step of 51% at the cyan-blue
+boundary, sharp within 15 degrees. The rounds were dealt mostly at the cusp (1020 of 2965 pairs within 48 to 52 of
+it), so rounds 22 and 23 dealt the light window (58 to 85) and the dark one (15 to 42), every hue, all three kinds, 176
+each. With them (3317 verdicts, built 0.6046): 16 hue sectors 0.5732, lightness grades alone 0.6001, every
+hue-by-lightness or hue-by-chroma slicing 0.5749 to 0.5773. Weights by hue and nothing finer; the dark grade's
+lightness weight at 0.86 and the middle's at 1.11 is the lightness effect, worth 0.0045, left out.
+
+The judge graded rounds 21 to 23 strict, a pair too close when a palette full of such pairs would tire: their cuts put
+"fine" from 13.1 to 13.8 ΔE against 10 to 15, median 12.2, before. The per-round cuts absorb it; the Distinctness
+default moves from 3.0 to 3.3, the limit from 12.3 to 13.5 ΔE, where the strict rounds' "fine" begins.
+
+The joint fit (`fit_hue_density.js --own-cuts --ridge 10 --free wl,wc,gain --levels 30,58,85 --weight-knots 16 --table`
+over rounds 4 to 23: two log-profiles on the base weights, piecewise linear over 16 knots, ridged toward flat, fitted
+with the level densities and the gain) reaches 0.5731 cross-validated against 0.6032 for the metric before it and
+0.6080 for the same fit without the profiles: the profiles carry the whole gain, and the densities move little. The
+lightness weight runs 0.38 at hue 200 to 0.78 at 315, mean 0.46; the chroma weight 0.62 at 315 to 1.49 at 225, mean
+0.94, up from 0.83; the gain exponent 0.20. On the five pairs the fit moves nothing: lavender/magenta 10.2,
+pink/magenta 12.6, the three blues 9.8 to 10.6.
+
+Round 24 dealt the five pairs eight times each, blind among 120 fillers from round 21's box, under the strict
+criterion (`data/boundary-24-log.json`), to tell a stable perception from the scatter of one verdict:
+
+| pair | metric | close / marginal / fine over 8 | the fillers of the band |
+|---|---|---|---|
+| lavender / magenta | 10.2 | 2 / 4 / 2 | at 10 to 12, mostly close and marginal |
+| pink / magenta | 12.6 | 4 / 3 / 1 | at 12 to 14, mostly marginal and fine |
+| blue / dull blue | 9.8 | 8 / 0 / 0 | at 8 to 10, close |
+| blue / purple | 9.8 | 7 / 1 / 0 | close |
+| blue / blue | 10.6 | 4 / 4 / 0 | close and marginal |
+
+Against the round's own cuts on its fillers (marginal from 11.1, fine from 14.0, slope 9), the grade mix predicted at
+9.8 and at 10.2 is the same, three quarters close. Lavender/magenta's 2/4/2 has a 0.3% chance under it and reads like
+12.5, a fifth farther than its number; pink/magenta's 4/3/1 reads like 11.2, a ΔE closer; the three blues read at their
+numbers or under (8/8 close is consistent with 9.8 and with anything below). A single verdict agrees with a pair's
+modal grade about two times in three, so a pair judged once can sit a grade from where it belongs, and round 21's
+"fine" alone proved nothing; the repeats do. So a pair-level effect of about 20% on top of position exists, at least
+1.3 between lavender/magenta and the blues, and no term in this metric's family carries it (the names by the survey's
+cells, the weights, the norm all failed above). A naming round, the judge's own boundaries instead of the survey's, is
+the one route to a term for it.
+
+## The judge's own kinds
+
+The naming round taken (`data/calibrate-kinds.html`, `data/make_kind_deal.js`, `data/kinds-1-log.json`): 216 colors,
+hues every 10 degrees at cusp-relative lightness 25, 50 and 75 and chroma 50 and 100% of the reach, each shown alone
+at 80 px on the grey ground and given one of the judge's own sixteen kinds (red, burgundy, orange, yellow, green,
+swamp, turquoise, cyan, blue, purple, lilac, pink, brown, cream, white, grey), with a between-two-kinds answer available
+and never used; two colors answered no kind were salmon by the judge's note after the pass. The map is clean and
+asymmetric by lightness: purple exists only dark (hues 290 to 330 at lightness 25), the same hues are lilac at 50 and
+75; blue is two or three columns wide at lightness 50 (260 to 280) and six to eight dark; cyan spans 190 to 260 at the cusp; the warm
+half at lightness 75 is cream, and white covers 140 to 240 at half chroma; brown and swamp take the dark warm half,
+orange and red exist only at the cusp at full chroma.
+
+The term fitted from it, on rounds 4 to 24 with the built metric's distance: s the chance the two colors get the same
+kind (kind shares interpolated over the grid, or the nearest grid point alone), d' = d (1 + beta (1 - s)) or
+d'^2 = d^2 + gamma^2 (1 - s), ordinal logistic with a pair of cuts per log, 6-fold cross-validated. Two thirds of the
+judged pairs cross a kind. Cross-validated loss 0.5590 without the term, 0.5586 with the multiplicative one, a
+cross-kind pair reading 1.02 times its distance; the additive form is worse at every gamma from 2 up. On the strict
+rounds 21 to 24 alone: 0.7165 to 0.7160, 1.07 times; additive at gamma 3 to 4 gains 0.002. The five pairs on the map:
+lavender/magenta is lilac/pink, and the pairs the judge finds more confusable are blue/lilac and pink/lilac, cross-kind
+too. So a kind boundary is not what sets those pairs apart, and the pair-level effect of the previous section stays
+without a term. Kinds are dead as a metric term; the map stands as a record of the judge's vocabulary.
+
 ## Files
 
 - `index.html`: the generator rebuilt from the end state on the preference metric by lightness, with the
@@ -1966,3 +2054,4 @@ limit distance, the widest throw, the relaxation; the rerolls are part of the st
 - `data/fit_preference.js`: the draw's preference density from a member log, the PREFERENCE constant in index.html.
 - `data/calibrate-cells.html`, `data/make_cell_deal.js`, `data/fit_cells.js`: the cell capacity rounds, how many distinct and how many not same-y colors a cell of the space holds along each coordinate; the sectors are written into the page.
 - `data/calibrate-boundaries.html`, `data/make_boundary_deal.js`, `data/fit_boundaries.js`, `data/fit_hue_density.js`, `data/boundary-1-log.json` to `data/boundary-15-log.json`: the pair rounds under the preference question, one pair per trial: hue turns straddling or beside each primary and secondary hue or swept around the circle at several lightness and chroma levels and placements, lightness pairs, chroma pairs, and the violet placement rounds; the deal is written into the page, `data/scripts.md` lists what each round is. The density fit pools the logs; the metric's hue table, chroma power, chroma weight and lightness gain come from them.
+- `data/calibrate-kinds.html`, `data/make_kind_deal.js`, `data/kinds-1-log.json`: the kind round, each dealt color named alone with one of the judge's own kinds; the deal is written into the page.

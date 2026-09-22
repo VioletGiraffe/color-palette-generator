@@ -66,8 +66,9 @@ node data/make_boundary_deal.js --sweep 10 [--turns 20,30,45,60,45] [--light 50]
 node data/make_boundary_deal.js --axis lightness [--hues 30] [--centres 35,50,65] [--turns 10,20,30,45,60] [--chroma 85] # lightness pairs instead: one hue, a turn apart in cusp-relative lightness
 node data/make_boundary_deal.js --axis chroma [--hues 30] [--centres 30,50,70] [--turns 10,20,30,40,50] [--light 50] # chroma pairs: one hue and lightness, a turn apart in chroma share of the reach
 node data/make_boundary_deal.js --axis mixed [--ranges 0-360] [--windows 20-80] [--share 30-100] [--kinds mixed] [--by metric] [--distances 2-18] [--bands 6] [--each 30] [--seed 1] # validation pairs in cells of hue range, lightness window, kind (hue alone, chroma alone, or hue, lightness and chroma at once) and distance band, the chroma within a share of the reach, the bands on the metric or on OKLab deltaE; the defaults deal round 16
+node data/make_kind_deal.js [--hues 10] [--lights 25,50,75] [--shares 50,100] # deal calibrate-kinds.html's colors into the page: a grid over hue, cusp-relative lightness and chroma share of the reach
 node data/fit_boundaries.js log.json          # grades by turn and offset per boundary hue and the boundary's excess on the metric, from a calibrate-boundaries.html log; for a mixed deal, per kind the grades by distance band and by hue range and lightness window, and the ranking quality of the metric against OKLab deltaE
-node data/fit_hue_density.js [--p 0.75] [--ridge 2] [--knots 12] [--levels 30,58,85] [--level-ridge 10] [--own-cuts] [--same-cuts 13-17] [--wl 0.46] [--wc 0.83] [--gain 0.21] [--free wl,wc,gain] [--placement own] [--table] log.json [more.json ...] # the metric fitted to calibrate-boundaries.html logs through identify.js's metricWith: the hue density, one or one per lightness level, and whichever of the lightness weight, the chroma weight and the gain's exponent --free names; ranking quality and loss per verdict of the built metric, flat, fitted and cross-validated, the fitted numbers and the grade cuts on the metric, per log with --own-cuts
+node data/fit_hue_density.js [--p 0.75] [--ridge 2] [--knots 12] [--levels 30,58,85] [--level-ridge 10] [--weight-knots 16] [--weight-ridge 2] [--own-cuts] [--same-cuts 13-17] [--wl 0.46] [--wc 0.83] [--gain 0.21] [--free wl,wc,gain] [--placement own] [--table] log.json [more.json ...] # the metric fitted to calibrate-boundaries.html logs through identify.js's metricWith: the hue density, one or one per lightness level, the lightness and chroma weights as profiles over hue with --weight-knots, and whichever of the base weights and the gain's exponent --free names; ranking quality and loss per verdict of the built metric, flat, fitted and cross-validated, the fitted numbers and the grade cuts on the metric, per log with --own-cuts
 node data/make_member_deal.js [--palettes 120] [--count 8] [--box 20 60 20 100] [--shared 0.5] # deal calibrate-members.html's palettes into the page
 node data/fit_members.js log.json             # where the bad colors live and whether bad is the color or its company, from a calibrate-members.html log
 node data/fit_preference.js log.json          # the draw's preference density from a calibrate-members.html log, as the PREFERENCE constant
@@ -86,12 +87,13 @@ range boxes as OKLCh ranges, so it needs a page whose controls are OKLCh. `build
 `tmp/`, the gitignored scratch folder). Its `loadPage(pagePath, densities)` runs the page's generator in Node:
 
 - It takes the page's script that holds the `// ---------- ui ----------` marker, evaluates the part before
-  the marker, and returns `generate`, `mulberry32`, `cellOf`, `colorFromHex`, `oklabToRgb`, `labOfLch`, `CELL_NAMES`,
+  the marker, and returns `generate`, `mulberry32`, `cellOf`, `colorFromHex`, `oklabToRgb`, `labOfLch`, `absoluteL`, `CELL_NAMES`,
   `CELL_OVERLAP`, `HUE_DENSITY` and `HUE_LEVEL_DENSITIES`, and from a page before the rebuilt generator its box
   sampler, `boxCells`, `samplePoint` and `SPARSE_FRACTION`, which `hue-marginals.js` reads. Anything
   defined below the marker (the UI, the state string, the 3D module) is not there.
 - Any version of the page loads: `index.html`, a `past-experiments/` page, a `git show <rev>:index.html`
   saved to a file, or a copy with a constant edited by `sed`. Pages are cached by path.
+- `writeDeal(pageName, constName, data)` writes a dealer's deal into a calibration page between its deal markers.
 - `densities`, optional: `{ metric, draw }`, each a 360-entry table, replace the page's hue density for
   the metric (every level of `HUE_LEVEL_DENSITIES`, or the `HUE_WARP` integral of a page with one table) and
   for the draw's hue weight of a page that has one, one or both. Without it a page whose
@@ -100,13 +102,13 @@ range boxes as OKLCh ranges, so it needs a page whose controls are OKLCh. `build
 - `generate(cfg)` takes `{ count, scale, hMin, hMax, cMin, cMax, lMin, lMax, seed, fixed, avoid }` with
   `fixed` and `avoid` as arrays of `colorFromHex` results, plus the optional `included` (name mask, all
   by default), `preference` (true), `lAbsolute` (false: the lightness range in absolute OKLab L), `rerolls` (none: slots of
-  the result rerolled, in order). It returns `{ colors, floor, pair, apart,
+  the result rerolled, in order), `vividness` (the page's default: the packing scale's power). It returns `{ colors, floor, pair, apart,
   confused, named }` or null for an empty box; a color is `{ lch, lab, rgb, hex, cell, confident }`.
   The ranges are the page's cusp-relative ones, see `README.md`.
 
-The module also exports the metric itself for the fit scripts: the constants (`SIGMA`, `W_L`, `W_C`,
-`CHROMA_POWER`, `CHROMA_REFERENCE`, `CHROMA_FLOOR`, `LIGHTNESS_EXPONENT`, `LIGHTNESS_REFERENCE`,
-`LIGHTNESS_FLOOR`, `CALIBRATED_PX`, `NAME_DECAY`, `HUE_DENSITY`, `HUE_LEVEL_DENSITIES`, `HUE_DENSITY_AUTHORED`), `lightnessGain`,
+The module also exports the metric itself for the fit scripts: the constants (`SIGMA`, `HUE_WEIGHT_L`, `HUE_WEIGHT_C`,
+`W_L` and `W_C` their means, `CHROMA_POWER`, `CHROMA_REFERENCE`, `CHROMA_FLOOR`, `LIGHTNESS_EXPONENT`, `LIGHTNESS_REFERENCE`,
+`LIGHTNESS_FLOOR`, `CALIBRATED_PX`, `NAME_DECAY`, `HUE_DENSITY`, `HUE_LEVEL_DENSITIES`, `HUE_DENSITY_AUTHORED`), `weightAt`, `pairHue`, `lightnessGain`,
 `hueScaleAt`, `labOf`, `rgbOf`, `warpedLab`, `weightedDistance`, `recallDistance`, `metricWith`, `swapChance`,
 `confusionMatrix`, `summarize`, `score`, `nameCollision`, `gamutChroma`, `cuspLightness`,
 `relativePosition`. `metricWith({ density, wL, wC, power, gainExponent })` returns `recallDistance`'s form under
@@ -338,10 +340,31 @@ Rounds 18 to 20 are the same kind of deal over what rounds 4 to 17 left thin: ro
 three windows, chroma 20 to 50% of the reach, hue and mixed pairs (120); round 19 pairs differing in chroma alone
 (`kind` chroma), six hue ranges, windows 10 to 30 and 30 to 48 below the cusp, chroma 10 to 100% (96); round 20
 hues 45 to 255 in three overlapping ranges, the same two windows, hue and mixed pairs (144).
+Rounds 21 to 23 were judged strict, a pair too close when a palette full of such pairs would tire: round 21 blue
+through magenta to red in three ranges, windows 38 to 51 and 51 to 64, hue, chroma and mixed pairs at metric distance 8 to
+16, the chroma pairs dealt separately at 30 to 100% of the reach and merged (the stamp's `chromaPart`), plus five
+pairs the author picked from palettes, `kind` named (149); round 22 the light window, 58 to 85, every hue in four
+ranges of 90 degrees, hue and mixed pairs at 7 to 17 and chroma pairs at 5 to 13 (176); round 23 the same below the
+cusp, 15 to 42, chroma pairs at 6 to 16 (176); round 24 the five named pairs of round 21 eight times each (`repeat`
+in the deal), blind among 120 fillers from round 21's box, chroma pairs merged as there (160): the repeatability of a
+verdict.
 
 - `node data/fit_boundaries.js log.json` tables one deal's grades by turn and placement.
 - `node data/fit_hue_density.js data/boundary-1-log.json data/boundary-2-log.json data/boundary-3-log.json` pools every log into the memory-scale hue density; a
   record's own hexes carry everything the fit reads, so deals of any version pool.
+
+### Color kind logs
+
+`kinds-N-log.json` are passes of `calibrate-kinds.html`: every color of the deal shown alone at 80 px on the grey ground,
+the judge answering with one of their own kinds, set on the page and carried in the log's `kinds`, each button with the
+swatch hex of `swatches` beside its name. The deal,
+`make_kind_deal.js`, is a grid of hues every 10 degrees at cusp-relative lightness 25, 50 and 75 and chroma 50 and 100%
+of the reach, 216 colors. A record holds the color's index in the deal, its hex, hue, relative lightness and chroma
+share, the kind, a `second` kind for a color the judge put between two, `none` for a color of no kind, and the
+response time. A pass names every color once; a second pass on another day would give the map soft edges where the two
+disagree. `kinds-1-log.json` is the one pass, 2026-09-22, sixteen kinds and no between answers; its `notes` says the two
+colors answered no kind were salmon by the judge's note after the pass, relabeled so. The fit of a kind term on it,
+`tmp/kind-term-fit.js` at the time, is in `evolution.md`: nothing gained.
 
 ### Archive
 

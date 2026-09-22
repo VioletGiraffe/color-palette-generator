@@ -18,7 +18,7 @@
 
 "use strict";
 const fs = require("fs");
-const { labOf, recallDistance, W_L, W_C, HUE_DENSITY } = require("./identify.js");
+const { labOf, recallDistance, HUE_DENSITY } = require("./identify.js");
 
 const hueOf = lab => (Math.atan2(lab[2], lab[1]) * 180 / Math.PI + 360) % 360;
 const mean = xs => xs.reduce((a, x) => a + x, 0) / xs.length;
@@ -39,7 +39,7 @@ const RIDGE_WARP = (() => {
 	for (let b = 255; b > 0; --b) codes.push([255, 0, b]);
 	const labs = codes.map(rgb => labOf("#" + rgb.map(v => v.toString(16).padStart(2, "0")).join("")));
 	const perDegree = new Array(360).fill(0);
-	labs.forEach((lab, i) => { perDegree[Math.floor(hueOf(lab))] += recallDistance(lab, labs[(i + 1) % labs.length], W_L, W_C); });
+	labs.forEach((lab, i) => { perDegree[Math.floor(hueOf(lab))] += recallDistance(lab, labs[(i + 1) % labs.length]); });
 	return warpOf(perDegree);
 })();
 const warpAt = (table, h) => { const at = Math.min(359, Math.floor(h)); return table[at] + (table[at + 1] - table[at]) * (h - at); };
@@ -62,7 +62,7 @@ function featuresOf(palette) {
 	let nearest = Infinity;
 	for (let i = 0; i < labs.length; ++i)
 		for (let j = i + 1; j < labs.length; ++j)
-			nearest = Math.min(nearest, recallDistance(labs[i], labs[j], W_L, W_C));
+			nearest = Math.min(nearest, recallDistance(labs[i], labs[j]));
 	out["nearest pair, metric"] = -nearest;   // negated: like the gaps, less is better
 	out["distinct names"] = -new Set(palette.names).size;
 	return out;
@@ -189,7 +189,7 @@ function main(args) {
 			for (const seam of seams) {
 				const [p, q] = seam.map(hex => hueOf(labOf(hex)));
 				marked.gaps.push({ marked: isMarked(seam, r.marks[side].gaps), gap: Object.fromEntries(Object.entries(COORDINATES).map(([n, c]) => [n, ((c(q) - c(p)) % 360 + 360) % 360])) });
-				marked.crowded.push({ marked: isMarked(seam, r.marks[side].crowded), distance: recallDistance(labOf(seam[0]), labOf(seam[1]), W_L, W_C) });
+				marked.crowded.push({ marked: isMarked(seam, r.marks[side].crowded), distance: recallDistance(labOf(seam[0]), labOf(seam[1])) });
 			}
 		}
 	const gapsMarked = marked.gaps.filter(g => g.marked), crowdMarked = marked.crowded.filter(c => c.marked);

@@ -46,8 +46,10 @@ the archived generator and the scripts.
 
 `apart2(p, q)` is the squared distance between two metric positions, in deltaE:
 
-- the lightness difference times `W_L` (0.46);
-- the radial chroma difference times `W_C` (0.83);
+- the lightness difference times the lightness weight at the pair's hue, `HUE_WEIGHT_L` read by `weightAt` at the hue of
+  the two colors' summed ab (a grey defers to its partner);
+- the radial chroma difference times the chroma weight there, `HUE_WEIGHT_C`; blue through magenta to red weighs
+  lightness up to half again and chroma a quarter less, green through cyan the reverse;
 - the tangential part, the ab chord after both hues move to their warped angle at the pair's mean lightness, the
   mix of the two levels around it, less the radial part, times
   `hueScaleAt` of the pair's mean chroma, `(C / CHROMA_REFERENCE) ^ (CHROMA_POWER - 1)`, so a hue turn grows with
@@ -57,9 +59,11 @@ the archived generator and the scripts.
 
 The Distinctness control is the noise width `sigma`; a pair at distance `d` swaps with `swapChance(d, sigma)`,
 half the complementary error function of `d / (2 sigma)` in standard units, and `limitDistance(sigma)` is where
-that chance falls to `ERROR_LIMIT` (0.02). `sigma` comes from the recall calibration (`calibrate.html`,
-`fit.js`); the level densities, `W_L`, `W_C` and the gain's exponent are one fit to the pair rounds under the preference
-question (`calibrate-boundaries.html`, `fit_hue_density.js`), the chroma power from the same rounds; the sources and numbers are in `scripts.md` and `evolution.md`.
+that chance falls to `ERROR_LIMIT` (0.02). The control's default puts the limit where "fine" begins in the strict
+pair rounds (21 to 23), the recall calibration (`calibrate.html`, `fit.js`) having set the earlier one; the level
+densities, the weight tables and the gain's exponent are one fit to the pair rounds under the preference question
+(`calibrate-boundaries.html`, `fit_hue_density.js`), the chroma power from the same rounds; the sources and numbers are
+in `scripts.md` and `evolution.md`. `W_L` and `W_C` in `identify.js` are the tables' means, for the recall-era scoring only.
 The metric measures how far apart two colors read as members of one palette. It carries no term for a color on
 its own.
 
@@ -74,10 +78,10 @@ closest pair's distance (`identification`); pairs of two fixed colors are skippe
 The density carries every preference about where colors sit:
 
 - `metricVolume(L, C, h)`: the metric's volume per OKLab volume, in closed form, the product of the metric's scale on
-  each axis: `W_L * W_C * density(h, L) * hueScaleAt(C) * lightnessGain(L)^3`, the density the level tables mixed at `L`.
+  each axis: `weightL(h) * weightC(h) * density(h, L) * hueScaleAt(C) * lightnessGain(L)^3`, the density the level tables mixed at `L`.
 - `vividness(C, h)`: the chroma as a share of the hue's cusp chroma, floored at `VIVIDNESS_FLOOR`: a dark or a pale
-  color on the gamut's surface is not vivid. A color's packing scale is its vividness to `VIVIDNESS_POWER`, relative to
-  the pool's largest, so a pastel box ranks its own colors.
+  color on the gamut's surface is not vivid. A color's packing scale is its vividness to the config's `vividness`, the
+  Vividness control (`VIVIDNESS_DEFAULT` without one), relative to the pool's largest, so a pastel box ranks its own colors.
 - The density is the volume times the cube of the scale, on usable points (`insideBox`, `usableLch`: inside the ranges and sRGB, a
   name in use, at or above the preference floor `PREFERENCE_FLOOR` of `preferenceOf`, outside every avoided color's
   shadow, `shadowed`), zero elsewhere.
@@ -119,14 +123,14 @@ same corners of the box; cells and their split geometry did not stop the pushes 
 40 colors; push direction rules, stall counts, clamping and phases never moved the floor by a point, and clamping is
 what parks colors on walls; the hue marginal as a draw acceptance and a hue target toward `HUE_DENSITY`'s hue line
 put colors into hues with little room, and the table by lightness balances the hues on its own; the preference model
-as a draw weight dislikes yellows at any weight. Known gaps: a box flat in lightness or in hue gets no relaxation, a
-random step never lands inside it; the pool is shared by every seed of a box, so two palettes of one box can share a hex.
+as a draw weight dislikes yellows at any weight. Known gap: a box flat in lightness or in hue gets no relaxation, a
+random step never lands inside it.
 
 ## The state string
 
 `stateString` writes, `parseState` reads and `configFromState` turns into a generator config:
 
-    v4|count|strict|hMin|hMax|cMin|cMax|lMin|lMax|seed|sort|backdrop|custom|format|fixed|names|avoid|lAbsolute|rerolls
+    v4|count|strict|hMin|hMax|cMin|cMax|lMin|lMax|seed|sort|backdrop|custom|format|fixed|names|avoid|lAbsolute|rerolls|vividness
 
 - `strict` is the Distinctness value, `sigma`; the ranges are in the control coordinates above (hue in degrees,
   not the ridge coordinate); `seed` is written unsigned.
@@ -134,8 +138,9 @@ random step never lands inside it; the pool is shared by every seed of a box, so
   custom backdrop's hex without `#`.
 - `fixed` and `avoid` are comma-joined hexes without `#`; `names` is the included-name mask, one bit
   per cell, as a base-36 number (`stateNameField`, `nameTableFrom`); `lAbsolute` is 0 or 1, the lightness range's
-  coordinate; `rerolls` is the comma-joined slots rerolled, in order, indexes into the result. These five were added
-  later in that order, so an older string ends earlier and the missing ones take their defaults.
+  coordinate; `rerolls` is the comma-joined slots rerolled, in order, indexes into the result; `vividness` is the
+  Vividness value, 0 to 1. These six were added later in that order, so an older string ends earlier and the missing
+  ones take their defaults.
 - `STATE_VERSION` changes only when a field's meaning changes; an added field goes at the end.
 
 ## After a change

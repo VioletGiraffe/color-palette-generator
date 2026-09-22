@@ -14,7 +14,7 @@
 
 "use strict";
 const fs = require("fs");
-const { labOf, recallDistance, W_L, W_C } = require("./identify.js");
+const { labOf, recallDistance } = require("./identify.js");
 
 const GRADES = ["close", "marginal", "fine"];
 const FINE = 1.5;
@@ -47,7 +47,7 @@ function main(args) {
 		console.log(records.length + " verdicts; mixed deal, hues " + spans(cells.ranges) + ", lightness " + spans(cells.windows) + " of the cusp, chroma " + cells.share.join(" to ") + "% of the reach, seed " + deal.seed);
 		const within = (h, [from, to]) => ((h - from) % 360 + 360) % 360 <= to - from;
 		const rows = records.map(r => { const a = labOf(r.a), b = labOf(r.b); return { g: GRADES.indexOf(r.grade), kind: r.kind ?? "mixed", window: r.window ?? cells.windows[0], range: cells.ranges.find(range => within(r.hues[0], range)),
-			metric: recallDistance(a, b, W_L, W_C), oklab: Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) }; });
+			metric: recallDistance(a, b), oklab: Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) }; });
 		const tally = own => fmt(own.length, 4, 0) + fmt(own.length ? mean(own.map(r => r.g)) : NaN) + "   " + GRADES.map((_, g) => own.filter(r => r.g === g).length).join(" / ");
 		const auc = (own, key, positive) => {
 			let n = 0, s = 0;
@@ -112,7 +112,7 @@ function main(args) {
 			cells.forEach((g, k) => { if (g.length && mean(g) >= FINE && threshold[offsets[k]] === undefined) threshold[offsets[k]] = turn; });
 		}
 		// The metric's distance for a pair of the boundary at a turn, from the dealt hexes.
-		const distanceAt = (turn, offset) => { const r = own.find(x => x.turn === turn && x.offset === offset); return r ? recallDistance(labOf(r.a), labOf(r.b), W_L, W_C) : NaN; };
+		const distanceAt = (turn, offset) => { const r = own.find(x => x.turn === turn && x.offset === offset); return r ? recallDistance(labOf(r.a), labOf(r.b)) : NaN; };
 		console.log("  first turn graded fine: " + offsets.map(o => o + ": " + (threshold[o] === undefined ? "none" : threshold[o] + " deg, " + fmt(distanceAt(threshold[o], o), 4, 1) + " on the metric")).join("; "));
 		const straddle = threshold[0], beside = offsets.filter(o => Math.abs(o) >= 1 && threshold[o] !== undefined);
 		if (straddle !== undefined && beside.length)

@@ -9,9 +9,8 @@
 // Every palette is sorted by hue from 0, as the page shows it with sorting on.
 
 "use strict";
-const fs = require("fs");
 const path = require("path");
-const { loadPage } = require("./identify.js");
+const { loadPage, writeDeal } = require("./identify.js");
 
 const hueOf = lab => (Math.atan2(lab[2], lab[1]) * 180 / Math.PI + 360) % 360;
 
@@ -44,13 +43,9 @@ function main(args) {
 	}
 	const sharedCount = dealt.filter(p => p.fixed).length;
 	const data = { version: 1, page: path.basename(pagePath), box, count, shared: sharedCount, palettes: dealt };
-	const out = path.join(__dirname, "calibrate-members.html"), OPEN = "// ---------- deal ----------\n", CLOSE = "// ---------- end deal ----------";
-	const source = fs.readFileSync(out, "utf8"), from = source.indexOf(OPEN), to = source.indexOf(CLOSE);
-	if (from < 0 || to < from)
-		throw new Error(path.basename(out) + " lacks the deal markers");
-	fs.writeFileSync(out, source.slice(0, from + OPEN.length) + "const MEMBER_DEAL = " + JSON.stringify(data) + ";\n" + source.slice(to));
+	writeDeal("calibrate-members.html", "MEMBER_DEAL", data);
 	console.log(dealt.length + " palettes of " + count + " colors, " + sharedCount + " sharing a color with the palette before; box L " + box.lMin + "-" + box.lMax
-		+ ", C " + box.cMin + "-" + box.cMax + "%; written into " + path.relative(process.cwd(), out));
+		+ ", C " + box.cMin + "-" + box.cMax + "%; written into data/calibrate-members.html");
 }
 
 main(process.argv.slice(2));

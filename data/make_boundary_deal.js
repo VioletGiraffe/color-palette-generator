@@ -41,18 +41,15 @@
 //   low, high - both at the lower or the higher of the two hues' lightness, each at the reach there.
 
 "use strict";
-const fs = require("fs");
 const path = require("path");
-const { loadPage, cuspLightness, gamutChroma, labOf, recallDistance, W_L, W_C } = require("./identify.js");
+const { loadPage, gamutChroma, labOf, recallDistance, writeDeal } = require("./identify.js");
 
-const CUSP_ANCHOR = 50;
 // Draws of the second color before the first is redrawn; a hue or a chroma pair's second varies on one axis
 const MIXED_TRIES = { mixed: 200000, hue: 1000, chroma: 1000 };
 // Second colors drawn per band before the deal fails: a band no pair of the cell reaches
 const MIXED_BAND_DRAWS = 5e6;
 // A cell's top distance is at most the one this share of MIXED_SURVEY random pairs of the cell stay under: a dark or a pale cell reaches less
 const MIXED_SURVEY = 4000, MIXED_REACH = 0.99;
-const absoluteL = (relative, h) => { const cusp = cuspLightness(h); return relative <= CUSP_ANCHOR ? cusp * relative / CUSP_ANCHOR : cusp + (100 - cusp) * (relative - CUSP_ANCHOR) / (100 - CUSP_ANCHOR); };
 const hexOf = rgb => "#" + rgb.map(v => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, "0")).join("");
 
 function main(args) {
@@ -128,7 +125,7 @@ function main(args) {
 	const colorAt = (L, C, h) => hexOf(page.oklabToRgb(...page.labOfLch(L, C, h)));
 	const dealPair = (turn, centre, around, placement) => {
 		const hues = [(centre - turn / 2 + 360) % 360, (centre + turn / 2) % 360].map(h => +h.toFixed(2));
-		const own = hues.map(h => absoluteL(light, h));
+		const own = hues.map(h => page.absoluteL(light, h));
 		const L = { own, "own-reversed": [own[1], own[0]], low: Array(2).fill(Math.min(...own)), high: Array(2).fill(Math.max(...own)) }[placement] ?? Array(2).fill((own[0] + own[1]) / 2);
 		const reach = hues.map((h, i) => gamutChroma(L[i], h));
 		const C = placement === "shared" ? Array(2).fill(chroma / 100 * Math.min(...reach)) : reach.map(r => chroma / 100 * r);
@@ -136,13 +133,13 @@ function main(args) {
 	};
 	// A lightness pair: the same hue, relative lightness centre plus and minus half the turn
 	const dealLightnessPair = (turn, centre, hue) => {
-		const L = [centre - turn / 2, centre + turn / 2].map(relative => absoluteL(relative, hue));
+		const L = [centre - turn / 2, centre + turn / 2].map(relative => page.absoluteL(relative, hue));
 		const C = L.map(l => chroma / 100 * gamutChroma(l, hue));
 		return { hue, turn, centre, hues: [hue, hue], L: L.map(x => +x.toFixed(1)), C: C.map(x => +x.toFixed(1)), hexes: L.map((l, i) => colorAt(l, C[i], hue)) };
 	};
 	// A chroma pair: the same hue and lightness, chroma share centre plus and minus half the turn
 	const dealChromaPair = (turn, centre, hue) => {
-		const L = absoluteL(light, hue), reach = gamutChroma(L, hue);
+		const L = page.absoluteL(light, hue), reach = gamutChroma(L, hue);
 		const C = [centre - turn / 2, centre + turn / 2].map(share => share / 100 * reach);
 		return { hue, turn, centre, hues: [hue, hue], L: [L, L].map(x => +x.toFixed(1)), C: C.map(x => +x.toFixed(1)), hexes: C.map(c => colorAt(L, c, hue)) };
 	};
@@ -151,12 +148,12 @@ function main(args) {
 			throw new Error("--distances takes one range per kind, --each one number per hue range");
 		// The survey draws from its own stream: the deal's draws do not depend on it
 		const rnd = page.mulberry32(seed), surveyRnd = page.mulberry32(seed + MIXED_SURVEY);
-		const measure = by === "oklab" ? (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) : (p, q) => recallDistance(p, q, W_L, W_C);
+		const measure = by === "oklab" ? (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) : (p, q) => recallDistance(p, q);
 		const distanceOf = pair => measure(labOf(pair[0].hex), labOf(pair[1].hex));
 		const colored = (L, C, h) => ({ L, C, h, hex: colorAt(L, C, h) });
-		const placedOwn = spot => { const L = absoluteL(spot.light, spot.h); return colored(L, spot.share / 100 * gamutChroma(L, spot.h), spot.h); };
+		const placedOwn = spot => { const L = page.absoluteL(spot.light, spot.h); return colored(L, spot.share / 100 * gamutChroma(L, spot.h), spot.h); };
 		const placedShared = (spot, hues) => {
-			const L = (absoluteL(spot.light, hues[0]) + absoluteL(spot.light, hues[1])) / 2, C = spot.share / 100 * Math.min(...hues.map(h => gamutChroma(L, h)));
+			const L = (page.absoluteL(spot.light, hues[0]) + page.absoluteL(spot.light, hues[1])) / 2, C = spot.share / 100 * Math.min(...hues.map(h => gamutChroma(L, h)));
 			return hues.map(h => colored(L, C, h));
 		};
 		const dealt = [];
@@ -213,11 +210,7 @@ function main(args) {
 		: { light, chroma, placement: placements.join(","), turns,
 			...(axis !== "hue" ? { axis, hueStep, centres } : sweep ? { sweep, ranges } : { offsets, boundaries: Object.fromEntries(Object.entries(boundaries).map(([k, v]) => [k, +v.toFixed(1)])) }) };
 	const data = { version: 2, page: path.basename(pagePath), ...where, pairs };
-	const out = path.join(__dirname, "calibrate-boundaries.html"), OPEN = "// ---------- deal ----------\n", CLOSE = "// ---------- end deal ----------";
-	const source = fs.readFileSync(out, "utf8"), from = source.indexOf(OPEN), to = source.indexOf(CLOSE);
-	if (from < 0 || to < from)
-		throw new Error(path.basename(out) + " lacks the deal markers");
-	fs.writeFileSync(out, source.slice(0, from + OPEN.length) + "const BOUNDARY_PAIRS = " + JSON.stringify(data) + ";\n" + source.slice(to));
+	writeDeal("calibrate-boundaries.html", "BOUNDARY_PAIRS", data);
 	const dealt = axis === "mixed"
 		? "mixed, hues " + ranges.map(r => r.join(" to ")).join(", ") + " with " + each.join(", ") + " pairs a cell, lightness " + windows.map(w => w.join(" to ")).join(", ") + " of the cusp, chroma " + share.join(" to ")
 			+ "% of the reach, " + kinds.map((kind, k) => kind + " pairs in " + bands + " bands of " + distances[k].join(" to ")).join(", ") + (by === "oklab" ? " OKLab deltaE" : " on the metric") + ", seed " + seed
@@ -225,7 +218,7 @@ function main(args) {
 		: axis === "chroma" ? " in chroma share at centres " + centres.join(", ") + ", hues every " + hueStep + " degrees; lightness " + light
 		: (sweep ? " at centres every " + sweep + " degrees over " + ranges.map(r => r.join(" to ")).join(", ") : " at offsets " + offsets.join(", ") + " around " + Object.entries(data.boundaries).map(([k, v]) => k + " " + v).join(", "))
 			+ "; lightness " + light + ", chroma " + chroma + "% of the reach, placement " + placements.join(", "));
-	console.log(pairs.length + " pairs: " + dealt + "; written into " + path.relative(process.cwd(), out));
+	console.log(pairs.length + " pairs: " + dealt + "; written into data/calibrate-boundaries.html");
 }
 
 main(process.argv.slice(2));
