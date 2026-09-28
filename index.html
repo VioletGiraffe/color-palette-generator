@@ -1386,7 +1386,11 @@ function throwAt(order, fixed, count, r, floor = 0) {
 	for (const point of order) {
 		if (seated.length - fixed.length === count)
 			break;
-		if (seated.every(other => packed2(point, other) >= r2 && apartWarped2(point, other) >= floor2))
+		// A pair's stretch s puts its stretched distance at most max(1, s) times its plain one: the plain one is taken only near the floor.
+		if (seated.every(other => {
+			const stretch2 = point.stretch * other.stretch, stretched2 = apartWarped2(point, other, stretch2);
+			return stretched2 * point.scale * other.scale >= r2 && (stretched2 >= floor2 * Math.max(1, stretch2) || apartWarped2(point, other) >= floor2);
+		}))
 			seated.push(point);
 	}
 	return seated.length - fixed.length === count ? seated : null;
