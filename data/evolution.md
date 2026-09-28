@@ -2128,6 +2128,53 @@ absolute lightness, the author's box with lightness 20 to 100 and chroma from 20
   palettes, pale colors (L above 80, chroma under 8) go from 0.80 a palette to 0.57 at 0.05, 0.30 at 0.08 and none at
   0.10; darks stay at 4.1 to 4.6.
 
+## Palettes at the floor
+
+At 15 colors the author could not tell a box's palettes apart from one palette varied slightly. The generator spread
+colors as far as the box allowed: the throw sought the widest spacing that still seated every color, the relaxation
+stepped colors toward more room, and the attempts kept the widest spread. A full box has few arrangements at the widest
+spacing, so seeds converged on them. The relaxation did most of it: in the author's box the throw already sat at the floor.
+The generator now holds the floor (the error limit or Min distance) and no more:
+
+- The throw seats the pool in a seeded random order, a point when it is at the floor from every seated color; a box that
+  cannot seat the count at the floor gets the floor lowered by bisection.
+- The relaxation moves only colors with a pair under the floor, closest first, and keeps a step that widens its closest pair.
+- The attempts stop at the first with every pair at the floor.
+- The packing distance and the hue stretch are gone: the boost and Vividness act only through the pool's density.
+
+Sameness is scored as shared colors (`tmp/variety.js`): two palettes' colors matched one to one at the least total
+distance, each matched pair counting twice its swap chance at the calibrated noise, 1 for identical colors and 0.04 at
+the limit. The author's box (15 colors, L 14-71, `sMin` 0.119), 40 seeds, 780 pairs of palettes:
+
+| generator | shared of 15 (p10, p90) | closest pair | floor | ms per palette |
+|---|---|---|---|---|
+| widest spacing | 6.8 | 16.1 | 0.973 | 128 |
+| at the floor | 5.5 (4.3, 6.7) | 14.4 | 0.926 | 15 |
+| random picks from the pool | 4.0 (3.0, 5.2) | - | - | - |
+
+- The score ranks example pairs as the author does, most to least similar; its absolute values are not judged.
+- The preferences act only where the box has room. In the author's box to 67, 100 seeds, blue (215-275) seats 3.11 at x2
+  and 2.96 at x0.5 against 3.07 (before: 4.32 and 1.89 against 3.15), yellow (75-115) 0.68 and 0.54 against 0.57. In the
+  default 10-color box yellow at x0.5 goes from 0.61 to 0.34, blue at x2 from 1.61 to 2.08.
+- The pool is drawn once per box with a fixed seed, and a color the relaxation leaves in place is a pool point: over 40
+  seeds of the author's box, 8% of the colors reappear exactly in another seed's palette, 1.1 a palette.
+
+Vividness in the author's box, 40 seeds; vividness is chroma over the hue's cusp chroma, the counts are colors a palette:
+
+| Vividness | pool mean | palettes mean | 0.8 and above | under 0.4 | shared of 15 |
+|---|---|---|---|---|---|
+| 0 | 0.600 | 0.628 | 4.2 | 3.0 | 5.5 |
+| 0.25 | 0.636 | 0.639 | 4.4 | 2.9 | 5.3 |
+| 0.5 | 0.670 | 0.654 | 5.0 | 2.1 | 5.6 |
+| 0.75 | 0.699 | 0.665 | 5.3 | 2.0 | 5.5 |
+| 1 | 0.724 | 0.667 | 5.1 | 2.1 | 5.7 |
+
+- A third of the pool's shift reaches the palettes, and none above 0.5: a full box takes its count from every region.
+- At 0 the palettes hold more of both ends than the pool (28% and 20% against 15% and 13%): spaced colors go to the
+  box's boundaries, the gamut surface and the saturation floor.
+- Before, over the reference boxes, 0 to 1 moved the palettes' mean from 0.673 to 0.736 (the author's to 67), 0.668 to
+  0.783 (to 100) and 0.608 to 0.746 (default); now 0.619 to 0.633, 0.598 to 0.646 and 0.582 to 0.661.
+
 ## Files
 
 - `index.html`: the generator rebuilt from the end state on the preference metric by lightness, with the

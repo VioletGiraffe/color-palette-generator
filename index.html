@@ -279,7 +279,7 @@
 		<div class="hint">The closest any two colors may come, in ΔE. The memory noise alone keeps every pair at 14.4 where the ranges allow; raise it for palettes that survive a longer gap between seeing a color and naming it.</div>
 		<label for="vivid" class="row" style="margin: 10px 0 0"><span>Vividness</span><span class="value" id="vivid-value"></span></label>
 		<input type="range" id="vivid" min="0" max="1" step="0.05" value="0">
-		<div class="hint">How much saturated colors are preferred over an even spread of the range. 0 spreads on the distance alone; higher buys saturation with a little of the worst color's identification.</div>
+		<div class="hint">How much more often saturated colors are drawn than an even spread of the range gives them. 0 draws evenly.</div>
 	</div>
 
 	<hr>
@@ -315,8 +315,8 @@
 		</div>
 
 		<label for="s-min" class="row" style="margin: 0"><span>Saturation min</span><span class="value" id="s-value"></span></label>
-		<input type="range" id="s-min" min="0" max="0.2" step="0.005" value="0.05">
-		<div class="hint" style="margin: 0 0 12px">Chroma over lightness, the same at every hue. At one chroma a lighter color is less saturated, so this removes near-whites before dark colors; around 0.05 it leaves pastels. Teal peaks near 0.17 and yellow near 0.22, so they go first above that.</div>
+		<input type="range" id="s-min" min="0" max="0.2" step="0.001" value="0.06">
+		<div class="hint" style="margin: 0 0 12px">Chroma over lightness, the same at every hue. At one chroma a lighter color is less saturated, so this removes near-whites before dark colors; 0.06 also removes the greyest pastels and keeps the rest. Teal peaks near 0.17 and yellow near 0.22, so they go first above that.</div>
 
 		<div class="range-pair" style="margin-bottom: 0">
 			<div class="caption"><span>Lightness <label style="font-weight: normal"><input type="checkbox" id="l-absolute"> absolute</label></span><span class="value" id="l-value"></span></div>
@@ -1125,8 +1125,7 @@ const apart2 = (p, q) => apartWarped2(warpedPoint(p), warpedPoint(q));
 function warpedPoint([L, a, b]) {
 	return { L, a, b, C: Math.hypot(a, b), hues: warpedHues(a, b) };
 }
-// hueStretch2 multiplies the hue term alone: 1 on the metric, the pair's stretches on the packing distance.
-function apartWarped2(p, q, hueStretch2 = 1) {
+function apartWarped2(p, q) {
 	const meanL = (p.L + q.L) / 2, level = hueLevelAt(meanL), turn = mixedAt(p.hues, level) - mixedAt(q.hues, level);
 	const hue = Math.atan2(p.b + q.b, p.a + q.a) * 180 / Math.PI, wL = weightAt(HUE_WEIGHT_L, hue), wC = weightAt(HUE_WEIGHT_C, hue);
 	const dL = p.L - q.L, hueScale = hueScaleAt((p.C + q.C) / 2), gain = lightnessGain(meanL);
@@ -1134,24 +1133,22 @@ function apartWarped2(p, q, hueStretch2 = 1) {
 	const hue2 = 2 * p.C * q.C * (1 - Math.cos(turn)) * hueScale * hueScale;
 	const chroma = wC * (p.C - q.C - SHADE_DISCOUNT * (p.C + q.C) / Math.max(5, p.L + q.L) * dL);
 	const lightness = dL * wL * (SAME_HUE_LIGHTNESS + (1 - SAME_HUE_LIGHTNESS) * hue2 / (hue2 + SAME_HUE_SPAN * SAME_HUE_SPAN));
-	return (lightness * lightness + chroma * chroma + hue2 * hueStretch2) * gain * gain;
+	return (lightness * lightness + chroma * chroma + hue2) * gain * gain;
 }
 
-// Where colors sit is one density over the box: the metric's volume times the cube of a packing scale, the scale a
-// color's vividness, times its hue's stretch (data/README.md, "The generator"). Colors are spaced on the packing distance:
-// the metric's with its hue term stretched, times the root of the pair's scales. A sample of the density is uniform in its
-// volume. The report stays on apart2.
-// The power vividness enters the scale at for a config or state string without `vividness`, the Vividness control's value.
-// Measured at 1/4, 1/2 and 1 by eye, see data/evolution.md. The control itself starts at 0.
+// Where colors are drawn from is one density over the box: the metric's volume times the cube of a color's vividness
+// to the config's power, times its hue's boost (data/README.md, "The generator"). Colors are spaced on the metric alone.
+// The power vividness enters the density at for a config or state string without `vividness`, the Vividness control's
+// value. Measured at 1/4, 1/2 and 1 by eye, see data/evolution.md. The control itself starts at 0.
 const VIVIDNESS_DEFAULT = 0.5;
-// A grey's vividness is held above zero: at zero its packing distances vanish.
+// A grey's vividness is held above zero: at zero its density vanishes.
 const VIVIDNESS_FLOOR = 0.05;
 // A color's chroma as a share of its hue's cusp chroma, the most the gamut holds at any lightness: a dark or a pale
 // color on the gamut's surface is not vivid. The share of the reach at the color's own lightness counted it as such.
 const vividness = (C, h) => Math.max(VIVIDNESS_FLOOR, Math.min(1, C / cuspChroma(h)));
-// Hue ranges whose room the generator changes, { from, to, boost, ramp } each in OKLab hue degrees: a hue's boost is its
-// stretch of the hue axis in the packing distance, so its room in the box scales with it (boostAt). poolFor adds one
-// offset to every hue (roomOffset), so the box's total room is kept and every hue pays alike. Set by eye with
+// Hue ranges whose share of the density the generator changes, { from, to, boost, ramp } each in OKLab hue degrees: a
+// hue's density scales with its boost (boostAt). poolFor adds one offset to every hue (roomOffset), so the box's total
+// density is kept and every hue pays alike. Set by eye with
 // data/tune-hue-boost.html, data/fit_hue_boost.js fitting one range per hue sector toward even counts; the metric does not
 // read it.
 const HUE_BOOST_RANGES = [];
@@ -1169,7 +1166,6 @@ const boostAt = (ranges, h) => Math.exp(ranges.reduce((sum, { from, to, boost, r
 // The metric's volume per OKLab volume: apart2's scale along lightness, along chroma and along the hue arc. A small step
 // has no hue term, so lightness scales by its weight at one hue; the shade discount shears and keeps the volume.
 const metricVolume = (L, C, h) => weightAt(HUE_WEIGHT_L, h) * SAME_HUE_LIGHTNESS * weightAt(HUE_WEIGHT_C, h) * mixedAt(HUE_LEVEL_DENSITIES.map(([, density]) => density[Math.floor(h) % 360]), hueLevelAt(L)) * hueScaleAt(C) * lightnessGain(L) ** 3;
-const packed2 = (p, q) => apartWarped2(p, q, p.stretch * q.stretch) * p.scale * q.scale;
 
 // The hue control's coordinate: the metric's length along the ridge, the sRGB cube's six saturated
 // edges walked code by code, per whole degree of OKLab hue, as a running integral normalized to 360.
@@ -1317,21 +1313,20 @@ function roomOffset(volumes, boosts) {
 	return (below + above) / 2;
 }
 
-// A generator point: the warped position, the color's lch, its packing scale and its hue's stretch.
-const pointAt = (lch, scale, stretch) => ({ ...warpedPoint(positionOf(lch)), lch, scale, stretch });
+// A generator point: the warped position and the color's lch.
+const pointAt = lch => ({ ...warpedPoint(positionOf(lch)), lch });
 
 const poolKey = cfg => [cfg.hMin, cfg.hMax, cfg.lMin, cfg.lMax, cfg.lAbsolute ? "abs" : "rel", cfg.cMin, cfg.cMax, cfg.sMin, cfg.vividness, cfg.preference,
 	cfg.included.map(Number).join(""), (cfg.avoid ?? []).map(color => color.hex).join()].join("|");
 let poolCache = { key: null, pool: null };
-// The pool of a box: its points, and `pointOf`, the generator point of any color of the box.
+// The pool of a box: its points.
 function poolFor(cfg) {
 	const key = poolKey(cfg);
 	if (poolCache.key === key)
 		return poolCache.pool;
 
 	const rnd = mulberry32(31337);
-	const scaleOf = lch => vividness(lch[1], lch[2]) ** cfg.vividness;
-	// A draw's volume in the packing distance before the stretch
+	// A draw's density before its hue's boost
 	const volumeOf = draw => metricVolume(...draw.lch) * vividness(draw.lch[1], draw.lch[2]) ** (3 * cfg.vividness) * draw.slab;
 	// The survey: the box's volume per hue for the boost's offset, the density's peak, the rejection's ceiling
 	const survey = [];
@@ -1342,10 +1337,9 @@ function poolFor(cfg) {
 			survey.push(draw);
 	}
 	const offset = roomOffset(survey.map(volumeOf), survey.map(draw => boostAt(HUE_BOOST_RANGES, draw.lch[2])));
-	const stretchOf = lch => Math.max(0, boostAt(HUE_BOOST_RANGES, lch[2]) + offset);
-	const densityOf = draw => volumeOf(draw) * stretchOf(draw.lch);
+	const densityOf = draw => volumeOf(draw) * Math.max(0, boostAt(HUE_BOOST_RANGES, draw.lch[2]) + offset);
 	const peak = survey.reduce((most, draw) => Math.max(most, densityOf(draw)), 0), points = [];
-	const keep = draw => { if (rnd() * peak < densityOf(draw)) points.push(pointAt(draw.lch, scaleOf(draw.lch), stretchOf(draw.lch))); };
+	const keep = draw => { if (rnd() * peak < densityOf(draw)) points.push(pointAt(draw.lch)); };
 	for (const draw of survey)
 		if (points.length < POOL_SIZE)
 			keep(draw);
@@ -1354,16 +1348,12 @@ function poolFor(cfg) {
 		if (draw && allowedLch(...draw.lch, cfg))
 			keep(draw);
 	}
-	// The scale is relative to the pool's largest: a pastel box ranks its own colors.
-	const top = points.reduce((most, point) => Math.max(most, point.scale), 0);
-	for (const point of points)
-		point.scale /= top;
-	poolCache = { key, pool: { points, pointOf: lch => pointAt(lch, Math.min(1, scaleOf(lch) / top), stretchOf(lch)) } };
+	poolCache = { key, pool: { points } };
 	return poolCache.pool;
 }
 
-// A color's chance of being misidentified may not exceed this: the start spaces every pair at it,
-// the pushes move a color while its chance summed over the others is above it.
+// One pair's swap chance at the least spacing every pair keeps where the box allows (limitDistance). A color's chance
+// summed over the others is reported (identification), not enforced.
 const ERROR_LIMIT = 0.02;
 // The weighted deltaE at which one pair's swap chance falls to ERROR_LIMIT.
 function limitDistance(sigma) {
@@ -1378,56 +1368,38 @@ function limitDistance(sigma) {
 	return above;
 }
 
-// The throw: the pool's points in the given order, a point seated when its packing distance to every point seated,
-// the fixed ones included, is at least `r` and its distance on the metric at least `floor`. Null when fewer than
-// `count` find a seat.
-function throwAt(order, fixed, count, r, floor = 0) {
-	const seated = fixed.slice(), r2 = r * r, floor2 = floor * floor;
+// The throw: the pool's points in the given order, a point seated when its distance on the metric to every point seated,
+// the fixed ones included, is at least `floor`. Null when fewer than `count` find a seat.
+function throwAt(order, fixed, count, floor) {
+	const seated = fixed.slice(), floor2 = floor * floor;
 	for (const point of order) {
 		if (seated.length - fixed.length === count)
 			break;
-		// A pair's stretch s puts its stretched distance at most max(1, s) times its plain one: the plain one is taken only near the floor.
-		if (seated.every(other => {
-			const stretch2 = point.stretch * other.stretch, stretched2 = apartWarped2(point, other, stretch2);
-			return stretched2 * point.scale * other.scale >= r2 && (stretched2 >= floor2 * Math.max(1, stretch2) || apartWarped2(point, other) >= floor2);
-		}))
+		if (seated.every(other => apartWarped2(point, other) >= floor2))
 			seated.push(point);
 	}
 	return seated.length - fixed.length === count ? seated : null;
 }
 
-// The widest throw: the largest `r` that seats `count`, by bisection to THROW_PRECISION of `r`. A maximal
-// Poisson-disc sample of the density: random, evenly spread. Fewer points than `count` seat them all.
-// Every pair keeps the error limit or cfg.minApart on the metric, whichever is larger: the packing distance lets a pair of
-// high scales or stretches sit closer than its colors read. A box that cannot seat `count` so keeps the widest floor it can.
+// The palette's floor: the error limit or cfg.minApart, whichever is larger.
+const floorOf = cfg => Math.max(cfg.limit, cfg.minApart);
+// The throw at the floor, no wider spacing sought: a random sample of the density with every pair at least the floor
+// apart, so each order seats its own set. A box that cannot seat `count` so keeps the widest floor it can, by bisection
+// to THROW_PRECISION. Fewer points than `count` seat them all.
 const THROW_PRECISION = 0.02;
-function widestThrow(order, fixed, count, cfg) {
-	const wanted = Math.min(count, order.length);
-	let floor = Math.max(cfg.limit, cfg.minApart), seated = throwAt(order, fixed, wanted, 0, floor);
-	if (!seated) {
-		let low = 0, high = floor;
-		seated = throwAt(order, fixed, wanted, 0);
-		while (high - low > THROW_PRECISION * high) {
-			const mid = (low + high) / 2, made = throwAt(order, fixed, wanted, 0, mid);
-			if (made)
-				[seated, low] = [made, mid];
-			else
-				high = mid;
-		}
-		floor = low;
-	}
-	let below = 0, above = cfg.limit;
-	// One color and nothing fixed seats at any `r`.
-	while (above < 1000 && throwAt(order, fixed, count, above, floor))
-		above *= 2;
-	while (above - below > THROW_PRECISION * above) {
-		const mid = (below + above) / 2, made = throwAt(order, fixed, count, mid, floor);
+function floorThrow(order, fixed, count, cfg) {
+	const wanted = Math.min(count, order.length), floor = floorOf(cfg), seated = throwAt(order, fixed, wanted, floor);
+	if (seated)
+		return seated;
+	let low = 0, high = floor, widest = throwAt(order, fixed, wanted, 0);
+	while (high - low > THROW_PRECISION * high) {
+		const mid = (low + high) / 2, made = throwAt(order, fixed, wanted, mid);
 		if (made)
-			[seated, below] = [made, mid];
+			[widest, low] = [made, mid];
 		else
-			above = mid;
+			high = mid;
 	}
-	return seated;
+	return widest;
 }
 
 // The relaxation's first step in deltaE, and the step under which it ends.
@@ -1480,40 +1452,33 @@ function insideBox([L, C, h], cfg) {
 		&& (C >= chromaFloor || (chromaFloor <= reach + SHELL && C >= reach - SHELL));
 }
 
-// The relaxation, for the colors whose error on the metric is over the limit, worst first: each proposes one position
-// `step` away in a random direction of OKLab. A proposal outside the box or not allowed is dropped, never clamped;
-// one that lowers the color's error on the packing distance is kept, so a paler position has to pay for itself.
-// A color with a pair under cfg.minApart is stepped like one over the error limit: its error is dominated by that
-// pair, so a lower error is a wider pair. A sweep that keeps nothing halves the step. Returns the state with the
-// highest floor seen, then the widest closest pair.
-function relax(rnd, colors, points, cfg, pointOf) {
+// The relaxation, for the colors with a pair under the floor, closest first: each proposes one position `step` away in a
+// random direction of OKLab. A proposal outside the box or not allowed is dropped, never clamped; one that widens the
+// color's closest pair is kept. A sweep that keeps nothing halves the step. Returns the state with the widest closest
+// pair seen: a box that cannot hold the floor keeps the nearest it came.
+function relax(rnd, colors, points, cfg) {
 	colors = colors.slice();
 	points = points.slice();
-	const errorAt = (i, at, apartOf2) => {
-		let error = 0;
-		for (let j = 0; j < points.length; ++j)
-			if (j !== i)
-				error += swapChance(Math.sqrt(apartOf2(at, points[j])), SIGMA);
-		return error;
-	};
-	const nearest2 = i => Math.min(...points.map((point, j) => j === i ? Infinity : apartWarped2(points[i], point)));
-	let best = colors.slice(), bestScore = identification(colors, cfg, points);
+	// A color's closest pair, squared, with the color at `at`
+	const nearest2 = (i, at = points[i]) => Math.min(...points.map((point, j) => j === i ? Infinity : apartWarped2(at, point)));
+	const floor2 = floorOf(cfg) ** 2;
+	let best = colors.slice(), bestApart = identification(colors, cfg, points).apart;
 	for (let sweep = 0, step = STEP_START; sweep < SWEEPS_MAX && step >= STEP_MIN; ++sweep) {
-		const confusable = colors.map((color, i) => ({ i, error: color.fixed ? 0 : errorAt(i, points[i], apartWarped2) }))
-			.filter(({ i, error }) => error > ERROR_LIMIT || (!colors[i].fixed && nearest2(i) < cfg.minApart ** 2)).sort((p, q) => q.error - p.error);
-		if (!confusable.length)
+		const crowded = colors.map((color, i) => ({ i, apart2: color.fixed ? Infinity : nearest2(i) }))
+			.filter(({ apart2 }) => apart2 < floor2).sort((p, q) => p.apart2 - q.apart2);
+		if (!crowded.length)
 			break;
 
 		let kept = 0;
-		for (const { i } of confusable) {
-			const from = positionOf(points[i].lch), error = errorAt(i, points[i], packed2);
+		for (const { i } of crowded) {
+			const from = positionOf(points[i].lch), apart2 = nearest2(i);
 			for (let n = 0; n < PROPOSALS; ++n) {
 				const z = 2 * rnd() - 1, turn = 2 * Math.PI * rnd(), flat = Math.sqrt(1 - z * z);
 				const lch = lchOf([from[0] + step * z, from[1] + step * flat * Math.cos(turn), from[2] + step * flat * Math.sin(turn)].map(v => v / 100));
 				if (!insideBox(lch, cfg) || !allowedLch(...lch, cfg))
 					continue;
-				const at = pointOf(lch);
-				if (errorAt(i, at, packed2) >= error)
+				const at = pointAt(lch);
+				if (nearest2(i, at) <= apart2)
 					continue;
 				points[i] = at;
 				colors[i] = colorAt(...lch);
@@ -1525,10 +1490,10 @@ function relax(rnd, colors, points, cfg, pointOf) {
 			step /= 2;
 			continue;
 		}
-		const score = identification(colors, cfg, points);
-		if (score.floor > bestScore.floor || (score.floor === bestScore.floor && score.apart > bestScore.apart)) {
+		const apart = identification(colors, cfg, points).apart;
+		if (apart > bestApart) {
 			best = colors.slice();
-			bestScore = score;
+			bestApart = apart;
 		}
 	}
 	return best;
@@ -1549,33 +1514,33 @@ const scored = (colors, cfg) => ({ colors, ...identification(colors, cfg), named
 // One throw, relaxed, with its scores.
 function attempt(rnd, cfg, pool) {
 	const order = shuffled(pool.points, rnd);
-	const fixed = cfg.fixed.map(color => pool.pointOf(color.lch));
-	const seated = widestThrow(order, fixed, cfg.count, cfg);
+	const fixed = cfg.fixed.map(color => pointAt(color.lch));
+	const seated = floorThrow(order, fixed, cfg.count, cfg);
 	const thrown = [...cfg.fixed, ...seated.slice(fixed.length).map(point => colorAt(...point.lch))];
-	return scored(relax(rnd, thrown, seated, cfg, pool.pointOf), cfg);
+	return scored(relax(rnd, thrown, seated, cfg), cfg);
 }
 
 // A reroll of the color at `slot` of a result: it and its REROLL_VICINITY nearest generated colors are thrown again
 // among the rest, from the pool less the rejected color's confusion zone, so the replacement is a color one could
 // tell from the rejected one; then relaxed. The rest keep their slots. Removing the color alone would seat a
-// near-twin: in a maximal throw the room a color leaves behind is smaller than the spacing.
+// near-twin: in a full box the room a color leaves behind is about one spacing wide.
 const REROLL_VICINITY = 2;
 function reroll(result, cfg, slot, rnd, pool) {
-	const colors = result.colors, points = colors.map(color => pool.pointOf(color.lch));
+	const colors = result.colors, points = colors.map(color => pointAt(color.lch));
 	const rejected = points[slot];
 	const nearest = colors.map((color, i) => i).filter(i => i !== slot && !colors[i].fixed)
 		.sort((a, b) => apartWarped2(rejected, points[a]) - apartWarped2(rejected, points[b])).slice(0, REROLL_VICINITY);
 	const removed = [slot, ...nearest], kept = points.filter((point, i) => !removed.includes(i));
 	const order = shuffled(pool.points.filter(point => apartWarped2(point, rejected) >= cfg.limit ** 2), rnd);
-	const fresh = widestThrow(order, kept, removed.length, cfg).slice(kept.length);
+	const fresh = floorThrow(order, kept, removed.length, cfg).slice(kept.length);
 	// A pool with fewer points outside the zone than slots seats fewer: the slots left over keep their color.
 	const next = colors.slice(), nextPoints = points.slice();
 	fresh.forEach((point, n) => { next[removed[n]] = colorAt(...point.lch); nextPoints[removed[n]] = point; });
-	return scored(relax(rnd, next, nextPoints, cfg, pool.pointOf), cfg);
+	return scored(relax(rnd, next, nextPoints, cfg), cfg);
 }
 
-// The best of up to ATTEMPTS attempts by floor, then by the closest pair; the first with no confusable color and no
-// pair under cfg.minApart ends them; then the config's rerolls, each of a slot of the result so far, on the seeds
+// The first of up to ATTEMPTS attempts whose closest pair keeps the floor, or else the one with the widest closest pair;
+// no attempt is kept for a wider spacing, so each seed keeps its own palette. Then the config's rerolls, each of a slot of the result so far, on the seeds
 // after the attempts'. Null when the box holds no usable color. A slot past the count or of a fixed color is skipped:
 // the string it came from was written by hand.
 const ATTEMPTS = 4;
@@ -1590,9 +1555,9 @@ function generate(cfg) {
 	if (!pool.points.length)
 		return null;
 	let best = null;
-	for (let n = 0; n < ATTEMPTS && !(best && best.floor >= 1 - ERROR_LIMIT && best.apart >= settings.minApart); ++n) {
+	for (let n = 0; n < ATTEMPTS && !(best && best.apart >= floorOf(settings)); ++n) {
 		const made = attempt(mulberry32(settings.seed + n * 7919), settings, pool);
-		if (!best || made.floor > best.floor || (made.floor === best.floor && made.apart > best.apart))
+		if (!best || made.apart > best.apart)
 			best = made;
 	}
 	(cfg.rerolls ?? []).forEach((slot, n) => {
