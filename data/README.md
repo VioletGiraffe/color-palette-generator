@@ -29,7 +29,7 @@ Five conventions coexist. Which one a number is in is the first thing to check.
 
 | where | lightness | chroma | hue |
 |---|---|---|---|
-| range controls, state string, cells, shadows | relative to the cusp: 50 is the hue's cusp lightness, 0 black, 100 white, linear on each side (`absoluteL`, `relativeL`, `CUSP_ANCHOR`); the lightness range alone is absolute OKLab L with the `absolute` box ticked (`cfg.lAbsolute`; `rangeL`, `withinLightness` take the mode) | share of the cusp's chroma: 100 is `cuspChroma(h)`, whatever the color's lightness (`absoluteC`, `relativeC`); a share the lightness cannot reach is cut to the gamut (`rawDraw`, `insideBox`) | degrees of OKLab hue; the hue sliders alone run in the ridge coordinate (`ridgeWarp`, `ridgeUnwarp`) |
+| range controls, state string, cells, shadows | relative to the cusp: 50 is the hue's cusp lightness, 0 black, 100 white, linear on each side (`absoluteL`, `relativeL`, `CUSP_ANCHOR`); the lightness range alone is absolute OKLab L with the `absolute` box ticked (`cfg.lAbsolute`; `rangeL`, `withinLightness` take the mode) | share of the cusp's chroma: 100 is `cuspChroma(h)`, whatever the color's lightness (`absoluteC`, `relativeC`); a share the lightness cannot reach is cut to the gamut (`rawDraw`, `insideBox`); the saturation floor `sMin` is absolute chroma over absolute lightness, the same at every hue (`lowestC`) | degrees of OKLab hue; the hue sliders alone run in the ridge coordinate (`ridgeWarp`, `ridgeUnwarp`) |
 | a color's `lch` | absolute OKLab L, 0 to 100 | absolute, 0 to about 32 | degrees |
 | metric positions (`positionsOf`, `apart2`), every distance and deltaE | OKLab times 100 | | |
 | a color's `lab` and `rgb` | OKLab and sRGB in 0 to 1 | | |
@@ -145,7 +145,7 @@ random step never lands inside it.
 
 `stateString` writes, `parseState` reads and `configFromState` turns into a generator config:
 
-    v5|count|minApart|hMin|hMax|cMin|cMax|lMin|lMax|seed|sort|backdrop|custom|format|fixed|names|avoid|lAbsolute|rerolls|vividness
+    v5|count|minApart|hMin|hMax|cMin|cMax|lMin|lMax|seed|sort|backdrop|custom|format|fixed|names|avoid|lAbsolute|rerolls|vividness|sMin
 
 - `minApart` is the Min distance value in weighted deltaE; the ranges are in the control coordinates above (hue in
   degrees, not the ridge coordinate); `seed` is written unsigned.
@@ -154,7 +154,7 @@ random step never lands inside it.
 - `fixed` and `avoid` are comma-joined hexes without `#`; `names` is the included-name mask, one bit
   per cell, as a base-36 number (`stateNameField`, `nameTableFrom`); `lAbsolute` is 0 or 1, the lightness range's
   coordinate; `rerolls` is the comma-joined slots rerolled, in order, indexes into the result; `vividness` is the
-  Vividness value, 0 to 1. These six were added later in that order, so an older string ends earlier and the missing
+  Vividness value, 0 to 1; `sMin` is the Saturation min value, chroma over lightness, 0 to 1. These seven were added later in that order, so an older string ends earlier and the missing
   ones take their defaults.
 - `STATE_VERSION` changes only when a field's meaning changes; an added field goes at the end.
 

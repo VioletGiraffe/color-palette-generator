@@ -2104,6 +2104,30 @@ boost would give:
 - The boost is stored as the author's ranges, `HUE_BOOST_RANGES`, not a table per whole degree: an edge sits where it is
   set, and a ramp holds the range's boost up to its edges and blends outside them.
 
+## A saturation floor
+
+The author wanted fewer off-whites without losing dark colors. The chroma floor, a share of the hue's cusp chroma at any
+lightness, takes both: the gamut narrows toward black as toward white. Share of the box's volume each floor removes by
+absolute lightness, the author's box with lightness 20 to 100 and chroma from 20%:
+
+| floor | L 20-40 | 40-60 | 60-80 | 80-100 | L 60-80, blue-violet / yellow-green |
+|---|---|---|---|---|---|
+| chroma 40% | 58% | 25% | 22% | 28% | 29% / 19% |
+| C/L as a share of the cusp's, 40 | 5% | 11% | 23% | 31% | 42% / 10% |
+| chroma 20% below the cusp, 40% above | 0% | 2% | 11% | 19% | 24% / 0% |
+| C/L 0.10 | 0% | 4% | 9% | 29% | 9% / 7% |
+
+- Anything anchored to the hue's cusp is uneven across hues: blue's cusp sits at L 45 and yellow's at 97, so mid-light
+  desaturated blues count as pale where yellows do not.
+- Distance to the cusp line, the contour of every hue's cusp, runs the other way: darks are farthest from it (OKLab 28.4
+  at L 20-40 against 8.9 at 80-100, the metric 16.1 against 8.0), and among light colors off-whites (metric median 16.8)
+  and pastel violets and pinks (17.7) are equally far, the line passing near white only at cyan, yellow and green.
+- Chroma over lightness splits them: off-whites fall under 0.044, pastels of every hue at 0.065 to 0.15.
+- `sMin` ships as that ratio, the same at every hue, with no shell: near white the gamut's reach is a few chroma units,
+  and the shell a chroma range beyond the gamut gets let colors like #dcfefd (0.035) under a floor of 0.05. In the
+  palettes, pale colors (L above 80, chroma under 8) go from 0.80 a palette to 0.57 at 0.05, 0.30 at 0.08 and none at
+  0.10; darks stay at 4.1 to 4.6.
+
 ## Files
 
 - `index.html`: the generator rebuilt from the end state on the preference metric by lightness, with the

@@ -278,7 +278,7 @@
 		</div>
 		<div class="hint">The closest any two colors may come, in ΔE. The memory noise alone keeps every pair at 14.4 where the ranges allow; raise it for palettes that survive a longer gap between seeing a color and naming it.</div>
 		<label for="vivid" class="row" style="margin: 10px 0 0"><span>Vividness</span><span class="value" id="vivid-value"></span></label>
-		<input type="range" id="vivid" min="0" max="1" step="0.05">
+		<input type="range" id="vivid" min="0" max="1" step="0.05" value="0">
 		<div class="hint">How much saturated colors are preferred over an even spread of the range. 0 spreads on the distance alone; higher buys saturation with a little of the worst color's identification.</div>
 	</div>
 
@@ -313,6 +313,10 @@
 			<label class="end"><span class="edge">min</span><input type="range" id="c-min" min="0" max="100" value="20"></label>
 			<label class="end"><input type="range" id="c-max" min="0" max="100" value="100"><span class="edge">max</span></label>
 		</div>
+
+		<label for="s-min" class="row" style="margin: 0"><span>Saturation min</span><span class="value" id="s-value"></span></label>
+		<input type="range" id="s-min" min="0" max="0.2" step="0.005" value="0.05">
+		<div class="hint" style="margin: 0 0 12px">Chroma over lightness, the same at every hue. At one chroma a lighter color is less saturated, so this removes near-whites before dark colors; around 0.05 it leaves pastels. Teal peaks near 0.17 and yellow near 0.22, so they go first above that.</div>
 
 		<div class="range-pair" style="margin-bottom: 0">
 			<div class="caption"><span>Lightness <label style="font-weight: normal"><input type="checkbox" id="l-absolute"> absolute</label></span><span class="value" id="l-value"></span></div>
@@ -727,6 +731,11 @@ const withinLightness = (L, h, cfg) => {
 // it: only the cusp makes one number mean the same vividness at every hue.
 const absoluteC = (relative, h) => relative / 100 * cuspChroma(h);
 const relativeC = (C, h) => C / cuspChroma(h) * 100;
+// The saturation floor `sMin` is absolute chroma over lightness, the same at every hue: at one chroma a lighter color is
+// less saturated, so the floor removes near-whites before dark colors.
+const saturationFloor = (L, cfg) => cfg.sMin * L;
+// The least chroma the box allows at a lightness: the chroma floor or the saturation floor, whichever is higher.
+const lowestC = (L, h, cfg) => Math.max(absoluteC(cfg.cMin, h), saturationFloor(L, cfg));
 
 // ---------- color naming ----------
 
@@ -1132,8 +1141,8 @@ function apartWarped2(p, q, hueStretch2 = 1) {
 // color's vividness, times its hue's stretch (data/README.md, "The generator"). Colors are spaced on the packing distance:
 // the metric's with its hue term stretched, times the root of the pair's scales. A sample of the density is uniform in its
 // volume. The report stays on apart2.
-// The power vividness enters the scale at, for a config without `vividness` (the Vividness control).
-// Measured at 1/4, 1/2 and 1 by eye, see data/evolution.md.
+// The power vividness enters the scale at for a config or state string without `vividness`, the Vividness control's value.
+// Measured at 1/4, 1/2 and 1 by eye, see data/evolution.md. The control itself starts at 0.
 const VIVIDNESS_DEFAULT = 0.5;
 // A grey's vividness is held above zero: at zero its packing distances vanish.
 const VIVIDNESS_FLOOR = 0.05;
@@ -1277,14 +1286,17 @@ const SHELL = 1;
 // A raw draw, always inside the ranges and the gamut: hue evenly, lightness evenly over the hue's interval, chroma
 // by its square over what the range and the gamut leave at that lightness. `slab` is the OKLab volume the draw
 // stands for, up to a constant: multiplying a weight by it undoes the uneven cover of the raw draws.
-// Null where the chroma range starts more than SHELL beyond the gamut: the box holds no color at that lightness and hue.
+// Null where the chroma range starts more than SHELL beyond the gamut, or the saturation floor above the chroma the range
+// and the gamut allow: the box holds no color at that lightness and hue. The saturation floor has no shell: it exists
+// to remove the near-whites on the gamut's narrow top.
 function rawDraw(rnd, cfg) {
 	const h = (cfg.hMin + rnd() * hueSpan(cfg.hMin, cfg.hMax)) % 360;
 	const low = rangeL(cfg.lMin, h, cfg), high = rangeL(cfg.lMax, h, cfg), L = low + rnd() * (high - low);
-	const reach = gamutChroma(L, h);
-	if (absoluteC(cfg.cMin, h) > reach + SHELL)
+	const reach = gamutChroma(L, h), chromaFloor = absoluteC(cfg.cMin, h), saturated = saturationFloor(L, cfg);
+	const cHigh = Math.min(absoluteC(cfg.cMax, h), reach);
+	if (chromaFloor > reach + SHELL || saturated > cHigh)
 		return null;
-	const cHigh = Math.min(absoluteC(cfg.cMax, h), reach), cLow = Math.min(absoluteC(cfg.cMin, h), cHigh);
+	const cLow = Math.min(Math.max(chromaFloor, saturated), cHigh);
 	const span2 = cHigh * cHigh - cLow * cLow;
 	return { lch: [L, Math.sqrt(cLow * cLow + rnd() * span2), h], slab: Math.max(high - low, SHELL) * Math.max(span2, 2 * cHigh * SHELL) };
 }
@@ -1308,7 +1320,7 @@ function roomOffset(volumes, boosts) {
 // A generator point: the warped position, the color's lch, its packing scale and its hue's stretch.
 const pointAt = (lch, scale, stretch) => ({ ...warpedPoint(positionOf(lch)), lch, scale, stretch });
 
-const poolKey = cfg => [cfg.hMin, cfg.hMax, cfg.lMin, cfg.lMax, cfg.lAbsolute ? "abs" : "rel", cfg.cMin, cfg.cMax, cfg.vividness, cfg.preference,
+const poolKey = cfg => [cfg.hMin, cfg.hMax, cfg.lMin, cfg.lMax, cfg.lAbsolute ? "abs" : "rel", cfg.cMin, cfg.cMax, cfg.sMin, cfg.vividness, cfg.preference,
 	cfg.included.map(Number).join(""), (cfg.avoid ?? []).map(color => color.hex).join()].join("|");
 let poolCache = { key: null, pool: null };
 // The pool of a box: its points, and `pointOf`, the generator point of any color of the box.
@@ -1455,12 +1467,13 @@ function identification(colors, cfg, points = positionsOf(colors).map(warpedPoin
 }
 
 // Whether a point is inside the ranges and the gamut. Where the chroma range starts within SHELL beyond the gamut,
-// the SHELL under the gamut's surface is inside, as rawDraw takes it.
+// the SHELL under the gamut's surface is inside, as rawDraw takes it; the saturation floor holds on the surface too.
 function insideBox([L, C, h], cfg) {
 	if (!hueInRange(h, cfg.hMin, cfg.hMax) || !withinLightness(L, h, cfg))
 		return false;
-	const reach = gamutChroma(L, h), lowest = absoluteC(cfg.cMin, h);
-	return C <= Math.min(absoluteC(cfg.cMax, h), reach) && (C >= lowest || (lowest <= reach + SHELL && C >= reach - SHELL));
+	const reach = gamutChroma(L, h), chromaFloor = absoluteC(cfg.cMin, h);
+	return C <= Math.min(absoluteC(cfg.cMax, h), reach) && C >= saturationFloor(L, cfg)
+		&& (C >= chromaFloor || (chromaFloor <= reach + SHELL && C >= reach - SHELL));
 }
 
 // The relaxation, for the colors whose error on the metric is over the limit, worst first: each proposes one position
@@ -1567,7 +1580,7 @@ const ATTEMPTS = 4;
 const MIN_APART_DEFAULT = 14;
 function generate(cfg) {
 	const settings = { ...cfg, limit: limitDistance(SIGMA), included: cfg.included ?? ALL_INCLUDED, preference: cfg.preference ?? true,
-		vividness: cfg.vividness ?? VIVIDNESS_DEFAULT, minApart: cfg.minApart ?? MIN_APART_DEFAULT };
+		vividness: cfg.vividness ?? VIVIDNESS_DEFAULT, minApart: cfg.minApart ?? MIN_APART_DEFAULT, sMin: cfg.sMin ?? 0 };
 	settings.shadows = shadowsFor(cfg);
 	const pool = poolFor(settings);
 	if (!pool.points.length)
@@ -1614,7 +1627,7 @@ function readConfig() {
 		vividness: +$("vivid").value,
 		// The hue sliders run in the ridge coordinate; the config, the labels and the state are in degrees.
 		hMin: Math.round(ridgeUnwarp(+$("h-min").value)), hMax: Math.round(ridgeUnwarp(+$("h-max").value)),
-		cMin, cMax, lMin, lMax, lAbsolute: $("l-absolute").checked,
+		cMin, cMax, sMin: +$("s-min").value, lMin, lMax, lAbsolute: $("l-absolute").checked,
 		seed: +$("seed").value | 0,
 		fixed: parseHexColors($("fixed-colors").value),
 		avoid: parseHexColors($("avoid-colors").value),
@@ -1702,7 +1715,7 @@ function hcField(w, h, cfg) {
 		const hue = ridgeUnwarp(x / w * 360);
 		const inHue = hueInRange(hue, cfg.hMin, cfg.hMax);
 		const lightness = mostVividL(hue, cfg);
-		const cLow = absoluteC(cfg.cMin, hue), cHigh = absoluteC(cfg.cMax, hue);
+		const cLow = lowestC(lightness, hue, cfg), cHigh = absoluteC(cfg.cMax, hue);
 
 		for (let y = 0; y < h; ++y) {
 			const C = CHROMA_MAX * (1 - y / (h - 1));
@@ -1756,7 +1769,7 @@ function reachAt(table, x, y, w, h) {
 
 // Hue across, lightness up, each pixel at the box's chroma cap for that hue and lightness: the
 // most vivid color the ranges allow there, the outside of the selected region. Hatched outside
-// the hue and lightness ranges, where the gamut stays below the chroma minimum, and in an avoided
+// the hue and lightness ranges, where the gamut stays below the chroma or saturation minimum, and in an avoided
 // color's shadow.
 function hlField(canvas, cfg) {
 	const w = canvas.width, h = canvas.height;
@@ -1769,7 +1782,7 @@ function hlField(canvas, cfg) {
 	for (let x = 0; x < w; ++x) {
 		const hue = ridgeUnwarp(x / w * 360);
 		const inHue = hueInRange(hue, cfg.hMin, cfg.hMax);
-		const cLow = absoluteC(cfg.cMin, hue), cHigh = absoluteC(cfg.cMax, hue);
+		const cHigh = absoluteC(cfg.cMax, hue);
 		for (let y = 0; y < h; ++y) {
 			const L = 100 * (1 - y / (h - 1)), reach = exact ? table.reach[y * w + x] : reachAt(table, x, y, w, h);
 			if (reach === 0)
@@ -1777,7 +1790,7 @@ function hlField(canvas, cfg) {
 			const C = Math.min(reach, cHigh);
 			const rgb = oklabToRgb(...labOfLch(L, C, hue)).map(v => Math.min(1, Math.max(0, v)));
 			let r = rgb[0] * 255, g = rgb[1] * 255, b = rgb[2] * 255;
-			if (!inHue || !withinLightness(L, hue, cfg) || reach < cLow || shadowed(L, C, hue, shade)) {
+			if (!inHue || !withinLightness(L, hue, cfg) || reach < lowestC(L, hue, cfg) || shadowed(L, C, hue, shade)) {
 				if ((x + y) % 10 < 5) {
 					r *= .3; g *= .3; b *= .3;
 				} else {
@@ -1909,6 +1922,7 @@ function refreshLabels() {
 	// Chroma carries its unit, lightness does not: chroma is a plain fraction of the hue's peak,
 	// while lightness is piecewise with 50 pinned to the cusp and so is a landmark, not a percentage.
 	$("c-value").textContent = cfg.cMin + "–" + cfg.cMax + "%";
+	$("s-value").textContent = cfg.sMin.toFixed(3);
 	$("l-value").textContent = cfg.lMin + "–" + cfg.lMax + (cfg.lAbsolute ? " L" : "");
 	$("fixed-preview").innerHTML = cfg.fixed.map(color => '<span style="background:' + color.hex + '"></span>').join("");
 	$("avoid-preview").innerHTML = cfg.avoid.map(color => '<span style="background:' + color.hex + '"></span>').join("");
@@ -2167,7 +2181,7 @@ function stateString(cfg) {
 		cfg.lMin, cfg.lMax, cfg.seed >>> 0, $("sort").checked ? 1 : 0,
 		stripHash($("backdrop").value), stripHash($("backdrop-color").value), $("format").value,
 		cfg.fixed.map(color => stripHash(color.hex)).join(","), stateNameField(), cfg.avoid.map(color => stripHash(color.hex)).join(","),
-		cfg.lAbsolute ? 1 : 0, cfg.rerolls.join(","), cfg.vividness
+		cfg.lAbsolute ? 1 : 0, cfg.rerolls.join(","), cfg.vividness, cfg.sMin
 	].join(STATE_SEPARATOR);
 }
 
@@ -2182,15 +2196,16 @@ function findOption(id, stored) {
 function parseState(text) {
 	const [tag, ...fields] = text.trim().split(STATE_SEPARATOR);
 	// The sort flag, backdrop, custom color and export format always follow the nine control values.
-	// Fixed colors, the included names, the avoided colors, the absolute-lightness flag, the rerolls, then the vividness
-	// were each added later: a string written before one of them ends where it was added, and the rest take their defaults.
+	// Fixed colors, the included names, the avoided colors, the absolute-lightness flag, the rerolls, the vividness, then
+	// the saturation floor were each added later: a string written before one of them ends where it was added, and the rest
+	// take their defaults.
 	const required = STATE_IDS.length + 4;
-	if (tag !== STATE_VERSION || fields.length < required || fields.length > required + 6)
+	if (tag !== STATE_VERSION || fields.length < required || fields.length > required + 7)
 		return null;
 
 	const numbers = fields.slice(0, STATE_IDS.length + 1).map(f => f.trim() === "" ? NaN : Number(f));
-	const [backdrop, custom, format, fixed = "", included = "", avoid = "", lAbsolute = "0", rerolls = "", vividness = String(VIVIDNESS_DEFAULT)]
-		= fields.slice(STATE_IDS.length + 1);
+	const [backdrop, custom, format, fixed = "", included = "", avoid = "", lAbsolute = "0", rerolls = "", vividness = String(VIVIDNESS_DEFAULT),
+		sMin = "0"] = fields.slice(STATE_IDS.length + 1);
 	const backdropOption = findOption("backdrop", backdrop);
 	const formatOption = findOption("format", format);
 	const hexList = /^[0-9a-f]{6}(,[0-9a-f]{6})*$/i;
@@ -2198,11 +2213,11 @@ function parseState(text) {
 	if (numbers.some(n => !Number.isFinite(n)) || !backdropOption || !formatOption || !/^[0-9a-f]{6}$/i.test(custom)
 		|| !(fixed === "" || hexList.test(fixed)) || !(avoid === "" || hexList.test(avoid))
 		|| !(included === "" || /^[0-9a-z]{1,8}$/.test(included)) || !/^[01]$/.test(lAbsolute) || !(rerolls === "" || /^\d+(,\d+)*$/.test(rerolls))
-		|| !(vividness.trim() !== "" && +vividness >= 0 && +vividness <= 1))
+		|| !(vividness.trim() !== "" && +vividness >= 0 && +vividness <= 1) || !(sMin.trim() !== "" && +sMin >= 0 && +sMin <= 1))
 		return null;
 
 	return { numbers, backdrop: backdropOption.value, custom, format: formatOption.value, fixed, included, avoid, lAbsolute: lAbsolute === "1",
-		rerolls: rerolls === "" ? [] : rerolls.split(",").map(Number), vividness: +vividness };
+		rerolls: rerolls === "" ? [] : rerolls.split(",").map(Number), vividness: +vividness, sMin: +sMin };
 }
 
 const hexesFromField = field => field.split(",").filter(Boolean).map(hex => "#" + hex.toLowerCase());
@@ -2213,7 +2228,7 @@ function configFromState(parsed) {
 	const [count, minApart, hMin, hMax, c1, c2, l1, l2, seed] = parsed.numbers;
 	const [cMin, cMax] = ordered(c1, c2);
 	const [lMin, lMax] = ordered(l1, l2);
-	return { count, minApart, hMin, hMax, cMin, cMax, lMin, lMax, lAbsolute: parsed.lAbsolute, seed: seed | 0,
+	return { count, minApart, hMin, hMax, cMin, cMax, sMin: parsed.sMin, lMin, lMax, lAbsolute: parsed.lAbsolute, seed: seed | 0,
 		fixed: hexesFromField(parsed.fixed).map(colorFromHex), avoid: hexesFromField(parsed.avoid).map(colorFromHex), ...nameTableFrom(parsed),
 		rerolls: parsed.rerolls, vividness: parsed.vividness };
 }
@@ -2228,6 +2243,7 @@ function applyStateString(text) {
 	$("sort").checked = parsed.numbers[STATE_IDS.length] !== 0;
 	$("l-absolute").checked = parsed.lAbsolute;
 	$("vivid").value = parsed.vividness;
+	$("s-min").value = parsed.sMin;
 	$("backdrop").value = parsed.backdrop;
 	$("backdrop-color").value = "#" + parsed.custom.toLowerCase();
 	$("format").value = parsed.format;
@@ -2349,8 +2365,14 @@ function schedulePass(full) {
 function scheduleRun() { rerolls = []; schedulePass(true); }
 function scheduleRedraw() { schedulePass(false); }
 
+// A range's handles cannot pass each other; registered first, so the listeners below read the clamped value.
+for (const [low, high] of [["c-min", "c-max"], ["l-min", "l-max"]]) {
+	$(low).addEventListener("input", () => { if (+$(low).value > +$(high).value) $(low).value = $(high).value; });
+	$(high).addEventListener("input", () => { if (+$(high).value < +$(low).value) $(high).value = $(low).value; });
+}
+
 // Controls listen to "input", checkboxes and selects too: Firefox restores a reopened tab's controls firing only "input".
-for (const id of [...STATE_IDS, "vivid", "fixed-colors", "avoid-colors", "l-absolute"])
+for (const id of [...STATE_IDS, "vivid", "s-min", "fixed-colors", "avoid-colors", "l-absolute"])
 	$(id).addEventListener("input", () => { refreshLabels(); scheduleRun(); });
 
 // Sorting is settled in render, so the palette itself is unchanged.
@@ -2682,7 +2704,6 @@ renderPins();
 // A different palette on every load. Truncated to the 32 bits mulberry32 and the state string both
 // use, so the value in the box survives a save and restore unchanged.
 $("seed").value = Date.now() >>> 0;
-$("vivid").value = VIVIDNESS_DEFAULT;
 
 renderNames();
 run();
@@ -2821,17 +2842,18 @@ function regionMeshes(cfg) {
 	const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
 	const span = hueSpan(cfg.hMin, cfg.hMax);
 	const hue = t => (cfg.hMin + t * span) % 360;
-	// Both bounds follow each hue's cusp, so the lightness and chroma faces are curved, not flat.
-	const chroma = (t, h) => absoluteC(cfg.cMin + t * (cfg.cMax - cfg.cMin), h);
+	// Both bounds follow each hue's cusp, so the lightness and chroma faces are curved, not flat. The lower chroma bound
+	// rises with lightness under a saturation floor.
+	const chroma = (t, L, h) => { const low = Math.min(lowestC(L, h, cfg), absoluteC(cfg.cMax, h)); return low + t * (absoluteC(cfg.cMax, h) - low); };
 	const light = (t, h) => rangeL(cfg.lMin + t * (cfg.lMax - cfg.lMin), h, cfg);
 	const shown = (L, C, h) => colorAt(L, Math.min(C, gamutChroma(L, h)), h).rgb;
 
 	const sheets = [];
 	for (const t of [0, 1]) {
 		if (span < 360)
-			sheets.push(sheet(16, 16, (u, v) => shown(light(v, hue(t)), chroma(u, hue(t)), hue(t))));
-		sheets.push(sheet(64, 16, (u, v) => shown(light(v, hue(u)), chroma(t, hue(u)), hue(u))));
-		sheets.push(sheet(64, 16, (u, v) => shown(light(t, hue(u)), chroma(v, hue(u)), hue(u))));
+			sheets.push(sheet(16, 16, (u, v) => shown(light(v, hue(t)), chroma(u, light(v, hue(t)), hue(t)), hue(t))));
+		sheets.push(sheet(64, 16, (u, v) => shown(light(v, hue(u)), chroma(t, light(v, hue(u)), hue(u)), hue(u))));
+		sheets.push(sheet(64, 16, (u, v) => shown(light(t, hue(u)), chroma(v, light(t, hue(u)), hue(u)), hue(u))));
 	}
 	return sheets.map(geometry => new THREE.Mesh(geometry, material));
 }

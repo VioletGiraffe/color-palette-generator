@@ -138,7 +138,7 @@ function currentConfig(generator) {
 	if (f[0] !== "v5" || f.length < 13 || [count, minApart, hMin, hMax, c1, c2, l1, l2].some(v => !Number.isFinite(v)))
 		throw new Error("not a v5 state string");
 	return configOf({ cfg: { count, minApart, hMin, hMax, cMin: Math.min(c1, c2), cMax: Math.max(c1, c2), lMin: Math.min(l1, l2), lMax: Math.max(l1, l2),
-		lAbsolute: f[17] === "1", ...(f[19] ? { vividness: +f[19] } : {}), ...(f[15] ? { names: f[15] } : {}) } }, generator.CELL_NAMES.length);
+		lAbsolute: f[17] === "1", ...(f[19] ? { vividness: +f[19] } : {}), ...(f[20] ? { sMin: +f[20] } : {}), ...(f[15] ? { names: f[15] } : {}) } }, generator.CELL_NAMES.length);
 }
 
 // Generated results per ranges and box, one per seed from seedBase + 1: a run resumes where a cancelled one stopped
