@@ -2057,6 +2057,53 @@ named pairs left out), 6-fold cross-validated loss per verdict:
 - The strict rounds' "fine" cuts now have a median of 14.3: the noise width goes from 3.3 to 3.5, the limit to 14.4, and
   the Min distance control starts at 14.
 
+## A boost per hue
+
+The author's box (15 colors, lightness to 67, chroma from 20%) put 3.5 pink, 3.1 blue and 2.3 violet colors in a
+palette against 0.7 yellow and 1.2 red, by the author's hue sectors: the density's balance, which the throw already
+evens out somewhat. `HUE_BOOST`, a factor per hue on the packing scale, moves colors between hues without touching the
+metric. `fit_hue_boost.js` fitted it toward even sector counts over the author's box, the same uncapped, and the default
+box, 40 seeds each:
+
+| box | before: floor, closest pair | even counts: floor, closest pair |
+|---|---|---|
+| author's, to 67 | 0.951, 14.3 | 0.855, 10.8 |
+| author's, to 100 | 0.973, 15.6 | 0.916, 12.4 |
+| default, 10 colors | 0.981, 16.0 | 0.971, 15.1 |
+
+- Without a floor on the metric the throw sat boosted pairs at 8: packing scales set against each other let a pair of
+  high scales take less metric distance than it reads at. The throw now keeps the error limit or Min distance on the
+  metric, or the widest floor the box allows. Unboosted, that moved the author's box from 0.949 and 14.1 to 0.951 and 14.3.
+- A full box has no room to give: at 15 colors, colors moved into yellow and orange are colors moved closer. The
+  relaxation, which accepts a step by its error on the packing distance, still gives some of the floor away.
+- The boost ships at one; `tune-hue-boost.html` sets it by eye against the floor it costs.
+
+The boost was first a factor on the packing scale, so on all three axes: a hue's room went as its cube. It is now a
+stretch of the hue axis alone, so a hue's room goes as the boost. Colors per palette in a range with the range alone
+boosted, 100 seeds, the stretch divided by its mean over the box's volume, against the share a room proportional to the
+boost would give:
+
+| box, range | x0.25: stretch, share | x0.5: isotropic, stretch, share | x2: isotropic, stretch, share | x4: stretch, share |
+|---|---|---|---|---|
+| author's to 67, 75-115 (0.71) | 0.01, 0.18 | 0.00, 0.14, 0.36 | 0.92, 0.89, 1.36 | 0.85, 2.49 |
+| author's to 67, 215-275 (3.15) | 1.57, 0.93 | 0.98, 1.80, 1.76 | 4.51, 4.14, 5.21 | 4.14, 7.73 |
+| author's to 100, 75-115 (0.86) | 0.20, 0.22 | 0.12, 0.32, 0.44 | 1.13, 1.00, 1.63 | 1.00, 2.94 |
+| author's to 100, 215-275 (2.93) | 1.24, 0.86 | 0.62, 1.80, 1.62 | 4.36, 4.00, 4.90 | 4.00, 7.39 |
+| default, 75-115 (0.71) | 0.08, 0.19 | 0.07, 0.30, 0.37 | 0.97, 0.83, 1.33 | 0.89, 2.34 |
+| default, 215-275 (1.80) | 0.53, 0.52 | 0.21, 1.21, 0.99 | 3.02, 2.27, 3.05 | 2.67, 4.68 |
+
+- Cuts follow the proportional share under the stretch; under the scale's cube they emptied a range.
+- Boosts stop short under both and saturate under the stretch: x2 and x4 seat the same counts.
+- The throw alone follows the share: one attempt, no floor, no relaxation, x2 seats 0.93, 4.28, 1.39, 4.10, 1.20 and
+  2.52 against 0.85, 4.93, 1.55, 4.83, 1.31 and 3.07 (its own baseline). One attempt with the floor and the relaxation
+  seats what four do: the floor and the relaxation, both on the metric, take the boost back.
+- The stretch ships as the boost plus one offset for every hue, not the boost over its mean: every hue pays a boost
+  alike, the author's reading of a boost as reshaping the strip at a fixed area. The counts move by tenths at most:
+  x0.5 and x2 seat 0.14 and 0.88, 1.95 and 4.27, 0.34 and 1.01, 1.75 and 3.95, 0.41 and 0.81, 1.30 and 2.17 in the rows'
+  order.
+- The boost is stored as the author's ranges, `HUE_BOOST_RANGES`, not a table per whole degree: an edge sits where it is
+  set, and a ramp holds the range's boost up to its edges and blends outside them.
+
 ## Files
 
 - `index.html`: the generator rebuilt from the end state on the preference metric by lightness, with the

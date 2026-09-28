@@ -72,6 +72,7 @@ node data/fit_hue_density.js [--p 0.75] [--ridge 2] [--knots 12] [--levels 30,58
 node data/make_member_deal.js [--palettes 120] [--count 8] [--box 20 60 20 100] [--shared 0.5] # deal calibrate-members.html's palettes into the page
 node data/fit_members.js log.json             # where the bad colors live and whether bad is the color or its company, from a calibrate-members.html log
 node data/fit_preference.js log.json          # the draw's preference density from a calibrate-members.html log, as the PREFERENCE constant
+node data/fit_hue_boost.js [--steps 12] [--seeds 40] [page.html] # HUE_BOOST_RANGES, one range per author's hue family, toward even color counts over fixed seeds in three boxes; the counts before and after and the ranges to paste
 node data/hue-marginals.js [--names] [--counts 7,10,14] [m/d ...] # the hue and name shares the generator delivers, metric and draw density set apart; runs a page with the box sampler, data/past-experiments/experimental-cells-pushes.html or earlier
 node data/fit_chroma.js chroma-log.json       # the chroma round's own question, see below
 node data/fit_names.js log.json               # fit the naming score to a calibrate-names.html log
@@ -80,6 +81,13 @@ node data/fit_names.js log.json               # fit the naming score to a calibr
 Every script taking a page path defaults to `index.html`, and accepts any version of it, so a
 change can be compared against `git show <rev>:index.html` saved to a file. `identify.js` passes its
 range boxes as OKLCh ranges, so it needs a page whose controls are OKLCh. `build_cells.py` needs numpy.
+
+`tune-hue-boost.html` sets `HUE_BOOST_RANGES` by eye: hue ranges with a boost and ramp each, dragged on a hue strip or
+typed, strips of each hue's room (the metric's length along the most vivid colors times the boost), the counts per
+sector and per range, floor and closest pair and the palettes over 30 seeds, the page's ranges beside the tuned ones, and
+the ranges to paste. It runs `index.html`'s own generator fetched from the server (`.claude/launch.json`, port 8734), so
+it does not work from disk. `hue-boost.js` holds what it shares with `fit_hue_boost.js`: the author's hue sectors, the
+boxes, and the ranges' text as `index.html` holds them.
 
 ## Running the page headless
 
@@ -96,8 +104,8 @@ range boxes as OKLCh ranges, so it needs a page whose controls are OKLCh. `build
 - `writeDeal(pageName, constName, data)` writes a dealer's deal into a calibration page between its deal markers.
 - `densities`, optional: `{ metric, draw }`, each a 360-entry table, replace the page's hue density for
   the metric (every level of `HUE_LEVEL_DENSITIES`, or the `HUE_WARP` integral of a page with one table) and
-  for the draw's hue weight of a page that has one, one or both. Without it a page whose
-  tables differ from this file's is loaded with a warning: the scores `identify.js` prints are on this
+  for the draw's hue weight of a page that has one, one or both; `hueBoostRanges` replaces `HUE_BOOST_RANGES`. Without it a page whose
+  tables or metric constants differ from this file's is loaded with a warning: the scores `identify.js` prints are on this
   file's metric, the page's generator runs on its own.
 - `generate(cfg)` takes `{ count, scale, hMin, hMax, cMin, cMax, lMin, lMax, seed, fixed, avoid }` with
   `fixed` and `avoid` as arrays of `colorFromHex` results, plus the optional `included` (name mask, all

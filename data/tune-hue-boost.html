@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hue boost tuner</title>
+<style>
+	body { background: #2a2a2a; color: #ddd; font: 13px system-ui, sans-serif; margin: 16px; }
+	h2 { font-size: 15px; font-weight: 500; margin: 18px 0 6px; }
+	.hint { color: #999; }
+	.row { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
+	.range { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+	.range.off { opacity: 0.45; }
+	.hue-swatch { width: 88px; height: 52px; border: 1px solid #555; border-radius: 3px; margin-right: 8px; }
+	#strip { display: block; margin: 6px 0 2px; cursor: crosshair; }
+	.room { display: flex; align-items: center; gap: 8px; margin: 2px 0; }
+	#readout { color: #bbb; min-height: 18px; font-variant-numeric: tabular-nums; }
+	input[type=number], select, input[type=text] { background: #1e1e1e; color: #ddd; border: 1px solid #555; border-radius: 3px; font: 13px system-ui, sans-serif; }
+	input[type=number] { width: 58px; }
+	input[type=text] { width: 520px; max-width: 100%; }
+	button { background: #3a3a3a; color: #ddd; border: 1px solid #555; border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+	table.stats { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+	table.stats td, table.stats th { padding: 3px 9px; text-align: right; border-bottom: 1px solid #3a3a3a; font-weight: 400; }
+	table.stats th { color: #aaa; }
+	table.stats td:first-child, table.stats th:first-child { text-align: left; }
+	.up { color: #8fd18f; } .down { color: #e39a9a; }
+	/* Controls on the left, the palettes filling the rest and scrolling on their own; one column on a narrow window */
+	.layout { display: grid; grid-template-columns: fit-content(800px) minmax(0, 1fr); gap: 0 32px; align-items: start; }
+	.palettes-pane { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; }
+	@media (max-width: 1300px) {
+		.layout { grid-template-columns: minmax(0, 1fr); }
+		.palettes-pane { position: static; max-height: none; }
+	}
+	.palettes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 24px; }
+	.palette-row { display: flex; gap: 2px; align-items: center; }
+	.palette-row .sw { flex: 1; height: 22px; min-width: 0; }
+	.palette-row .label { width: 74px; color: #999; font-size: 11px; flex: none; }
+	.side-label { color: #999; font-size: 11px; line-height: 12px; padding-left: 76px; }
+	textarea { width: 100%; max-width: 1100px; height: 110px; background: #1e1e1e; color: #ddd; border: 1px solid #444; font: 12px monospace; }
+	#status { color: #bbb; min-height: 18px; }
+</style>
+</head>
+<body>
+<div class="layout">
+<div class="controls">
+<p class="hint">Tunes HUE_BOOST_RANGES, the page's hue ranges that change where colors sit. The closeness metric does not read them. Served
+pages only: this page runs index.html's own generator, fetched from the server (<code>.claude/launch.json</code>, port 8734).</p>
+
+<h2>Boost per hue range</h2>
+<p class="hint">OKLCh hue in degrees. Drag across the strip to add a range, then set it exactly below. A range runs from its
+start up to its end, past 360 when the end is lower; where ranges overlap their boosts multiply; outside every range the
+boost is 1; a range switched off is left out of your ranges. A range holds its boost up to its edges; its ramp blends the
+boost back to 1 across that many degrees outside them, 0 making a hard step. The strip shows each hue at its most vivid;
+the curve above it is the boost, on a log scale from 1/4 to 4. The two strips
+below are the same colors, each hue as wide as its room: the metric's length along the most vivid colors times the boost,
+all boosts offset alike so the total stays.</p>
+<canvas id="strip" width="720" height="96"></canvas>
+<div id="readout"></div>
+<div class="room"><canvas id="room-page" width="720" height="22"></canvas><span class="hint">the page's</span></div>
+<div class="room"><canvas id="room-yours" width="720" height="22"></canvas><span class="hint">yours</span></div>
+<div id="ranges"></div>
+<p class="row">
+	<button id="add">Add range</button>
+	<button id="clear">Clear</button>
+</p>
+
+<h2>Box</h2>
+<div class="row">
+	<select id="box"></select>
+	<span class="hint">or a state string:</span>
+	<input type="text" id="state" placeholder="v5|15|14|0|360|20|100|20|67|1|1|panel|3c6ea5|hex||vkhsvlj||1||0.15">
+	<button id="reroll">Reroll palettes</button>
+</div>
+
+<h2>Colors per palette by sector and in your ranges, over <span id="seed-count"></span> seeds</h2>
+<div id="status"></div>
+<table class="stats" id="stats"></table>
+
+<h2>Your ranges, to paste into index.html</h2>
+<p><button id="copy">Copy</button></p>
+<textarea id="out" readonly></textarea>
+</div>
+
+<div class="palettes-pane">
+<div class="palettes" id="palettes"></div>
+</div>
+</div>
+
+<script src="hue-boost.js"></script>
+<script>
+"use strict";
+const { SECTORS, BOXES, sectorOf, configOf, rangesText } = HueBoost;
+const STORE_KEY = "hue-boost-tuner-ranges";
+// Seeds generated and shown; the first FIRST_SHOWN are shown before the rest are generated
+const STATS_SEEDS = 30, FIRST_SHOWN = 10;
+const UI_SECTION = "// ---------- ui ----------";
+// The strip: a band of hue colors under the boost curve, whose log2 spans +-CURVE_RANGE
+const STRIP_BAND = 34, CURVE_RANGE = 2;
+const PAGE_EXPORTS = "; ({ generate, CELL_NAMES, HUE_BOOST_RANGES, boostAt, rangeWeight, RIDGE_WARP, roomOffset, oklabToRgb, labOfLch, gamutChroma, searchCuspLightness })";
+// The strips' colors are cached per tenth of a degree
+const HUE_STEPS = 3600;
+const $ = id => document.getElementById(id);
+
+let source = null, plainGenerator = null, hueColors = null;
+const colorAt = h => hueColors[Math.round(h * HUE_STEPS / 360) % HUE_STEPS];
+// A new range's ramp, degrees outside each edge
+const DEFAULT_RAMP = 4;
+const newRange = (from, to) => ({ from, to, boost: 1.25, on: true, ramp: DEFAULT_RAMP });
+// ranges: { from, to, boost, on, ramp } each, only the ranges on in effect
+let ranges = [];
+try {
+	// Ranges stored as [from, to, boost, on] took one ramp for all
+	const stored = JSON.parse(localStorage.getItem(STORE_KEY));
+	if (Array.isArray(stored?.ranges))
+		ranges = stored.ranges.map(range => Array.isArray(range)
+			? { from: range[0], to: range[1], boost: range[2], on: range[3] ?? true, ramp: stored.ramp ?? DEFAULT_RAMP } : range);
+} catch {}
+// The ranges on, as index.html holds them
+const activeRanges = () => ranges.filter(range => range.on).map(({ from, to, boost, ramp }) => ({ from, to, boost, ramp }));
+
+// The page's generator with ranges of its own
+function generatorWith(boostRanges) {
+	const patched = source.replace(/const HUE_BOOST_RANGES = \[[\s\S]*?\];/, "const HUE_BOOST_RANGES = " + JSON.stringify(boostRanges) + ";");
+	return (0, eval)(patched + PAGE_EXPORTS);
+}
+
+// A hue's most vivid sRGB color: its cusp
+function cuspColor(h) {
+	const page = plainGenerator, L = page.searchCuspLightness(h);
+	return "rgb(" + page.oklabToRgb(...page.labOfLch(L, page.gamutChroma(L, h), h)).map(v => Math.round(255 * Math.min(1, Math.max(0, v)))).join(",") + ")";
+}
+
+// The chosen box as a generator config: a pasted state string, or a preset
+function currentConfig(generator) {
+	const text = $("state").value.trim();
+	if (!text)
+		return configOf(BOXES[+$("box").value], generator.CELL_NAMES.length);
+	const f = text.split("|"), [count, minApart, hMin, hMax, c1, c2, l1, l2] = f.slice(1, 9).map(Number);
+	if (f[0] !== "v5" || f.length < 13 || [count, minApart, hMin, hMax, c1, c2, l1, l2].some(v => !Number.isFinite(v)))
+		throw new Error("not a v5 state string");
+	return configOf({ cfg: { count, minApart, hMin, hMax, cMin: Math.min(c1, c2), cMax: Math.max(c1, c2), lMin: Math.min(l1, l2), lMax: Math.max(l1, l2),
+		lAbsolute: f[17] === "1", ...(f[19] ? { vividness: +f[19] } : {}), ...(f[15] ? { names: f[15] } : {}) } }, generator.CELL_NAMES.length);
+}
+
+// Generated results per ranges and box, one per seed from seedBase + 1: a run resumes where a cancelled one stopped
+const resultCache = new Map();
+// A reroll draws a new base and empties the cache
+let seedBase = 0;
+// The pause after a change before generating what is not cached, so typing does not start a run per keystroke
+const TYPING_PAUSE = 400;
+
+// Shows STATS_SEEDS seeds past seedBase, the page's ranges and yours side by side, generating what the cache lacks; a newer
+// run cancels an older one
+let run = 0;
+async function recompute() {
+	const mine = ++run, base = seedBase;
+	let cfg;
+	try { cfg = currentConfig(plainGenerator); } catch (error) { $("status").textContent = error.message; return; }
+	const measured = ranges.map(range => ({ ...range }));
+	const sides = [plainGenerator.HUE_BOOST_RANGES, activeRanges()].map((boostRanges, k) => {
+		const key = JSON.stringify([boostRanges, cfg]);
+		if (!resultCache.has(key))
+			resultCache.set(key, []);
+		return { boostRanges, results: resultCache.get(key), generator: k ? null : plainGenerator };
+	});
+	if (sides.some(side => side.results.length < STATS_SEEDS)) {
+		await new Promise(resolve => setTimeout(resolve, TYPING_PAUSE));
+		if (mine !== run)
+			return;
+	}
+	for (let seed = 1; seed <= STATS_SEEDS; ++seed) {
+		for (const side of sides) {
+			if (side.results.length >= seed)
+				continue;
+			$("status").textContent = "generating seed " + seed + " of " + STATS_SEEDS + "...";
+			await new Promise(resolve => setTimeout(resolve, 0));
+			if (mine !== run)
+				return;
+			side.generator ??= generatorWith(side.boostRanges);
+			const result = side.generator.generate({ ...cfg, seed: base + seed });
+			side.results.push({ colors: result.colors.map(({ lch, hex }) => ({ lch, hex })), floor: result.floor, apart: result.apart });
+		}
+		if (seed === FIRST_SHOWN || seed === STATS_SEEDS)
+			show(sides, cfg.count, seed, measured, base);
+	}
+	$("status").textContent = "";
+}
+
+function show(sides, count, seeds, measured, base) {
+	const [page, tuned] = sides.map(({ results }) => {
+		const shown = results.slice(0, seeds), counts = Array(SECTORS.length).fill(0), inRanges = measured.map(() => 0);
+		for (const { colors } of shown)
+			for (const { lch } of colors) {
+				++counts[sectorOf(lch[2])];
+				measured.forEach((range, k) => { if (plainGenerator.rangeWeight(lch[2], range.from, range.to, 0) === 1) ++inRanges[k]; });
+			}
+		const meanOf = key => shown.reduce((sum, result) => sum + result[key], 0) / seeds;
+		const palettes = shown.map(({ colors }) => colors.slice().sort((a, b) => a.lch[2] - b.lch[2]).map(color => color.hex));
+		return { counts, inRanges, floor: meanOf("floor"), apart: meanOf("apart"), palettes };
+	}), mean = side => side.counts.map(n => n / seeds);
+	const pageMeans = mean(page), tunedMeans = mean(tuned);
+	const held = pageMeans.filter(n => n >= 0.25).length, even = count / held;
+	// The class of a value that moved from a to b by more than the tolerance
+	const change = (a, b, tolerance = 0.05) => b > a + tolerance ? "up" : b < a - tolerance ? "down" : "";
+	$("stats").innerHTML = "<tr><th></th>" + SECTORS.map(([name]) => "<th>" + name + "</th>").join("") + "<th>floor</th><th>closest pair</th></tr>"
+		+ "<tr><td>page's</td>" + pageMeans.map(n => "<td>" + n.toFixed(2) + "</td>").join("") + "<td>" + page.floor.toFixed(3) + "</td><td>" + page.apart.toFixed(1) + "</td></tr>"
+		+ "<tr><td>yours</td>" + tunedMeans.map((n, s) => "<td class='" + change(pageMeans[s], n) + "'>" + n.toFixed(2) + "</td>").join("")
+		+ "<td class='" + change(page.floor, tuned.floor, 0.005) + "'>" + tuned.floor.toFixed(3) + "</td><td class='" + change(page.apart, tuned.apart, 0.2) + "'>" + tuned.apart.toFixed(1) + "</td></tr>"
+		+ "<tr><td>even</td>" + pageMeans.map(n => "<td>" + (n >= 0.25 ? even.toFixed(2) : "-") + "</td>").join("") + "<td></td><td></td></tr>"
+		+ measured.map(({ from, to, boost, on }, k) => {
+			const pageIn = page.inRanges[k] / seeds, tunedIn = tuned.inRanges[k] / seeds;
+			return "<tr><td>" + from + "° to " + to + "°, ×" + boost + (on ? "" : ", off") + "</td><td colspan='" + SECTORS.length + "' style='text-align:left'>page's "
+				+ pageIn.toFixed(2) + " → yours <span class='" + change(pageIn, tunedIn) + "'>" + tunedIn.toFixed(2) + "</span> a palette</td><td></td><td></td></tr>";
+		}).join("");
+	$("seed-count").textContent = seeds;
+	$("palettes").innerHTML = "<div class='side-label'>the page's ranges</div><div class='side-label'>yours</div>" + page.palettes.map((palette, k) => [palette, tuned.palettes[k]].map(hexes =>
+		"<div class='palette-row'><span class='label'>seed " + (base + k + 1) + "</span>" + hexes.map(hex => "<span class='sw' style='background:" + hex + "' title='" + hex + "'></span>").join("") + "</div>").join("")).join("");
+}
+
+function buildRanges() {
+	$("ranges").innerHTML = "";
+	ranges.forEach((range, k) => {
+		const row = document.createElement("div");
+		row.className = "range";
+		const field = (key, min, max, step) => "<input type='number' data-key='" + key + "' min='" + min + "' max='" + max + "' step='" + step + "' value='" + range[key] + "'>";
+		const hueField = key => field(key, 0, 360, 0.1) + "° <span class='hue-swatch' data-key='" + key + "' style='background:" + cuspColor(range[key]) + "'></span>";
+		row.innerHTML = "<label><input type='checkbox'" + (range.on ? " checked" : "") + "> on</label> from " + hueField("from") + "to " + hueField("to")
+			+ "boost " + field("boost", 0.1, 5, 0.05) + " ramp " + field("ramp", 0, 30, 0.5) + "° <button>Remove</button>";
+		row.classList.toggle("off", !range.on);
+		const toggle = row.querySelector("input[type=checkbox]");
+		toggle.addEventListener("change", () => { range.on = toggle.checked; row.classList.toggle("off", !range.on); changed(); });
+		row.querySelectorAll("input[type=number]").forEach(input => input.addEventListener("input", () => {
+			const key = input.dataset.key, value = +input.value, isHue = key === "from" || key === "to";
+			if (input.value === "" || !Number.isFinite(value) || (key === "boost" && !(value > 0)) || (key === "ramp" && value < 0))
+				return;
+			range[key] = isHue ? Math.round((value - 360 * Math.floor(value / 360)) * 10) / 10 : value;
+			if (isHue)
+				row.querySelector(".hue-swatch[data-key=" + key + "]").style.background = cuspColor(range[key]);
+			changed();
+		}));
+		row.querySelector("button").addEventListener("click", () => { ranges.splice(k, 1); buildRanges(); changed(); });
+		$("ranges").appendChild(row);
+	});
+}
+
+// The strip: the colors of each half degree of hue in the lower band, the boost's curve above, a range being dragged shaded
+let dragFrom = null, dragTo = null;
+function drawStrip() {
+	const canvas = $("strip"), ctx = canvas.getContext("2d"), width = canvas.width, curveHeight = canvas.height - STRIP_BAND, active = activeRanges();
+	ctx.clearRect(0, 0, width, canvas.height);
+	for (let x = 0; x < width; ++x) {
+		ctx.fillStyle = colorAt(x * 360 / width);
+		ctx.fillRect(x, curveHeight, 1, STRIP_BAND);
+	}
+	const yOf = boost => curveHeight / 2 - Math.max(-CURVE_RANGE, Math.min(CURVE_RANGE, Math.log2(boost))) / CURVE_RANGE * (curveHeight / 2 - 2);
+	ctx.fillStyle = "#555";
+	ctx.fillRect(0, Math.round(yOf(1)), width, 1);
+	ctx.strokeStyle = "#eee";
+	ctx.beginPath();
+	for (let x = 0; x < width; ++x) {
+		const boost = plainGenerator.boostAt(active, x * 360 / width);
+		x ? ctx.lineTo(x, yOf(boost)) : ctx.moveTo(x, yOf(boost));
+	}
+	ctx.stroke();
+	if (dragFrom !== null && dragTo !== null) {
+		ctx.fillStyle = "rgba(255, 255, 255, 0.18)";
+		const [a, b] = [dragFrom, dragTo].map(h => h * width / 360);
+		ctx.fillRect(Math.min(a, b), 0, Math.abs(b - a), canvas.height);
+	}
+}
+
+// A strip of hue colors, each HUE_STEPS step as wide as the ridge's metric length over it times the ranges' boost, offset
+// as the page offsets it over a box
+function drawRoom(canvas, boostRanges) {
+	const ctx = canvas.getContext("2d"), width = canvas.width, ridge = plainGenerator.RIDGE_WARP, ends = [0];
+	const hues = Array.from({ length: HUE_STEPS }, (_, k) => (k + 0.5) * 360 / HUE_STEPS);
+	const lengths = hues.map(h => ridge[Math.floor(h) + 1] - ridge[Math.floor(h)]), boosts = hues.map(h => plainGenerator.boostAt(boostRanges, h));
+	const offset = plainGenerator.roomOffset(lengths, boosts);
+	for (let k = 0; k < HUE_STEPS; ++k)
+		ends.push(ends[k] + lengths[k] * Math.max(0, boosts[k] + offset));
+	for (let x = 0, k = 0; x < width; ++x) {
+		const at = (x + 0.5) * ends[HUE_STEPS] / width;
+		while (ends[k + 1] < at)
+			++k;
+		ctx.fillStyle = colorAt((k + (at - ends[k]) / (ends[k + 1] - ends[k])) * 360 / HUE_STEPS);
+		ctx.fillRect(x, 0, 1, canvas.height);
+	}
+}
+
+// A hue under the pointer, to the half degree
+const hueAt = event => Math.round(Math.min(359.5, Math.max(0, event.offsetX * 360 / $("strip").clientWidth)) * 2) / 2;
+function watchStrip() {
+	const strip = $("strip");
+	strip.addEventListener("mousedown", event => { dragFrom = dragTo = hueAt(event); drawStrip(); });
+	strip.addEventListener("mousemove", event => {
+		const h = hueAt(event);
+		$("readout").textContent = "hue " + h.toFixed(1) + "°, boost " + plainGenerator.boostAt(activeRanges(), h).toFixed(3);
+		if (dragFrom !== null) {
+			dragTo = h;
+			drawStrip();
+		}
+	});
+	window.addEventListener("mouseup", () => {
+		if (dragFrom !== null && dragTo !== null && Math.abs(dragTo - dragFrom) >= 1) {
+			ranges.push(newRange(Math.min(dragFrom, dragTo), Math.max(dragFrom, dragTo)));
+			buildRanges();
+			changed();
+		}
+		dragFrom = dragTo = null;
+		drawStrip();
+	});
+}
+
+function changed() {
+	$("out").value = rangesText(activeRanges());
+	try { localStorage.setItem(STORE_KEY, JSON.stringify({ ranges })); } catch {}
+	drawStrip();
+	drawRoom($("room-yours"), activeRanges());
+	recompute();
+}
+
+async function start() {
+	try {
+		const html = await (await fetch("../index.html", { cache: "no-store" })).text();
+		source = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map(match => match[1]).find(script => script.includes(UI_SECTION));
+		source = source.slice(0, source.indexOf(UI_SECTION));
+	} catch (error) {
+		$("status").textContent = "index.html could not be fetched: open this page through the server, not from disk.";
+		return;
+	}
+	plainGenerator = (0, eval)(source + PAGE_EXPORTS);
+	hueColors = Array.from({ length: HUE_STEPS }, (_, k) => cuspColor(k * 360 / HUE_STEPS));
+	drawRoom($("room-page"), plainGenerator.HUE_BOOST_RANGES);
+	BOXES.forEach((box, k) => $("box").add(new Option(box.name, k)));
+	for (const id of ["box", "state"])
+		$(id).addEventListener(id === "box" ? "change" : "input", changed);
+	$("add").addEventListener("click", () => { ranges.push(newRange(60, 110)); buildRanges(); changed(); });
+	$("clear").addEventListener("click", () => { ranges = []; buildRanges(); changed(); });
+	$("reroll").addEventListener("click", () => {
+		seedBase = STATS_SEEDS * Math.floor(Math.random() * 30000);
+		resultCache.clear();
+		recompute();
+	});
+	$("copy").addEventListener("click", () => navigator.clipboard.writeText($("out").value));
+	watchStrip();
+	buildRanges();
+	changed();
+}
+start();
+</script>
+</body>
+</html>

@@ -14,7 +14,7 @@
 
 "use strict";
 const fs = require("fs");
-const { labOf, recallDistance, W_L, W_C } = require("./identify.js");
+const { labOf, recallDistance } = require("./identify.js");
 
 const DIRECTIONS = ["hue", "lightness", "chroma"];
 const THIRDS = ["dark", "cusp", "light"], CHROMA_THIRDS = ["dull", "mid", "vivid"];
@@ -40,7 +40,7 @@ function closestPair(hexes) {
 	const labs = hexes.map(labOf);
 	let metric = Infinity, raw = Infinity;
 	for (let k = 1; k < labs.length; ++k) {
-		metric = Math.min(metric, recallDistance(labs[k - 1], labs[k], W_L, W_C));
+		metric = Math.min(metric, recallDistance(labs[k - 1], labs[k]));
 		raw = Math.min(raw, Math.hypot(...labs[k].map((v, i) => v - labs[k - 1][i])));
 	}
 	return { metric, raw };

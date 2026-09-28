@@ -85,14 +85,19 @@ closest pair's distance (`identification`); pairs of two fixed colors are skippe
 The density carries every preference about where colors sit:
 
 - `metricVolume(L, C, h)`: the metric's volume per OKLab volume, in closed form, the product of the metric's scale on
-  each axis: `weightL(h) * weightC(h) * density(h, L) * hueScaleAt(C) * lightnessGain(L)^3`, the density the level tables mixed at `L`.
+  each axis: `weightL(h) * SAME_HUE_LIGHTNESS * weightC(h) * density(h, L) * hueScaleAt(C) * lightnessGain(L)^3`, the
+  density the level tables mixed at `L`.
 - `vividness(C, h)`: the chroma as a share of the hue's cusp chroma, floored at `VIVIDNESS_FLOOR`: a dark or a pale
   color on the gamut's surface is not vivid. A color's packing scale is its vividness to the config's `vividness`, the
   Vividness control (`VIVIDNESS_DEFAULT` without one), relative to the pool's largest, so a pastel box ranks its own colors.
-- The density is the volume times the cube of the scale, on usable points (`insideBox`, `usableLch`: inside the ranges and sRGB, a
+- `HUE_BOOST_RANGES`: hue ranges with a boost each, exact at any hue (`boostAt`); a hue's boost stretches its hue axis,
+  plus one offset for every hue (`roomOffset`) so the box's total room is kept, floored at zero. Set by eye with
+  `tune-hue-boost.html` (`fit_hue_boost.js` fits one range per hue family toward even counts). It moves where colors
+  sit, not how close they read.
+- The density is the volume times the cube of the scale times the stretch, on usable points (`insideBox`, `usableLch`: inside the ranges and sRGB, a
   name in use, at or above the preference floor `PREFERENCE_FLOOR` of `preferenceOf`, outside every avoided color's
   shadow, `shadowed`), zero elsewhere.
-- The packing distance, `packed2`, is `apart2` times the pair's scales. A sample of the density is uniform in the
+- The packing distance, `packed2`, is `apart2` with its hue term times the pair's stretches, times the pair's scales. A sample of the density is uniform in the
   packing distance's volume, so even spacing in it is even spread in the density: a pale placement has to buy more
   distance than a vivid one. Which colors are confusable, which state is best and what is reported stay on `apart2`.
 
@@ -106,8 +111,11 @@ then `apart`; an attempt is a throw and a relaxation:
    over a survey of `RAW_SURVEY` usable draws. Where a range has no thickness, a lightness of one value or a chroma
    range beyond the gamut, the draw sits on the gamut's surface in a shell `SHELL` thick.
 2. **The throw** (`throwAt`, `widestThrow`): the pool in a seeded random order; a point is seated when its packing
-   distance to every seated color, the fixed ones included, is at least `r`, and `r` is the largest that seats
-   `count`, by bisection to `THROW_PRECISION`. A maximal Poisson-disc sample: random, evenly spread, following the density.
+   distance to every seated color, the fixed ones included, is at least `r` and its distance on the metric at least a
+   floor, and `r` is the largest that seats `count`, by bisection to `THROW_PRECISION`. The floor is the error limit or
+   the Min distance, whichever is larger, or where the box cannot seat `count` so, the widest floor it can: scales and
+   stretches would otherwise seat a pair closer than it reads. A maximal Poisson-disc sample: random, evenly spread,
+   following the density.
 3. **The relaxation** (`relax`), only while some color's error is over the limit: the confusable colors, worst first,
    each try up to `PROPOSALS` positions a step away in a random direction; an unusable proposal is dropped, nothing is
    clamped; a proposal is kept when it lowers the color's error on the packing distance. A sweep with nothing kept

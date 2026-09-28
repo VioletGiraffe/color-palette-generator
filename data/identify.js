@@ -521,14 +521,14 @@ const swapChance = (distance, sigma) => 0.5 * erfc(distance / (2 * sigma) / Math
 
 // Rows are the color shown, columns the entry answered. Off the diagonal the pair's swap chance;
 // on it what is left, floored at zero: the sum over pairs overstates the error of a crowded color.
-function confusionMatrix(labs, sigma, wL, wC) {
+function confusionMatrix(labs, sigma) {
 	const n = labs.length;
 	const matrix = Array.from({ length: n }, () => new Float64Array(n));
 	for (let i = 0; i < n; ++i) {
 		let error = 0;
 		for (let j = 0; j < n; ++j)
 			if (j !== i)
-				error += matrix[i][j] = swapChance(recallDistance(labs[i], labs[j], wL, wC), sigma);
+				error += matrix[i][j] = swapChance(recallDistance(labs[i], labs[j]), sigma);
 		matrix[i][i] = Math.max(0, 1 - error);
 	}
 	return matrix;
@@ -549,7 +549,7 @@ function summarize(matrix) {
 }
 
 function score(hexes) {
-	return summarize(confusionMatrix(hexes.map(labOf), SIGMA, W_L, W_C));
+	return summarize(confusionMatrix(hexes.map(labOf), SIGMA));
 }
 
 function distance(p, q) {
@@ -591,9 +591,12 @@ function parseHexes(text) {
 // The page's generator and its naming tables, cached per path: the eval is the costly part and both
 // scores reach for it. The naming tables are the page's own, so the score is about the names it shows.
 const pages = new Map();
+// The metric's constants the page holds a copy of, checked as its tables are.
+const METRIC_SCALARS = { SIGMA, CHROMA_POWER, LIGHTNESS_EXPONENT, SHADE_DISCOUNT, SAME_HUE_LIGHTNESS, SAME_HUE_SPAN };
 // `densities`, when given, swaps the page's hue density for the metric's warp and for the draw's
 // acceptance separately, so hue-marginals.js can tell their effects apart; either may be null to keep
-// the page's own. Fails if the page no longer has the two lines it patches.
+// the page's own. Its `hueBoostRanges` replaces HUE_BOOST_RANGES, for fit_hue_boost.js.
+// Fails if the page lacks what it patches.
 function loadPage(pagePath, densities = null) {
 	const key = pagePath + (densities ? JSON.stringify(densities) : "");
 	if (!pages.has(key)) {
@@ -612,21 +615,28 @@ function loadPage(pagePath, densities = null) {
 			patch(LEVELS, "const HUE_LEVEL_DENSITIES = [[30, " + JSON.stringify(densities.metric) + "], [85, " + JSON.stringify(densities.metric) + "]];");
 		else if (densities && densities.metric)
 			patch(ONE_WARP, "warp.push(warp[h] + " + JSON.stringify(densities.metric) + "[h]);");
+		if (densities && densities.hueBoostRanges)
+			patch(source.match(/const HUE_BOOST_RANGES = \[[\s\S]*?\];/)?.[0] ?? "const HUE_BOOST_RANGES = [",
+				"const HUE_BOOST_RANGES = " + JSON.stringify(densities.hueBoostRanges) + ";");
 		if (densities && densities.draw)
 			patch("const weight = HUE_DENSITY.map(", "const weight = " + JSON.stringify(densities.draw) + ".map(");
 		globalThis.atob = s => Buffer.from(s, "base64").toString("binary");
+		const scalars = Object.keys(METRIC_SCALARS).map(name => name + ": typeof " + name + " === 'undefined' ? null : " + name).join(", ");
 		const page = (0, eval)(source
 			+ "; ({ generate, cellOf, colorFromHex, CELL_NAMES, CELL_OVERLAP, mulberry32, oklabToRgb, labOfLch, absoluteL: typeof absoluteL === 'undefined' ? null : absoluteL, HUE_DENSITY: typeof HUE_DENSITY === 'undefined' ? null : HUE_DENSITY,"
 			+ " HUE_LEVEL_DENSITIES: typeof HUE_LEVEL_DENSITIES === 'undefined' ? null : HUE_LEVEL_DENSITIES,"
 			+ " HUE_WEIGHT_L: typeof HUE_WEIGHT_L === 'undefined' ? null : HUE_WEIGHT_L, HUE_WEIGHT_C: typeof HUE_WEIGHT_C === 'undefined' ? null : HUE_WEIGHT_C,"
+			+ " scalars: { " + scalars + " },"
 			// The box sampler of pages before the rebuilt generator (data/past-experiments/experimental-cells-pushes.html), for hue-marginals.js.
 			+ " ...(typeof boxCells === 'undefined' ? {} : { boxCells, samplePoint, SPARSE_FRACTION }) })");
 		// A page respacing hue or weighing an axis differently from this file is scored on a metric other than its own.
 		const sameTable = (a, b) => !!a && a.length === b.length && a.every((v, h) => v === b[h]);
 		const sameLevels = page.HUE_LEVEL_DENSITIES?.length === HUE_LEVEL_DENSITIES.length
 			&& page.HUE_LEVEL_DENSITIES.every(([L, density], k) => L === HUE_LEVEL_DENSITIES[k][0] && density.every((d, h) => d === HUE_LEVEL_DENSITIES[k][1][h]));
-		if (!densities && (!sameLevels || !sameTable(page.HUE_DENSITY, HUE_DENSITY) || !sameTable(page.HUE_WEIGHT_L, HUE_WEIGHT_L) || !sameTable(page.HUE_WEIGHT_C, HUE_WEIGHT_C)))
-			console.warn(path.basename(pagePath) + ": its metric tables are not this file's; scores are on this file's metric");
+		const differing = [...(!sameLevels || !sameTable(page.HUE_DENSITY, HUE_DENSITY) || !sameTable(page.HUE_WEIGHT_L, HUE_WEIGHT_L) || !sameTable(page.HUE_WEIGHT_C, HUE_WEIGHT_C) ? ["tables"] : []),
+			...Object.entries(METRIC_SCALARS).filter(([name, value]) => page.scalars[name] !== value).map(([name]) => name)];
+		if (!densities && differing.length)
+			console.warn(path.basename(pagePath) + ": metric not as in this file (" + differing.join(", ") + "); scores are on this file's metric");
 		pages.set(key, page);
 	}
 	return pages.get(key);
@@ -680,8 +690,8 @@ function benchmarkPage(pagePath) {
 	const counts = [6, 8, 10];
 	const seeds = Array.from({ length: 20 }, (_, i) => i + 1);
 
-	console.log(path.basename(pagePath) + " - identification, sigma " + SIGMA + " wL " + W_L + " wC " + W_C
-		+ "; naming, decay " + NAME_DECAY);
+	console.log(path.basename(pagePath) + " - identification, sigma " + SIGMA + "; naming, wL " + W_L.toFixed(3) + " wC " + W_C.toFixed(3)
+		+ " decay " + NAME_DECAY);
 	console.log("                 identification          naming");
 	// The two scores are reported side by side and never combined: identification is the one the
 	// generator optimizes, naming the second opinion, and a run where they disagree is the finding.
