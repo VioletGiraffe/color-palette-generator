@@ -730,9 +730,7 @@ const relativeC = (C, h) => C / cuspChroma(h) * 100;
 
 // ---------- color naming ----------
 
-// A palette color is looked at alone rather than beside the others, so recognising it is a matter
-// of the name it carries, not of its distance from the rest.
-// generate places colors by confusability: name overlap between cells, fading with OKLab distance.
+// A color's name labels it and gates the pool by the names in use; generation never scores by names.
 //
 // Which name a color carries, and whether people agree on it, from the c3 model of the XKCD color
 // survey - Heer and Stone, "Color Naming Models for Color Selection, Image Editing and Palette
@@ -765,6 +763,7 @@ const CELL_GRID_CHARS = "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG
 
 // Name overlap between cells as a byte each, the full square matrix row-major: how much people
 // share words for the two cells' colors.
+// Unused by the page: data/identify.js's naming score and data/fit_names.js read it through loadPage.
 const CELL_OVERLAP_B64 = "/ygpA78AAQASFHQAP08IAOYCAgkpDQQAAAcAtQAdBAANAAEBKP8CADoACAG2DAcCsgVcABkAAG7DCQAAAAAADAACAAAoAAIAKQL/AlIAAAABBtAABSUAAhsNHwADAV0AALAAdQDrGgAiAhEQAwAC/wMEBDUAIwIMAVECEA6WBwEEMhtLAw0BPwUDxQQGnAgdvzpSA/8AAgIzKHMBPDkRAJ0GBRhGChMAACMAtABjBwA4AAkJAAAABAD/1sUEEADHAQB8AAAKADIQDQAb5AAJALUAACILACocAQgABALW/6YUFQCYBgCBAAAMAFAdCgIZ0gAMAbMBAC0eAEolAAEANQLFpv8ELACzAQxgAwI5ACQXFwpCqQIODaICICgYGzI3ErYBADMEFAT/FQEFbgFbAAgBAKeqBgAAAwAABAMDAAFgAAoDFAwGIygQFSwV/woZEg4cAhs1AQx/HwkMDQQBOwwZFAaqEERRdAfQAnMAAAABCv8AEk4AAV8JIwAJBT4AAH4AkACqGAAYAgwLAAIADAHHmLMFGQD/BAJyAAINACgULwAYowAHAoIBBBgMAx0YP7IFATwBBgFuEhIE/xBGAEYBAESZMQAAAQAAIAADAAAaAAIBTwUlUTkAAAwBDk4CEP8ACWIofQAHHQ4TADoAewAVogAEPQEGCFwAAhF8gWBbHAByRgD/AAQGAMF+EQAMZgAEAVABAA8gABgQAAACEAAAAAMAAgEAAAkA/wApJAAAAlVnADcQBQQCMwsBvgcM5hkbDp0AAAIIG18CRmIEAP8HAwMhKgEDAAIAqwAQDwAMBgIDAgANlgYKDDkBNQkNASgGKQf/BgINGH54CR8aNRQVc00jdX7EAgAfBwUAAAAAASMAAH0AJAMG/wAAARMJAG0BHwAShgACNQECCW4AARgyUCSnDAAoRADBAAMCAP97BgAEKQACACEAAAc2AA8GKcMDBEYQHReqfwkUmQd+ACENAHv/FQECDQABIQoMAAJ2AB0eDQkBMgoNChcGHwUvMR0RAioYAQYV/wMMCgIAFQgCHwINFwYJBABdGxMAAgoACT4AAA4AVQF+EwABA/8+AJ8NMQVlLi4ZRV5/AAAASwAbGUIADAAYABMMZwN4CQQCDD7/HBOyEmECQaQEcTxQAAAAAwDk0qkDDQCjAQBmAAAJACkNCgAc/wASANMAACoLACwbBwCwDSMAAAIABH4AADoANwIfbQAAAp8TAP8CUwCeVwQVMxQYAAAAAQAJDA4AAQAHAAAEEAAaAQIBAA2yEgL/AGsAAeABBy8ntQx1P7QAAQ0EO5ACIHsBBas1HwAhFTESAFMA/wFuUAMsJhMcAAAABQC1s6IDDACCAABQBAAUACEKCAVh0wBrAf8AAXsLAjopHQLrA2MAAQIDGaoBAxUBAhAVEgAMAmUCAJ4AbgD/EwRBASUhBAAaxQcAACAAFBgEAKIAMw9zhgAAHy5BAFcBUAET/wIDrQUTAAAABAAiLSgBBgAYAAAPCwBNAAcCAi6kKgTgA3sEAv8OBn1zDSgiBjgLHhhgqhgMGgQgAQwjAjZ2DRkECxUBLAtBAw7/AYNQAAACnAAAABsAEAIDAD0AvgZ1NQAAF0VxADMHJgIBrQYB/wgYAQIRCAkqSjIKRAwdAgEYBwJ+AQ8dBl48LBQvEzolBX2DCP/UAQAQHQkcJTcDUQsYAQYQDAPEAgYeCX9QGxgnHCkhE3NQGNT/";
 const CELL_OVERLAP = Uint8Array.from(atob(CELL_OVERLAP_B64), ch => ch.charCodeAt(0));
 
@@ -2281,15 +2280,16 @@ function schedulePass(full) {
 function scheduleRun() { rerolls = []; schedulePass(true); }
 function scheduleRedraw() { schedulePass(false); }
 
+// Controls listen to "input", checkboxes and selects too: Firefox restores a reopened tab's controls firing only "input".
 for (const id of [...STATE_IDS, "vivid", "fixed-colors", "avoid-colors", "l-absolute"])
 	$(id).addEventListener("input", () => { refreshLabels(); scheduleRun(); });
 
 // Sorting is settled in render, so the palette itself is unchanged.
-$("sort").addEventListener("change", scheduleRedraw);
+$("sort").addEventListener("input", scheduleRedraw);
 
 // The output panel is flexible, so its canvas needs re-sizing to each new width.
 window.addEventListener("resize", scheduleRedraw);
-$("format").addEventListener("change", () => { refreshExport(); refreshState(); });
+$("format").addEventListener("input", () => { refreshExport(); refreshState(); });
 $("generate").addEventListener("click", () => { $("seed").value = (+$("seed").value | 0) + 1; rerolls = []; run(); });
 
 // Swatch text and borders read from --ink/--ink-dim/--line, so overriding those on the
@@ -2319,7 +2319,7 @@ function currentBackdrop() {
 	return preset === "custom" ? $("backdrop-color").value : preset;
 }
 
-$("backdrop").addEventListener("change", () => { applyBackdrop(currentBackdrop()); refreshState(); });
+$("backdrop").addEventListener("input", () => { applyBackdrop(currentBackdrop()); refreshState(); });
 
 $("backdrop-color").addEventListener("input", () => {
 	$("backdrop").value = "custom";
@@ -2338,7 +2338,7 @@ function applyTheme() {
 
 // The 3D materials take their colors when they are built, so a theme change redraws the views.
 const retheme = () => { applyTheme(); scheduleRedraw(); };
-$("theme").addEventListener("change", retheme);
+$("theme").addEventListener("input", retheme);
 systemDark.addEventListener("change", retheme);
 
 // The reroll's slot is the color's index in the result, not in the palette, which may be sorted.
@@ -2652,7 +2652,7 @@ function metricScene(lab) {
 	const radius = C * hueScaleAt(C) * gainAt(lab[0]) / 100, angle = warpedHue(lab[1], lab[2], hueLevelAt(lab[0] * 100));
 	return [radius * Math.cos(angle), height - METRIC_HEIGHT[100] / 2, radius * Math.sin(angle)];
 }
-// The checkbox survives a reload in some browsers, so the mapping starts from it.
+// Firefox restores the checkbox on a reload before this runs, firing no event: the mapping starts from it.
 let toScene = $("metric-3d").checked ? metricScene : oklabScene;
 
 const container = $("gamut-3d");
@@ -2919,7 +2919,7 @@ resize();
 // The classic script has already generated and drawn: pick up its state, then follow its hooks.
 const showPageState = () => window.update3D(lastCfg, palette, lastResult?.pair ?? null);
 showPageState();
-$("metric-3d").addEventListener("change", e => {
+$("metric-3d").addEventListener("input", e => {
 	toScene = e.target.checked ? metricScene : oklabScene;
 	buildShell();
 	showPageState();
