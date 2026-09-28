@@ -2024,6 +2024,39 @@ under it steps like one over the error limit, and an attempt ends the search onl
 13.5 the error limit already holds every pair apart where the ranges allow, so the floor starts there. The identification
 chances the page reports are at the one calibrated noise at every setting. State strings are v5; v4 strings are not read.
 
+## Shades and lightness at one hue
+
+A generated palette's hue-sorted pairs, graded blind four times each (round 25's named pairs), ran almost opposite to
+the metric: the pairs the judge found closest were one hue at two lightnesses, navy against blue (graded close 4 of 4
+at 15.9) and hot pink against wine (14.7); the pair the metric put closest, lavender against magenta at 14.0, graded
+marginal to fine. Over the strict rounds 21 to 25 (`tmp/class-scale.js`, a scale per class of pair on the metric
+distance, a pair of cuts per round), pairs differing in hue alone and in chroma alone read at their distance, pairs at
+one hue differing in lightness at 0.80 to 0.86 of it, and lightness with chroma at 0.75 to 0.86. The rounds had dealt
+almost none of these at the distances palettes sit at, 12 to 18, so no earlier fit saw it.
+
+Rounds 25 to 29 dealt them: one hue at independent lightness and chroma (`tone`), shades at one saturation (`shade`),
+lightness at one chroma (`lightness`), the same turned 0 to 12 degrees in hue, the dark end, and muted yellow to cyan. A
+shade read at 0.75 and 0.78 of its distance in rounds 26 and 29, near 1 in rounds 27 and 28; lightness at one chroma at
+0.95. Forms tried in `tmp/lightness-forms.js`: a compressed lightness term never helped; a lightness weight lowered at one
+hue and restored as the hue term grows, and a discount on the chroma change a shade brings, both did, and a fade of both
+toward black was rejected by the fit.
+
+Fitted jointly with the densities, weights and gain (`fit_hue_density.js`, rounds 4 to 29, a pair of cuts per log, the
+named pairs left out), 6-fold cross-validated loss per verdict:
+
+| metric | loss | AUC not-close, fine |
+|---|---|---|
+| before | 0.6233 | 0.894, 0.904 |
+| the same form refitted | 0.6242 | 0.899, 0.906 |
+| with the shape terms | 0.6171 | 0.904, 0.911 |
+
+- A lightness step at one hue weighs 0.41 in every run, from both starts and with or without the named pairs; the weight
+  it returns to at large hue differences and the span trade off, the data holding only their product over its range.
+- The shade discount is 0.52 without the named pairs, 0.67 with them.
+- On the named pairs, held out, the rank correlation of distance with the mean blind grade is 0.65, against 0.41 before.
+- The strict rounds' "fine" cuts now have a median of 14.3: the noise width goes from 3.3 to 3.5, the limit to 14.4, and
+  the Min distance control starts at 14.
+
 ## Files
 
 - `index.html`: the generator rebuilt from the end state on the preference metric by lightness, with the

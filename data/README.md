@@ -47,25 +47,30 @@ the archived generator and the scripts.
 `apart2(p, q)` is the squared distance between two metric positions, in deltaE:
 
 - the lightness difference times the lightness weight at the pair's hue, `HUE_WEIGHT_L` read by `weightAt` at the hue of
-  the two colors' summed ab (a grey defers to its partner);
-- the radial chroma difference times the chroma weight there, `HUE_WEIGHT_C`; blue through magenta to red weighs
-  lightness up to half again and chroma a quarter less, green through cyan the reverse;
+  the two colors' summed ab (a grey defers to its partner), times a share that is `SAME_HUE_LIGHTNESS` (0.455) at one
+  hue and returns to one as the hue term below grows, half of the way at `SAME_HUE_SPAN` (16.5): a lightness
+  difference counts more when the hue differs too;
+- the radial chroma difference, less `SHADE_DISCOUNT` (0.52) of the change a lightness change at the pair's saturation
+  (chroma over lightness) brings, times the chroma weight there, `HUE_WEIGHT_C`: a shade of a color reads close to it.
+  Over hue, blue through magenta weighs lightness up to a quarter above its mean and chroma a third below, cyan the
+  reverse with chroma up to half again;
 - the tangential part, the ab chord after both hues move to their warped angle at the pair's mean lightness, the
   mix of the two levels around it, less the radial part, times
   `hueScaleAt` of the pair's mean chroma, `(C / CHROMA_REFERENCE) ^ (CHROMA_POWER - 1)`, so a hue turn grows with
   chroma at the 0.75 power;
 - the sum times the square of `lightnessGain` of the pair's mean lightness, one at `LIGHTNESS_REFERENCE` (68) and
-  rising as the ratio to `LIGHTNESS_EXPONENT` (0.21) toward black (floored at 20) and toward white.
+  rising as the ratio to `LIGHTNESS_EXPONENT` (0.174) toward black (floored at 20) and toward white.
 
-The noise width `SIGMA` (3.3) is fixed; a pair at distance `d` swaps with `swapChance(d, SIGMA)`, half the
+The noise width `SIGMA` (3.5) is fixed; a pair at distance `d` swaps with `swapChance(d, SIGMA)`, half the
 complementary error function of `d / (2 SIGMA)` in standard units, and `limitDistance(SIGMA)` is where that chance
-falls to `ERROR_LIMIT` (0.02): 13.5, where "fine" begins in the strict pair rounds (21 to 23), the recall calibration
-(`calibrate.html`, `fit.js`) having set the earlier one. The Min distance control, `minApart`, is a floor on top of
-that: a color with a pair under it is stepped like one over the error limit, and an attempt ends the search only
-with every pair at or above it. Below 13.5 the error limit already keeps pairs apart, so the control starts there. The level
-densities, the weight tables and the gain's exponent are one fit to the pair rounds under the preference question
-(`calibrate-boundaries.html`, `fit_hue_density.js`), the chroma power from the same rounds; the sources and numbers are
-in `scripts.md` and `evolution.md`. `W_L` and `W_C` in `identify.js` are the tables' means, for the recall-era scoring only.
+falls to `ERROR_LIMIT` (0.02): 14.4, by the median of the strict pair rounds' "fine" cuts, 14.3 (21 to 29), the recall
+calibration (`calibrate.html`, `fit.js`) having set the earliest one. The Min distance control, `minApart`, is a floor on
+top of that: a color with a pair under it is stepped like one over the error limit, and an attempt ends the search only
+with every pair at or above it. Below the limit the error limit already keeps pairs apart, so the control starts at 14. The
+level densities, the weight tables, the shape terms and the gain's exponent are one fit to the pair rounds under the
+preference question (`calibrate-boundaries.html`, `fit_hue_density.js`), the chroma power from the same rounds; the sources
+and numbers are in `scripts.md` and `evolution.md`. `W_L` and `W_C` in `identify.js` are one weight per axis for the
+recall-era scoring and the older fit scripts: `W_L` is a lightness step's at one hue, the table's mean times the same-hue share.
 The metric measures how far apart two colors read as members of one palette. It carries no term for a color on
 its own.
 
