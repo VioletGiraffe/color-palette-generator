@@ -1346,15 +1346,18 @@ function roomOffset(volumes, boosts) {
 const pointAt = lch => ({ ...warpedPoint(positionOf(lch)), lch });
 
 const poolKey = cfg => [cfg.hMin, cfg.hMax, cfg.lMin, cfg.lMax, cfg.lAbsolute ? "abs" : "rel", cfg.cMin, cfg.cMax, cfg.sMin, cfg.vividness, cfg.preference,
-	cfg.included.map(Number).join(""), (cfg.avoid ?? []).map(color => color.hex).join()].join("|");
+	cfg.included.map(Number).join(""), (cfg.avoid ?? []).map(color => color.hex).join(), cfg.seed].join("|");
 let poolCache = { key: null, pool: null };
-// The pool of a box: its points.
+// A palette's random streams, SEED_STREAM apart: the pool's at seed - SEED_STREAM, attempt n's at seed + n * SEED_STREAM,
+// then the rerolls'.
+const SEED_STREAM = 7919;
+// The pool of a box and seed: its points. Each palette draws from its own sample of the box.
 function poolFor(cfg) {
 	const key = poolKey(cfg);
 	if (poolCache.key === key)
 		return poolCache.pool;
 
-	const rnd = mulberry32(31337);
+	const rnd = mulberry32(cfg.seed - SEED_STREAM);
 	// A draw's density before its hue's boost
 	const volumeOf = draw => metricVolume(...draw.lch) * vividness(draw.lch[1], draw.lch[2]) ** (3 * cfg.vividness) * draw.slab;
 	// The survey: the box's volume per hue for the boost's offset, the density's peak, the rejection's ceiling
@@ -1587,13 +1590,13 @@ function generate(cfg) {
 		return null;
 	let best = null;
 	for (let n = 0; n < ATTEMPTS && !(best && best.apart >= floorOf(settings)); ++n) {
-		const made = attempt(mulberry32(settings.seed + n * 7919), settings, pool);
+		const made = attempt(mulberry32(settings.seed + n * SEED_STREAM), settings, pool);
 		if (!best || made.apart > best.apart)
 			best = made;
 	}
 	(cfg.rerolls ?? []).forEach((slot, n) => {
 		if (slot < best.colors.length && !best.colors[slot].fixed)
-			best = reroll(best, settings, slot, mulberry32(settings.seed + (ATTEMPTS + n) * 7919), pool);
+			best = reroll(best, settings, slot, mulberry32(settings.seed + (ATTEMPTS + n) * SEED_STREAM), pool);
 	});
 	return best;
 }

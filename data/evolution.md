@@ -2175,6 +2175,26 @@ Vividness in the author's box, 40 seeds; vividness is chroma over the hue's cusp
 - Before, over the reference boxes, 0 to 1 moved the palettes' mean from 0.673 to 0.736 (the author's to 67), 0.668 to
   0.783 (to 100) and 0.608 to 0.746 (default); now 0.619 to 0.633, 0.598 to 0.646 and 0.582 to 0.661.
 
+## A pool per seed
+
+The pool was drawn once per box from a fixed seed, so every palette of a box picked from the same 2000 points. It is now
+drawn from the palette's seed. 400 seeds a box, 79,800 pairs (`tmp/b-effect.js`); the groups are four disjoint sets of
+100 seeds, each scored on its own pairs; reuse is the share of colors whose hex appears in another of the 400 palettes:
+
+| box | shared: one pool, per seed | groups: one pool, per seed | reuse | yellow a palette | ms a palette |
+|---|---|---|---|---|---|
+| author's current (15, L 14-71, `sMin` 0.119) | 5.44, 5.38 | 5.41-5.46, 5.34-5.41 | 17.4%, 0.5% | 0.83, 0.82 | 6.2, 26.4 |
+| author's, to 67 | 6.38, 6.37 | 6.34-6.49, 6.34-6.41 | 2.4%, 1.2% | 0.61, 0.48 | 12.6, 34.1 |
+| author's, to 100 | 5.22, 5.11 | 5.19-5.23, 5.06-5.15 | 30.2%, 0.2% | 0.81, 0.78 | 5.1, 27.4 |
+| default, 10 colors | 2.85, 2.81 | 2.83-2.86, 2.76-2.83 | 85.7%, 0.1% | 0.65, 0.56 | 0.3, 26.4 |
+
+- Sameness drops by 0 to 2%: the box, not the shared sample, makes palettes alike.
+- Exact repeats go; what remains is one hex reached from different pools.
+- The closest pair, the floor and the mean vividness move by 0.02, 0.001 and 0.003 at most.
+- Sector counts move by up to 0.13 a palette: yellow in the author's to 67, red and green in the one to 100.
+- One pool's sampling error is shared by every palette of its box; pools per seed average it out.
+- A palette pays its pool build, about 20 ms; a reroll keeps the seed and reuses the pool.
+
 ## Files
 
 - `index.html`: the generator rebuilt from the end state on the preference metric by lightness, with the

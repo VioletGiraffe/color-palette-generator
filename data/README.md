@@ -103,7 +103,7 @@ The density carries every preference about where colors sit:
 `generate` runs up to `ATTEMPTS` attempts, stopping at the first whose closest pair keeps the floor, else keeping the one
 with the widest closest pair; an attempt is a throw and a relaxation:
 
-1. **The pool** (`poolFor`, one per box, cached): raw draws (`rawDraw`) cover the box without rejection by the gamut,
+1. **The pool** (`poolFor`, one per box and seed, cached): raw draws (`rawDraw`) cover the box without rejection by the gamut,
    hue evenly over the range, lightness evenly over the hue's interval, chroma by its square over the interval the
    ranges and the gamut leave at that lightness; a draw's weight is the density times `slab`, the OKLab volume it
    stands for, which undoes the uneven raw cover. `POOL_SIZE` points are kept by rejection against the density's peak
