@@ -1303,7 +1303,8 @@ function roomOffset(volumes, boosts) {
 	const total = volumes.reduce((sum, volume) => sum + volume, 0);
 	const roomAt = offset => volumes.reduce((sum, volume, k) => sum + volume * Math.max(0, boosts[k] + offset), 0);
 	let below = 1 - Math.max(...boosts), above = 1 - Math.min(...boosts);
-	for (let n = 0; n < 40; ++n) {
+	// The bounds meet when every boost is the same
+	for (let n = 0; n < 40 && below < above; ++n) {
 		const mid = (below + above) / 2;
 		if (roomAt(mid) < total)
 			below = mid;
@@ -1336,17 +1337,19 @@ function poolFor(cfg) {
 		if (draw && allowedLch(...draw.lch, cfg))
 			survey.push(draw);
 	}
-	const offset = roomOffset(survey.map(volumeOf), survey.map(draw => boostAt(HUE_BOOST_RANGES, draw.lch[2])));
-	const densityOf = draw => volumeOf(draw) * Math.max(0, boostAt(HUE_BOOST_RANGES, draw.lch[2]) + offset);
-	const peak = survey.reduce((most, draw) => Math.max(most, densityOf(draw)), 0), points = [];
-	const keep = draw => { if (rnd() * peak < densityOf(draw)) points.push(pointAt(draw.lch)); };
-	for (const draw of survey)
-		if (points.length < POOL_SIZE)
-			keep(draw);
+	const volumes = survey.map(volumeOf), boosts = survey.map(draw => boostAt(HUE_BOOST_RANGES, draw.lch[2]));
+	const offset = roomOffset(volumes, boosts);
+	const densityAt = (volume, boost) => volume * Math.max(0, boost + offset);
+	const densities = volumes.map((volume, k) => densityAt(volume, boosts[k]));
+	const densityOf = draw => densityAt(volumeOf(draw), boostAt(HUE_BOOST_RANGES, draw.lch[2]));
+	const peak = densities.reduce((most, density) => Math.max(most, density), 0), points = [];
+	const keep = (draw, density) => { if (rnd() * peak < density) points.push(pointAt(draw.lch)); };
+	for (let k = 0; k < survey.length && points.length < POOL_SIZE; ++k)
+		keep(survey[k], densities[k]);
 	for (; tries < RAW_TRIES && points.length < POOL_SIZE; ++tries) {
 		const draw = rawDraw(rnd, cfg);
 		if (draw && allowedLch(...draw.lch, cfg))
-			keep(draw);
+			keep(draw, densityOf(draw));
 	}
 	poolCache = { key, pool: { points } };
 	return poolCache.pool;
