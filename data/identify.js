@@ -296,33 +296,37 @@ const RGB_FROM_LMS = [
 	[-1.2684380046, 2.6097574011, -0.3413193965],
 	[-0.0041960863, -0.7034186147, 1.7076147010]];
 
-// Linear sRGB from OKLab, lightness and chroma normalized to 0..1. Components outside [0, 1] mean
-// the color is outside the gamut.
-function oklabToLinear(L, a, b) {
-	const l = (L + LMS_A[0] * a + LMS_B[0] * b) ** 3;
-	const m = (L + LMS_A[1] * a + LMS_B[1] * b) ** 3;
-	const s = (L + LMS_A[2] * a + LMS_B[2] * b) ** 3;
-	return [
-		RGB_FROM_LMS[0][0] * l + RGB_FROM_LMS[0][1] * m + RGB_FROM_LMS[0][2] * s,
-		RGB_FROM_LMS[1][0] * l + RGB_FROM_LMS[1][1] * m + RGB_FROM_LMS[1][2] * s,
-		RGB_FROM_LMS[2][0] * l + RGB_FROM_LMS[2][1] * m + RGB_FROM_LMS[2][2] * s];
+const inUnit = v => v >= -1e-6 && v <= 1 + 1e-6;
+const cube = x => x * x * x;
+// Whether sRGB shows OKLab with lightness and chroma normalized to 0..1: every linear channel in [0, 1].
+function showsLab(L, a, b) {
+	const l = cube(L + LMS_A[0] * a + LMS_B[0] * b);
+	const m = cube(L + LMS_A[1] * a + LMS_B[1] * b);
+	const s = cube(L + LMS_A[2] * a + LMS_B[2] * b);
+	return inUnit(RGB_FROM_LMS[0][0] * l + RGB_FROM_LMS[0][1] * m + RGB_FROM_LMS[0][2] * s)
+		&& inUnit(RGB_FROM_LMS[1][0] * l + RGB_FROM_LMS[1][1] * m + RGB_FROM_LMS[1][2] * s)
+		&& inUnit(RGB_FROM_LMS[2][0] * l + RGB_FROM_LMS[2][1] * m + RGB_FROM_LMS[2][2] * s);
 }
-
-const inGamut = rgb => rgb.every(v => v >= -1e-6 && v <= 1 + 1e-6);
 
 // Above the most chroma sRGB shows anywhere (32.25, at magenta).
 const CHROMA_MAX = 32.5;
 
-// The real roots of a x^3 + b x^2 + c x + d, degenerating to the quadratic and the line.
-function cubicRoots(a, b, c, d) {
+// The real roots of a x^3 + b x^2 + c x + d, degenerating to the quadratic and the line: written to `roots`, their count returned.
+function cubicRoots(roots, a, b, c, d) {
 	if (Math.abs(a) < 1e-12) {
-		if (Math.abs(b) < 1e-12)
-			return Math.abs(c) < 1e-12 ? [] : [-d / c];
+		if (Math.abs(b) < 1e-12) {
+			if (Math.abs(c) < 1e-12)
+				return 0;
+			roots[0] = -d / c;
+			return 1;
+		}
 		const discriminant = c * c - 4 * b * d;
 		if (discriminant < 0)
-			return [];
+			return 0;
 		const root = Math.sqrt(discriminant);
-		return [(-c + root) / (2 * b), (-c - root) / (2 * b)];
+		roots[0] = (-c + root) / (2 * b);
+		roots[1] = (-c - root) / (2 * b);
+		return 2;
 	}
 
 	// Depressed to t^3 + p t + q, where x is t less a third of the quadratic coefficient.
@@ -330,49 +334,60 @@ function cubicRoots(a, b, c, d) {
 	const shift = quad / 3;
 	const p = lin - quad * quad / 3;
 	const q = 2 * quad * quad * quad / 27 - quad * lin / 3 + base;
-	if (Math.abs(p) < 1e-14)
-		return [Math.cbrt(-q) - shift];
+	if (Math.abs(p) < 1e-14) {
+		roots[0] = Math.cbrt(-q) - shift;
+		return 1;
+	}
 
 	const delta = q * q / 4 + p * p * p / 27;
 	if (delta > 0) {
 		const root = Math.sqrt(delta);
-		return [Math.cbrt(-q / 2 + root) + Math.cbrt(-q / 2 - root) - shift];
+		roots[0] = Math.cbrt(-q / 2 + root) + Math.cbrt(-q / 2 - root) - shift;
+		return 1;
 	}
 	// Three real roots: p is negative here, so the trigonometric form applies.
 	const scale = 2 * Math.sqrt(-p / 3);
 	const angle = Math.acos(Math.min(1, Math.max(-1, 3 * q / (p * scale)))) / 3;
-	return [0, 1, 2].map(k => scale * Math.cos(angle - 2 * Math.PI * k / 3) - shift);
+	for (let k = 0; k < 3; ++k)
+		roots[k] = scale * Math.cos(angle - 2 * Math.PI * k / 3) - shift;
+	return 3;
 }
 
 // The most chroma sRGB shows at this lightness and hue; 0 at black and white.
 // Along the ray each LMS term is linear in chroma and then cubed, so every linear channel is a
 // cubic in it and the sRGB box is six cubic inequalities. Their roots cut the ray into spans that
 // are wholly in or out, and the outermost span that is in gives the answer.
+// Works in preallocated scratch: it runs in hot loops.
+const gamutSlope = new Float64Array(3), gamutRoots = new Float64Array(3), gamutBreaks = new Float64Array(2 + 6 * 3);
 function gamutChroma(L, h) {
 	const turn = h * Math.PI / 180, toA = Math.cos(turn), toB = Math.sin(turn);
 	const light = L / 100, limit = CHROMA_MAX / 100;
 	// The LMS terms as light + slope * chroma.
-	const slope = LMS_A.map((a, n) => a * toA + LMS_B[n] * toB);
-	const breaks = [0, limit];
+	for (let n = 0; n < 3; ++n)
+		gamutSlope[n] = LMS_A[n] * toA + LMS_B[n] * toB;
+	gamutBreaks[0] = 0;
+	gamutBreaks[1] = limit;
+	let count = 2;
 	for (const mix of RGB_FROM_LMS) {
 		let c3 = 0, c2 = 0, c1 = 0, c0 = 0;
 		for (let n = 0; n < 3; ++n) {
-			const w = mix[n], k = slope[n];
+			const w = mix[n], k = gamutSlope[n];
 			c3 += w * k * k * k;
 			c2 += w * 3 * light * k * k;
 			c1 += w * 3 * light * light * k;
 			c0 += w * light * light * light;
 		}
-		for (const target of [0, 1])
-			for (const root of cubicRoots(c3, c2, c1, c0 - target))
-				if (root > 0 && root < limit)
-					breaks.push(root);
+		for (let target = 0; target <= 1; ++target)
+			for (let n = 0, found = cubicRoots(gamutRoots, c3, c2, c1, c0 - target); n < found; ++n)
+				if (gamutRoots[n] > 0 && gamutRoots[n] < limit)
+					gamutBreaks[count++] = gamutRoots[n];
 	}
 
-	breaks.sort((p, q) => p - q);
-	for (let n = breaks.length - 1; n > 0; --n) {
+	const breaks = gamutBreaks.subarray(0, count).sort();
+	// The top span, up to CHROMA_MAX, lies outside the gamut at every lightness and hue
+	for (let n = count - 2; n > 0; --n) {
 		const mid = (breaks[n - 1] + breaks[n]) / 2;
-		if (inGamut(oklabToLinear(light, mid * toA, mid * toB)))
+		if (showsLab(light, mid * toA, mid * toB))
 			return breaks[n] * 100;
 	}
 	return 0;
