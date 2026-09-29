@@ -1345,8 +1345,10 @@ function roomOffset(volumes, boosts) {
 // A generator point: the warped position and the color's lch.
 const pointAt = lch => ({ ...warpedPoint(positionOf(lch)), lch });
 
-const poolKey = cfg => [cfg.hMin, cfg.hMax, cfg.lMin, cfg.lMax, cfg.lAbsolute ? "abs" : "rel", cfg.cMin, cfg.cMax, cfg.sMin, cfg.vividness, cfg.preference,
-	cfg.included.map(Number).join(""), (cfg.avoid ?? []).map(color => color.hex).join(), cfg.seed].join("|");
+// The box's geometry: everything the pool and the box's views (the charts' fields, the 3D region) are drawn from.
+const boxKey = cfg => [cfg.hMin, cfg.hMax, cfg.lMin, cfg.lMax, cfg.lAbsolute ? "abs" : "rel", cfg.cMin, cfg.cMax, cfg.sMin,
+	(cfg.avoid ?? []).map(color => color.hex).join()].join("|");
+const poolKey = cfg => [boxKey(cfg), cfg.vividness, cfg.preference, cfg.included.map(Number).join(""), cfg.seed].join("|");
 let poolCache = { key: null, pool: null };
 // A palette's random streams, SEED_STREAM apart: the pool's at seed - SEED_STREAM, attempt n's at seed + n * SEED_STREAM,
 // then the rerolls'.
@@ -1853,11 +1855,22 @@ function sizedCanvas(id) {
 	return canvas;
 }
 
+// A canvas's drawing of the box, recomputed when the box or a chart's size changes: a new palette over the same box reuses it.
+// The palette chart's size is in the key: the range plane reads its gamut table.
+const boxDrawings = new Map();
+function cachedField(canvas, cfg, compute) {
+	const main = $("hl-canvas"), key = [boxKey(cfg), canvas.width, canvas.height, main.clientWidth, main.clientHeight].join("|");
+	if (boxDrawings.get(canvas)?.key !== key)
+		boxDrawings.set(canvas, { key, value: compute() });
+	return boxDrawings.get(canvas).value;
+}
+
 function drawHCPlane(cfg, colors) {
 	const canvas = sizedCanvas("hc-canvas");
 	if (canvas.width === 0)
 		return;
-	hcDraw = { canvas, colors, image: hcField(canvas.width, canvas.height, cfg), faces: faceCurves(canvas.width, canvas.height, cfg),
+	const { image, faces } = cachedField(canvas, cfg, () => ({ image: hcField(canvas.width, canvas.height, cfg), faces: faceCurves(canvas.width, canvas.height, cfg) }));
+	hcDraw = { canvas, colors, image, faces,
 		place: (color, c) => ({ x: ridgeWarp(color.lch[2]) / 360 * c.width, y: (1 - color.lch[1] / CHROMA_MAX) * (c.height - 1) }) };
 	paintChart(hcDraw);
 }
@@ -1898,7 +1911,7 @@ function drawHLPlane(cfg, colors) {
 	const canvas = sizedCanvas("hl-canvas");
 	if (canvas.width === 0)
 		return;
-	hlDraw = { canvas, colors, image: hlField(canvas, cfg),
+	hlDraw = { canvas, colors, image: cachedField(canvas, cfg, () => hlField(canvas, cfg)),
 		place: (color, c) => ({ x: ridgeWarp(color.lch[2]) / 360 * c.width, y: (1 - color.lch[0] / 100) * (c.height - 1) }) };
 	paintChart(hlDraw);
 }
@@ -1907,7 +1920,7 @@ function drawRangePlane(cfg) {
 	const canvas = sizedCanvas("range-canvas");
 	if (canvas.width === 0)
 		return;
-	canvas.getContext("2d").putImageData(hlField(canvas, cfg), 0, 0);
+	canvas.getContext("2d").putImageData(cachedField(canvas, cfg, () => hlField(canvas, cfg)), 0, 0);
 }
 
 function refreshBars(cfg) {
@@ -2916,11 +2929,11 @@ function pairMesh(pair) {
 // scene mapping. The metric grows monotonically along a ray, so each crossing brackets and bisects.
 function haloGeometry(color, radius) {
 	const geometry = new THREE.SphereGeometry(1, 24, 16);
-	const p = color.lab.map(v => v * 100), centre = toScene(color.lab);
+	const p = color.lab.map(v => v * 100), centre = toScene(color.lab), warpedCentre = warpedPoint(p);
 	const target = radius * radius, vertices = geometry.attributes.position;
 	for (let i = 0; i < vertices.count; ++i) {
 		const dir = [vertices.getY(i), vertices.getX(i), vertices.getZ(i)]; // sphere axes as L, a, b
-		const reach = t => apart2(p, p.map((x, k) => x + t * dir[k]));
+		const reach = t => apartWarped2(warpedCentre, warpedPoint(p.map((x, k) => x + t * dir[k])));
 		let below = 0, above = radius;
 		while (reach(above) < target)
 			above *= 2;
@@ -2948,9 +2961,14 @@ function zoneMeshes(colors, radius) {
 	});
 }
 
+// The region depends on the box and the scene mapping alone: a new palette over the same box keeps it.
+let regionBuilt = { key: null, scene: null };
 window.update3D = (cfg, colors, pair) => {
-	clearGroup(regionGroup);
-	regionGroup.add(...regionMeshes(cfg));
+	if (regionBuilt.key !== boxKey(cfg) || regionBuilt.scene !== toScene) {
+		regionBuilt = { key: boxKey(cfg), scene: toScene };
+		clearGroup(regionGroup);
+		regionGroup.add(...regionMeshes(cfg));
+	}
 	clearGroup(markerGroup);
 	if (colors.length)
 		markerGroup.add(...markerMeshes(colors));
