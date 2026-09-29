@@ -83,7 +83,7 @@ change can be compared against `git show <rev>:index.html` saved to a file. `ide
 range boxes as OKLCh ranges, so it needs a page whose controls are OKLCh. `build_cells.py` needs numpy.
 
 `tune-hue-boost.html` sets `HUE_BOOST_RANGES` by eye: hue ranges with a boost and ramp each, dragged on a hue strip or
-typed, strips of each hue's room (the metric's length along the most vivid colors times the boost), the counts per
+typed on a strip spaced as the page's hue bar, strips of each hue's room (the metric's length along the most vivid colors times the boost), the counts per
 sector and per range, floor and closest pair and the palettes over 30 seeds, the page's ranges beside the tuned ones, and
 the ranges to paste. It runs `index.html`'s own generator fetched from the server (`.claude/launch.json`, port 8734), so
 it does not work from disk. `hue-boost.js` holds what it shares with `fit_hue_boost.js`: the author's hue sectors, the

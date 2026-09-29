@@ -49,10 +49,10 @@ pages only: this page runs index.html's own generator, fetched from the server (
 <p class="hint">OKLCh hue in degrees. Drag across the strip to add a range, then set it exactly below. A range runs from its
 start up to its end, past 360 when the end is lower; where ranges overlap their boosts multiply; outside every range the
 boost is 1; a range switched off is left out of your ranges. A range holds its boost up to its edges; its ramp blends the
-boost back to 1 across that many degrees outside them, 0 making a hard step. The strip shows each hue at its most vivid;
-the curve above it is the boost, on a log scale from 1/4 to 4. The two strips
-below are the same colors, each hue as wide as its room: the metric's length along the most vivid colors times the boost,
-all boosts offset alike so the total stays.</p>
+boost back to 1 across that many degrees outside them, 0 making a hard step. The strip shows the most vivid colors, each as
+wide as the metric's length along them, as the page's hue bar does; the curve above it is the boost, on a log scale from
+1/4 to 4. The two strips below are the same colors, each as wide as its room: that length times the boost, all boosts
+offset alike so the total stays.</p>
 <canvas id="strip" width="720" height="96"></canvas>
 <div id="readout"></div>
 <div class="room"><canvas id="room-page" width="720" height="22"></canvas><span class="hint">the page's</span></div>
@@ -95,13 +95,12 @@ const STATS_SEEDS = 30, FIRST_SHOWN = 10;
 const UI_SECTION = "// ---------- ui ----------";
 // The strip: a band of hue colors under the boost curve, whose log2 spans +-CURVE_RANGE
 const STRIP_BAND = 34, CURVE_RANGE = 2;
-const PAGE_EXPORTS = "; ({ generate, CELL_NAMES, HUE_BOOST_RANGES, boostAt, rangeWeight, RIDGE_WARP, roomOffset, oklabToRgb, labOfLch, gamutChroma, searchCuspLightness })";
-// The strips' colors are cached per tenth of a degree
-const HUE_STEPS = 3600;
+const PAGE_EXPORTS = "; ({ generate, CELL_NAMES, HUE_BOOST_RANGES, boostAt, rangeWeight, roomOffset, RIDGE, ridgeWarp, ridgeUnwarp, ridgeHex })";
 const $ = id => document.getElementById(id);
 
-let source = null, plainGenerator = null, hueColors = null;
-const colorAt = h => hueColors[Math.round(h * HUE_STEPS / 360) % HUE_STEPS];
+let source = null, plainGenerator = null;
+// A hue's most vivid sRGB color, where the ridge crosses it
+const hueColor = h => plainGenerator.ridgeHex(plainGenerator.ridgeWarp(h));
 // A new range's ramp, degrees outside each edge
 const DEFAULT_RAMP = 4;
 const newRange = (from, to) => ({ from, to, boost: 1.25, on: true, ramp: DEFAULT_RAMP });
@@ -121,12 +120,6 @@ const activeRanges = () => ranges.filter(range => range.on).map(({ from, to, boo
 function generatorWith(boostRanges) {
 	const patched = source.replace(/const HUE_BOOST_RANGES = \[[\s\S]*?\];/, "const HUE_BOOST_RANGES = " + JSON.stringify(boostRanges) + ";");
 	return (0, eval)(patched + PAGE_EXPORTS);
-}
-
-// A hue's most vivid sRGB color: its cusp
-function cuspColor(h) {
-	const page = plainGenerator, L = page.searchCuspLightness(h);
-	return "rgb(" + page.oklabToRgb(...page.labOfLch(L, page.gamutChroma(L, h), h)).map(v => Math.round(255 * Math.min(1, Math.max(0, v)))).join(",") + ")";
 }
 
 // The chosen box as a generator config: a pasted state string, or a preset
@@ -222,7 +215,7 @@ function buildRanges() {
 		const row = document.createElement("div");
 		row.className = "range";
 		const field = (key, min, max, step) => "<input type='number' data-key='" + key + "' min='" + min + "' max='" + max + "' step='" + step + "' value='" + range[key] + "'>";
-		const hueField = key => field(key, 0, 360, 0.1) + "° <span class='hue-swatch' data-key='" + key + "' style='background:" + cuspColor(range[key]) + "'></span>";
+		const hueField = key => field(key, 0, 360, 0.1) + "° <span class='hue-swatch' data-key='" + key + "' style='background:" + hueColor(range[key]) + "'></span>";
 		row.innerHTML = "<label><input type='checkbox'" + (range.on ? " checked" : "") + "> on</label> from " + hueField("from") + "to " + hueField("to")
 			+ "boost " + field("boost", 0.1, 5, 0.05) + " ramp " + field("ramp", 0, 30, 0.5) + "° <button>Remove</button>";
 		row.classList.toggle("off", !range.on);
@@ -234,7 +227,7 @@ function buildRanges() {
 				return;
 			range[key] = isHue ? Math.round((value - 360 * Math.floor(value / 360)) * 10) / 10 : value;
 			if (isHue)
-				row.querySelector(".hue-swatch[data-key=" + key + "]").style.background = cuspColor(range[key]);
+				row.querySelector(".hue-swatch[data-key=" + key + "]").style.background = hueColor(range[key]);
 			changed();
 		}));
 		row.querySelector("button").addEventListener("click", () => { ranges.splice(k, 1); buildRanges(); changed(); });
@@ -242,13 +235,15 @@ function buildRanges() {
 	});
 }
 
-// The strip: the colors of each half degree of hue in the lower band, the boost's curve above, a range being dragged shaded
+// The strip, in the page's hue coordinate: the ridge's colors in the lower band, the boost's curve above, a range being
+// dragged shaded
 let dragFrom = null, dragTo = null;
 function drawStrip() {
 	const canvas = $("strip"), ctx = canvas.getContext("2d"), width = canvas.width, curveHeight = canvas.height - STRIP_BAND, active = activeRanges();
+	const page = plainGenerator;
 	ctx.clearRect(0, 0, width, canvas.height);
 	for (let x = 0; x < width; ++x) {
-		ctx.fillStyle = colorAt(x * 360 / width);
+		ctx.fillStyle = page.ridgeHex(x * 360 / width);
 		ctx.fillRect(x, curveHeight, 1, STRIP_BAND);
 	}
 	const yOf = boost => curveHeight / 2 - Math.max(-CURVE_RANGE, Math.min(CURVE_RANGE, Math.log2(boost))) / CURVE_RANGE * (curveHeight / 2 - 2);
@@ -257,37 +252,38 @@ function drawStrip() {
 	ctx.strokeStyle = "#eee";
 	ctx.beginPath();
 	for (let x = 0; x < width; ++x) {
-		const boost = plainGenerator.boostAt(active, x * 360 / width);
+		const boost = page.boostAt(active, page.ridgeUnwarp(x * 360 / width));
 		x ? ctx.lineTo(x, yOf(boost)) : ctx.moveTo(x, yOf(boost));
 	}
 	ctx.stroke();
 	if (dragFrom !== null && dragTo !== null) {
 		ctx.fillStyle = "rgba(255, 255, 255, 0.18)";
-		const [a, b] = [dragFrom, dragTo].map(h => h * width / 360);
+		const [a, b] = [dragFrom, dragTo].map(h => page.ridgeWarp(h) * width / 360);
 		ctx.fillRect(Math.min(a, b), 0, Math.abs(b - a), canvas.height);
 	}
 }
 
-// A strip of hue colors, each HUE_STEPS step as wide as the ridge's metric length over it times the ranges' boost, offset
-// as the page offsets it over a box
+// The ridge's colors, each step of the ridge as wide as its metric length times the ranges' boost, offset as the page
+// offsets it over a box
 function drawRoom(canvas, boostRanges) {
-	const ctx = canvas.getContext("2d"), width = canvas.width, ridge = plainGenerator.RIDGE_WARP, ends = [0];
-	const hues = Array.from({ length: HUE_STEPS }, (_, k) => (k + 0.5) * 360 / HUE_STEPS);
-	const lengths = hues.map(h => ridge[Math.floor(h) + 1] - ridge[Math.floor(h)]), boosts = hues.map(h => plainGenerator.boostAt(boostRanges, h));
-	const offset = plainGenerator.roomOffset(lengths, boosts);
-	for (let k = 0; k < HUE_STEPS; ++k)
+	const ctx = canvas.getContext("2d"), width = canvas.width, page = plainGenerator, { hue, length } = page.RIDGE, steps = hue.length - 1, ends = [0];
+	const lengths = Array.from({ length: steps }, (_, k) => length[k + 1] - length[k]);
+	const boosts = lengths.map((_, k) => page.boostAt(boostRanges, (hue[k] + hue[k + 1]) / 2));
+	const offset = page.roomOffset(lengths, boosts);
+	for (let k = 0; k < steps; ++k)
 		ends.push(ends[k] + lengths[k] * Math.max(0, boosts[k] + offset));
 	for (let x = 0, k = 0; x < width; ++x) {
-		const at = (x + 0.5) * ends[HUE_STEPS] / width;
-		while (ends[k + 1] < at)
+		const at = (x + 0.5) * ends[steps] / width;
+		while (k < steps - 1 && ends[k + 1] < at)
 			++k;
-		ctx.fillStyle = colorAt((k + (at - ends[k]) / (ends[k + 1] - ends[k])) * 360 / HUE_STEPS);
+		const along = length[k] + lengths[k] * Math.min(1, (at - ends[k]) / Math.max(ends[k + 1] - ends[k], 1e-12));
+		ctx.fillStyle = page.ridgeHex(along * 360 / length[steps]);
 		ctx.fillRect(x, 0, 1, canvas.height);
 	}
 }
 
 // A hue under the pointer, to the half degree
-const hueAt = event => Math.round(Math.min(359.5, Math.max(0, event.offsetX * 360 / $("strip").clientWidth)) * 2) / 2;
+const hueAt = event => Math.round(Math.min(359.5, Math.max(0, plainGenerator.ridgeUnwarp(event.offsetX * 360 / $("strip").clientWidth))) * 2) / 2;
 function watchStrip() {
 	const strip = $("strip");
 	strip.addEventListener("mousedown", event => { dragFrom = dragTo = hueAt(event); drawStrip(); });
@@ -328,7 +324,6 @@ async function start() {
 		return;
 	}
 	plainGenerator = (0, eval)(source + PAGE_EXPORTS);
-	hueColors = Array.from({ length: HUE_STEPS }, (_, k) => cuspColor(k * 360 / HUE_STEPS));
 	drawRoom($("room-page"), plainGenerator.HUE_BOOST_RANGES);
 	BOXES.forEach((box, k) => $("box").add(new Option(box.name, k)));
 	for (const id of ["box", "state"])

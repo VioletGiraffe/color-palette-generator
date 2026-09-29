@@ -28,7 +28,7 @@ const fmt = (x, w = 7, d = 2) => (Number.isFinite(x) ? x.toFixed(d) : "-").padSt
 // The running integral of a per-degree density, 0 to 360 at the whole degrees.
 const warpOf = density => { const w = [0]; for (let h = 0; h < 360; ++h) w.push(w[h] + density[h]); return w.map(v => v * 360 / w[360]); };
 const HUE_WARP = warpOf(HUE_DENSITY);
-// The metric's length along the sRGB cube's saturated edges per degree of hue, as index.html's RIDGE_WARP.
+// The metric's length along the sRGB cube's saturated edges per whole degree of hue: index.html's RIDGE at degree resolution.
 const RIDGE_WARP = (() => {
 	const codes = [];
 	for (let g = 0; g < 255; ++g) codes.push([255, g, 0]);

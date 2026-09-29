@@ -38,7 +38,7 @@ Five conventions coexist. Which one a number is in is the first thing to check.
 The cusp of a hue is the lightness at which sRGB reaches the hue's highest chroma (`cuspLightness`,
 `cuspChroma`, from a smoothed table). The hue circle is warped twice over: the metric's warps, `HUE_LEVELS`, the running integrals of a hue
 density per lightness level (`HUE_DENSITY_AT_30`, `_58`, `_85`), mixed by lightness (`hueLevelAt`, `warpedHue`);
-`RIDGE_WARP`, the metric's length along the sRGB cube's saturated edges, is the hue control's only. `HUE_DENSITY`,
+`RIDGE`, the metric's length along the sRGB cube's saturated edges code by code, is the hue control's only: the hue bar paints the edges' own colors by it. `HUE_DENSITY`,
 the one table over every lightness, is not in the metric and not in use in the page; `identify.js` still exports it for
 the archived generator and the scripts.
 
@@ -126,7 +126,7 @@ color alone would seat a near-twin: in a full box the room a color leaves behind
 
 Where the metric enters, so a change to it moves all of these: `metricVolume` (the density, so the pool and the
 throw), the spacing (the throw's floor and a proposal's acceptance), `identification`, the shadows' hue
-reach, `RIDGE_WARP` (the hue control's coordinate), and the 3D module's metric view. The preference model
+reach, `RIDGE` (the hue control's coordinate), and the 3D module's metric view. The preference model
 (`PREFERENCE`, from the palette member rounds) enters only as the floor.
 
 Not in the generator, and why (measured in `evolution.md`): descent toward the best spacing puts every seed on the

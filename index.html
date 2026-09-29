@@ -1195,11 +1195,14 @@ const boostAt = (ranges, h) => Math.exp(ranges.reduce((sum, { from, to, boost, r
 // has no hue term, so lightness scales by its weight at one hue; the shade discount shears and keeps the volume.
 const metricVolume = (L, C, h) => weightAt(HUE_WEIGHT_L, h) * SAME_HUE_LIGHTNESS * weightAt(HUE_WEIGHT_C, h) * mixedAt(HUE_LEVEL_DENSITIES.map(([, density]) => density[Math.floor(h) % 360]), hueLevelAt(L)) * hueScaleAt(C) * lightnessGain(L) ** 3;
 
-// The hue control's coordinate: the metric's length along the ridge, the sRGB cube's six saturated
-// edges walked code by code, per whole degree of OKLab hue, as a running integral normalized to 360.
-// Unlike HUE_WARP it carries the lightness and chroma the ridge moves through at a vertex: blue's
-// vertex is 5 deltaE inside a fifth of a degree, one pixel of a bar spaced by degrees.
-const RIDGE_WARP = (() => {
+// The hue control's coordinate: the metric's length along the ridge, the sRGB cube's six saturated edges walked code by
+// code, normalized to 360. Equal width is equal metric distance along the ridge down to a code's step, 0.19 deltaE at
+// most, blue's vertex included: 5 deltaE within a fifth of a degree of hue.
+// Unlike HUE_WARP it carries the lightness and chroma the ridge moves through at a vertex.
+// RIDGE is the walk from hue 0 to 360, per entry the code's rgb (0 to 255), its OKLab hue kept rising (the edge turns back
+// by thousandths of a degree at blue) and its length along the walk. Both ends are the point of hue 0, placed by hue within
+// the step from the last code to the first.
+const RIDGE = (() => {
 	const codes = [];
 	for (let g = 0; g < 255; ++g) codes.push([255, g, 0]);
 	for (let r = 255; r > 0; --r) codes.push([r, 255, 0]);
@@ -1207,34 +1210,54 @@ const RIDGE_WARP = (() => {
 	for (let g = 255; g > 0; --g) codes.push([0, g, 255]);
 	for (let r = 0; r < 255; ++r) codes.push([r, 0, 255]);
 	for (let b = 255; b > 0; --b) codes.push([255, 0, b]);
-	const labs = codes.map(rgb => rgbToOklab(rgb.map(v => v / 255)));
-	const points = labs.map(lab => lab.map(v => v * 100));
-	const perDegree = new Array(360).fill(0);
-	labs.forEach((lab, i) => {
-		perDegree[Math.floor(lchOf(lab)[2])] += Math.sqrt(apart2(points[i], points[(i + 1) % points.length]));
-	});
-	const warp = [0];
-	for (let h = 0; h < 360; ++h)
-		warp.push(warp[h] + perDegree[h]);
-	return warp.map(v => v * 360 / warp[360]);
+	const n = codes.length, labs = codes.map(rgb => rgbToOklab(rgb.map(v => v / 255)));
+	const points = labs.map(lab => lab.map(v => v * 100)), degrees = labs.map(lab => lchOf(lab)[2]);
+	const step = (i, j) => Math.sqrt(apart2(points[i], points[j]));
+	// The walk from the first code past hue 0 to the last one before it
+	const first = degrees.findIndex((h, i) => h < degrees[(i + n - 1) % n] - 180), last = (first + n - 1) % n;
+	const rgb = [], hue = [], length = [];
+	for (let m = 0; m < n; ++m) {
+		const i = (first + m) % n;
+		rgb.push(codes[i]);
+		hue.push(m ? Math.max(hue[m - 1], degrees[i]) : degrees[i]);
+		length.push(m ? length[m - 1] + step((i + n - 1) % n, i) : 0);
+	}
+	// Hue 0 in the step from the last code to the first, placed by hue
+	const closing = step(last, first), at = (360 - hue[n - 1]) / (hue[0] + 360 - hue[n - 1]);
+	const zero = codes[last].map((v, c) => v + (codes[first][c] - v) * at);
+	const lead = closing * (1 - at);
+	return { rgb: [zero, ...rgb, zero], hue: [0, ...hue, 360], length: [0, ...length.map(s => s + lead), length[n - 1] + closing] };
 })();
 
-// Degrees to the control's coordinate and back, both over 0 to 360.
-function ridgeWarp(h) {
-	const at = Math.min(359, Math.floor(h));
-	return RIDGE_WARP[at] + (RIDGE_WARP[at + 1] - RIDGE_WARP[at]) * (h - at);
-}
-
-function ridgeUnwarp(v) {
-	let lo = 0, hi = 360;
+// The segment of a rising table around x: its first entry and x's share of the way to the next
+function segmentAt(xs, x) {
+	let lo = 0, hi = xs.length - 1;
 	while (hi - lo > 1) {
 		const mid = (lo + hi) >> 1;
-		if (RIDGE_WARP[mid] <= v)
+		if (xs[mid] <= x)
 			lo = mid;
 		else
 			hi = mid;
 	}
-	return lo + (v - RIDGE_WARP[lo]) / (RIDGE_WARP[lo + 1] - RIDGE_WARP[lo]);
+	const span = xs[lo + 1] - xs[lo];
+	return { lo, t: span > 0 ? Math.min(1, Math.max(0, (x - xs[lo]) / span)) : 0 };
+}
+
+// Degrees to the control's coordinate and back, both over 0 to 360.
+function ridgeWarp(h) {
+	const { lo, t } = segmentAt(RIDGE.hue, h), s = RIDGE.length;
+	return (s[lo] + t * (s[lo + 1] - s[lo])) * 360 / s[s.length - 1];
+}
+
+function ridgeUnwarp(v) {
+	const s = RIDGE.length, { lo, t } = segmentAt(s, v / 360 * s[s.length - 1]);
+	return RIDGE.hue[lo] + t * (RIDGE.hue[lo + 1] - RIDGE.hue[lo]);
+}
+
+// The ridge's color at a coordinate of the hue control, as hex.
+function ridgeHex(v) {
+	const s = RIDGE.length, { lo, t } = segmentAt(s, v / 360 * s[s.length - 1]), [a, b] = [RIDGE.rgb[lo], RIDGE.rgb[lo + 1]];
+	return toHex(a.map((x, c) => (x + t * (b[c] - x)) / 255));
 }
 
 // Abramowitz-Stegun 7.1.26, within 1.5e-7.
@@ -1643,12 +1666,6 @@ function readConfig() {
 
 let drawnBarWidth = 0;
 
-// The hue's most vivid sRGB color: the cusp, at the chroma it reaches there.
-function pureHue(h) {
-	const L = searchCuspLightness(h);
-	return colorAt(L, gamutChroma(L, h), h);
-}
-
 function drawHueBar() {
 	const canvas = $("hue-canvas");
 	const w = canvas.clientWidth, h = canvas.clientHeight;
@@ -1660,7 +1677,7 @@ function drawHueBar() {
 
 	const ctx = canvas.getContext("2d");
 	for (let x = 0; x < w; ++x) {
-		ctx.fillStyle = pureHue(ridgeUnwarp(x / w * 360)).hex;
+		ctx.fillStyle = ridgeHex(x / w * 360);
 		ctx.fillRect(x, 0, 1, h);
 	}
 	drawnBarWidth = w;

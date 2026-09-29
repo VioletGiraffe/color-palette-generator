@@ -2195,6 +2195,29 @@ drawn from the palette's seed. 400 seeds a box, 79,800 pairs (`tmp/b-effect.js`)
 - One pool's sampling error is shared by every palette of its box; pools per seed average it out.
 - A palette pays its pool build, about 20 ms; a reroll keeps the seed and reuses the pool.
 
+## The ridge per code
+
+The hue bar, spaced by the metric's length along the cube's edges per whole degree, still stepped at blue: the edge moves
+5 deltaE within a fifth of a degree there, and a coordinate interpolated by degrees gave that one pixel (`#0038ff` to
+`#0101ff`, a step of 55 levels). The coordinate now interpolates the edge walk code by code (steps of 0.115 deltaE at the
+median, 0.188 at most), and the bar paints the edges' own colors at their length: the largest step between neighbouring
+pixels is 19 to 23 levels, in green. At whole degrees the coordinate moves by 0.22 of 360 at most.
+
+Straight-line distance was tried against path length (`tmp/ridge-bars.js`): positions fitted by least squares to the
+straight-line metric distances of every pair within W along the ridge. Share of the bar at hue 262-267:
+
+| spacing | share |
+|---|---|
+| path per degree (before) | 5.82%, with the step inside |
+| path per code | 5.88% |
+| straight, W 1, 2, 3, 6, 12, 24 | 5.76, 5.67, 5.54, 5.27, 4.94, 4.05% |
+
+- Only the vertices differ: a chord across a corner stays a fixed share of the path at every scale, 50% at blue, 67% at
+  green, 88 to 93% at the others; the gap itself shrinks with the scale, 0.09 deltaE at three codes either side of blue.
+- Path length ships: the local limit of the straight distance, without a parameter, built from the metric at load.
+- The edge's hue turns back by at most 0.0055 degrees between `#0000ff` and `#0028ff`; kept rising, that stretch, 1.9 deltaE
+  of the ridge, shares one hue, so a color with that hue is placed at one end of it, up to 4 of 360 off.
+
 ## Files
 
 - `index.html`: the generator rebuilt from the end state on the preference metric by lightness, with the
