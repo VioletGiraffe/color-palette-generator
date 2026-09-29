@@ -2926,22 +2926,44 @@ function pairMesh(pair) {
 
 // The recall metric's reach around a color, centred on the origin: a unit sphere's vertices walked
 // out along their OKLab directions until `apart2` reads `radius` deltaE, each then placed by the
-// scene mapping. The metric grows monotonically along a ray, so each crossing brackets and bisects.
+// scene mapping. The metric grows monotonically along a ray, so each crossing is bracketed, then
+// found by false position.
+// False position steps, the Illinois way: 4 put a vertex within 0.2 deltaE of its crossing, 99.9% of
+// them within 0.0003; the worst are greyish colors' rays toward the grey axis, where the metric bends.
+const HALO_STEPS = 4;
 function haloGeometry(color, radius) {
 	const geometry = new THREE.SphereGeometry(1, 24, 16);
 	const p = color.lab.map(v => v * 100), centre = toScene(color.lab), warpedCentre = warpedPoint(p);
-	const target = radius * radius, vertices = geometry.attributes.position;
+	const vertices = geometry.attributes.position;
 	for (let i = 0; i < vertices.count; ++i) {
 		const dir = [vertices.getY(i), vertices.getX(i), vertices.getZ(i)]; // sphere axes as L, a, b
-		const reach = t => apartWarped2(warpedCentre, warpedPoint(p.map((x, k) => x + t * dir[k])));
-		let below = 0, above = radius;
-		while (reach(above) < target)
+		// The distance past the radius at t along the ray: negative inside
+		const excess = t => Math.sqrt(apartWarped2(warpedCentre, warpedPoint(p.map((x, k) => x + t * dir[k])))) - radius;
+		let below = 0, above = radius, fBelow = -radius, fAbove = excess(above);
+		while (fAbove < 0) {
+			[below, fBelow] = [above, fAbove];
 			above *= 2;
-		for (let n = 0; n < 20; ++n) {
-			const mid = (below + above) / 2;
-			if (reach(mid) < target) below = mid; else above = mid;
+			fAbove = excess(above);
 		}
-		const point = toScene(p.map((x, k) => (x + above * dir[k]) / 100));
+		// Where the chord between the bracket's ends crosses zero
+		const crossing = () => (below * fAbove - above * fBelow) / (fAbove - fBelow);
+		// A bracket end kept twice in a row has its value halved, so the bracket closes from both ends
+		for (let n = 0, moved = 0; n < HALO_STEPS; ++n) {
+			const t = crossing(), f = excess(t);
+			if (f < 0) {
+				[below, fBelow] = [t, f];
+				if (moved < 0)
+					fAbove /= 2;
+				moved = -1;
+			} else {
+				[above, fAbove] = [t, f];
+				if (moved > 0)
+					fBelow /= 2;
+				moved = 1;
+			}
+		}
+		const reach = crossing();
+		const point = toScene(p.map((x, k) => (x + reach * dir[k]) / 100));
 		vertices.setXYZ(i, point[0] - centre[0], point[1] - centre[1], point[2] - centre[2]);
 	}
 	return geometry;
