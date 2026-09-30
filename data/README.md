@@ -62,11 +62,9 @@ the archived generator and the scripts.
   rising as the ratio to `LIGHTNESS_EXPONENT` (0.174) toward black (floored at 20) and toward white.
 
 The noise width `SIGMA` (3.5) is fixed; a pair at distance `d` swaps with `swapChance(d, SIGMA)`, half the
-complementary error function of `d / (2 SIGMA)` in standard units, and `limitDistance(SIGMA)` is where that chance
-falls to `ERROR_LIMIT` (0.02): 14.4, by the median of the strict pair rounds' "fine" cuts, 14.3 (21 to 29), the recall
-calibration (`calibrate.html`, `fit.js`) having set the earliest one. The Min distance control, `minApart`, can raise the
-minimum spacing above that: a color with a pair under it is stepped like one over the error limit, and an attempt ends the search only
-with every pair at or above it. Below the limit the error limit already keeps pairs apart, so the control starts at 14. The
+complementary error function of `d / (2 SIGMA)` in standard units, falling to 2% at `FINE_DISTANCE` (14.4), by the median
+of the strict pair rounds' "fine" cuts, 14.3 (21 to 29), the recall calibration (`calibrate.html`, `fit.js`) having set the
+earliest one. `FINE_DISTANCE` is the Min distance control's default and a reroll's exclusion zone. The
 level densities, the weight tables, the shape terms and the gain's exponent are one fit to the pair rounds under the
 preference question (`calibrate-boundaries.html`, `fit_hue_density.js`), the chroma power from the same rounds; the sources
 and numbers are in `scripts.md` and `evolution.md`. `W_L` and `W_C` in `identify.js` are one weight per axis for the
@@ -77,8 +75,7 @@ its own.
 ## The generator
 
 A palette is `count` colors that are, in this order of priority: distinct, every pair at least the minimum spacing apart
-on `apart2` (`minSpacingOf`: the limit distance, where one pair's swap chance is `ERROR_LIMIT`, or the Min distance,
-whichever is larger), or where the box cannot hold that the widest spacing it can; a sample of one stated density over the
+on `apart2` (the Min distance control, `minApart`), or where the box cannot hold that the widest spacing it can; a sample of one stated density over the
 usable part of the box; different for every seed. `identification` reports `worstIdentified`, the worst color's chance of being identified,
 and `closestApart`, the closest pair's distance; pairs of two fixed colors are skipped.
 
@@ -120,7 +117,7 @@ with the widest closest pair; an attempt is a throw and a relaxation:
 
 A reroll (`reroll`, for each slot in the config's `rerolls`, replayed after the attempts on the seeds after theirs): the
 slot's color and its `REROLL_VICINITY` nearest generated colors are thrown again among the rest, from the pool less the
-points within the limit distance of the rejected color, then relaxed; the other colors keep their slots. Removing the
+points within `FINE_DISTANCE` of the rejected color at any spacing, then relaxed; the other colors keep their slots. Removing the
 color alone would pick a near-twin: in a full box the room a color leaves behind is about one spacing wide
 (`evolution.md`). A slot past the count or of a fixed color is skipped.
 

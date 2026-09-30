@@ -272,11 +272,11 @@
 	<div class="group">
 		<div class="range-pair" style="grid-template-columns: auto 1fr; align-items: center; margin-bottom: 0">
 			<label for="count">Colors</label>
-			<label for="min-apart" class="row" style="margin: 0"><span>Min distance</span><span class="value" id="min-apart-value">14.0</span></label>
+			<label for="min-apart" class="row" style="margin: 0"><span>Min distance</span><span class="value" id="min-apart-value">14.4</span></label>
 			<input type="number" id="count" min="1" max="40" step="1" value="8">
-			<input type="range" id="min-apart" min="14" max="40" step="0.5" value="14">
+			<input type="range" id="min-apart" min="3" max="40" step="0.1" value="14.4">
 		</div>
-		<div class="hint">The closest any two colors may come, in ΔE. The memory noise alone keeps every pair at 14.4 where the ranges allow; raise it for palettes that survive a longer gap between seeing a color and naming it.</div>
+		<div class="hint">The closest any two colors may come, in ΔE. At the default 14.4 a lone pair is mixed up in memory 2% of the time; raise it for palettes that survive a longer gap between seeing a color and naming it, lower it to fit more colors at the cost of pairs easier to confuse.</div>
 		<label for="vivid" class="row" style="margin: 10px 0 0"><span>Vividness</span><span class="value" id="vivid-value"></span></label>
 		<input type="range" id="vivid" min="0" max="1" step="0.05" value="0">
 		<div class="hint">How much more often saturated colors are drawn than an even spread of the range gives them. 0 draws evenly.</div>
@@ -412,7 +412,7 @@
 		<label class="row" style="margin:0"><span>In the metric</span><input type="checkbox" id="metric-3d"></label>
 	</div>
 	<div class="plane" id="gamut-3d"></div>
-	<div class="hint">The sRGB gamut in OKLab, lightness up. Solid body: what the selected ranges allow. Cones: fixed colors. Amber line: hardest pair. Halos reach half the distance the generator keeps colors apart, the noise limit or the Min distance, so two meeting mark a pair right at it; they stand tall since lightness counts for less, and grow toward black. In the metric: the same body as the generator measures it, each hue turned to its calibrated angle, chroma and height scaled by the lightness gain and height by the lightness weight too; only distances straight in or out from the grey axis stay at OKLab scale, so a halo still stretches that way. Drag to rotate, double-click to reset.</div>
+	<div class="hint">The sRGB gamut in OKLab, lightness up. Solid body: what the selected ranges allow. Cones: fixed colors. Amber line: hardest pair. Halos reach half the Min distance, the distance the generator keeps colors apart, so two meeting mark a pair right at it; they stand tall since lightness counts for less, and grow toward black. In the metric: the same body as the generator measures it, each hue turned to its calibrated angle, chroma and height scaled by the lightness gain and height by the lightness weight too; only distances straight in or out from the grey axis stay at OKLab scale, so a halo still stretches that way. Drag to rotate, double-click to reset.</div>
 </div>
 
 <div class="panel" id="side">
@@ -977,8 +977,8 @@ const CHROMA_FLOOR = 1;
 // on the whole distance, not on the lightness weight, and on absolute lightness, not the cusp-relative
 // coordinate of the range controls: a round of lightness pairs ranks the two coordinates alike.
 const LIGHTNESS_EXPONENT = 0.174;
-// The lightness at which the gain is one, its minimum: the cusps' own lightness, where the rounds put the
-// limit distance at the line between marginal and fine.
+// The lightness at which the gain is one, its minimum: the cusps' own lightness, where the rounds put
+// FINE_DISTANCE at the line between marginal and fine.
 const LIGHTNESS_REFERENCE = 68;
 // The rounds reach down to 25; the gain is held below this, since black would otherwise read far from everything.
 const LIGHTNESS_FLOOR = 20;
@@ -1270,8 +1270,11 @@ function erfc(x) {
 
 // The chance noise of width `sigma` carries a recall past the midpoint to a color `d` away.
 const swapChance = (d, sigma) => 0.5 * erfc(d / (2 * sigma) / Math.SQRT2);
-// The memory noise width in weighted deltaE: a lone pair's swap chance falls to ERROR_LIMIT at 14.4, by the median of
-// the strict pair rounds' "fine" cuts, 14.3 (21 to 29). Also in data/identify.js, which must match.
+// The strict pair rounds' "fine" line in weighted deltaE, by the median of their cuts, 14.3 (21 to 29): the default
+// minimum spacing and a reroll's exclusion zone.
+const FINE_DISTANCE = 14.4;
+// The memory noise width in weighted deltaE: a lone pair's swap chance falls to 2% at FINE_DISTANCE. Also in
+// data/identify.js, which must match.
 const SIGMA = 3.5;
 
 // The chance a color is wanted for itself: one less the chance of a bad mark in the palette member round, a logistic
@@ -1411,22 +1414,6 @@ function poolFor(cfg) {
 	return poolCache.pool;
 }
 
-// One pair's swap chance at the least spacing every pair keeps where the box allows (limitDistance). A color's chance
-// summed over the others is reported (identification), not enforced.
-const ERROR_LIMIT = 0.02;
-// The weighted deltaE at which one pair's swap chance falls to ERROR_LIMIT.
-function limitDistance(sigma) {
-	let below = 0, above = 20 * sigma;
-	for (let n = 0; n < 40; ++n) {
-		const mid = (below + above) / 2;
-		if (swapChance(mid, sigma) > ERROR_LIMIT)
-			below = mid;
-		else
-			above = mid;
-	}
-	return above;
-}
-
 // The throw: the pool's points in the given order, a point picked when its distance on the metric to every fixed point and
 // every point picked before it is at least `spacing`. Returns the fixed points, then the `count` picked; null when fewer are picked.
 function throwAt(order, fixed, count, spacing) {
@@ -1440,14 +1427,12 @@ function throwAt(order, fixed, count, spacing) {
 	return picked.length - fixed.length === count ? picked : null;
 }
 
-// The palette's minimum spacing: the error limit or cfg.minApart, whichever is larger.
-const minSpacingOf = cfg => Math.max(cfg.limitDistance, cfg.minApart);
-// The throw at the minimum spacing, no wider spacing sought: a random sample of the density with every pair at least that
-// spacing apart, so each order picks its own set. A box that cannot pick `count` so keeps the widest spacing it can, by
-// bisection to THROW_PRECISION. Fewer points than `count` are all picked.
+// The throw at the minimum spacing, cfg.minApart, no wider spacing sought: a random sample of the density with every pair
+// at least that spacing apart, so each order picks its own set. A box that cannot pick `count` so keeps the widest spacing
+// it can, by bisection to THROW_PRECISION. Fewer points than `count` are all picked.
 const THROW_PRECISION = 0.02;
 function spacedThrow(order, fixed, count, cfg) {
-	const wanted = Math.min(count, order.length), spacing = minSpacingOf(cfg), picked = throwAt(order, fixed, wanted, spacing);
+	const wanted = Math.min(count, order.length), spacing = cfg.minApart, picked = throwAt(order, fixed, wanted, spacing);
 	if (picked)
 		return picked;
 	let low = 0, high = spacing, widest = throwAt(order, fixed, wanted, 0);
@@ -1520,7 +1505,7 @@ function relax(rnd, colors, points, cfg) {
 	points = points.slice();
 	// A color's closest pair, squared, with the color at `at`
 	const nearest2 = (i, at = points[i]) => Math.min(...points.map((point, j) => j === i ? Infinity : apartWarped2(at, point)));
-	const spacing2 = minSpacingOf(cfg) ** 2;
+	const spacing2 = cfg.minApart ** 2;
 	let best = colors.slice(), bestApart = identification(colors, cfg, points).closestApart;
 	for (let sweep = 0, step = STEP_START; sweep < SWEEPS_MAX && step >= STEP_MIN; ++sweep) {
 		const crowded = colors.map((color, i) => ({ i, apart2: color.fixed ? Infinity : nearest2(i) }))
@@ -1580,9 +1565,9 @@ function attempt(rnd, cfg, pool) {
 }
 
 // A reroll of the color at `slot` of a result: it and its REROLL_VICINITY nearest generated colors are thrown again
-// among the rest, from the pool less the rejected color's confusion zone, so the replacement is a color one could
-// tell from the rejected one; then relaxed. The rest keep their slots. Removing the color alone would pick a
-// near-twin: in a full box the room a color leaves behind is about one spacing wide.
+// among the rest, from the pool less the points within FINE_DISTANCE of the rejected color, so the replacement is a color
+// one could tell from the rejected one at any spacing; then relaxed. The rest keep their slots. Removing the color alone
+// would pick a near-twin: in a full box the room a color leaves behind is about one spacing wide.
 const REROLL_VICINITY = 2;
 function reroll(result, cfg, slot, rnd, pool) {
 	const colors = result.colors, points = colors.map(color => pointAt(color.lch));
@@ -1590,7 +1575,7 @@ function reroll(result, cfg, slot, rnd, pool) {
 	const nearest = colors.map((color, i) => i).filter(i => i !== slot && !colors[i].fixed)
 		.sort((a, b) => apartWarped2(rejected, points[a]) - apartWarped2(rejected, points[b])).slice(0, REROLL_VICINITY);
 	const removed = [slot, ...nearest], kept = points.filter((point, i) => !removed.includes(i));
-	const order = shuffled(pool.points.filter(point => apartWarped2(point, rejected) >= cfg.limitDistance ** 2), rnd);
+	const order = shuffled(pool.points.filter(point => apartWarped2(point, rejected) >= FINE_DISTANCE ** 2), rnd);
 	const fresh = spacedThrow(order, kept, removed.length, cfg).slice(kept.length);
 	// A pool with fewer points outside the zone than slots picks fewer: the slots left over keep their color.
 	const next = colors.slice(), nextPoints = points.slice();
@@ -1603,18 +1588,17 @@ function reroll(result, cfg, slot, rnd, pool) {
 // after the attempts'. Null when the box holds no usable color. A slot past the count or of a fixed color is skipped:
 // the string it came from was written by hand.
 const ATTEMPTS = 4;
-// The closest a pair may come, in weighted deltaE, for a config without `minApart` (the Min distance control): the
-// control's lowest value, under the error limit's own spacing, so the requirement adds nothing.
-const MIN_APART_DEFAULT = 14;
+// The minimum spacing, in weighted deltaE, for a config without `minApart` (the Min distance control)
+const MIN_APART_DEFAULT = FINE_DISTANCE;
 function generate(cfg) {
-	const settings = { ...cfg, limitDistance: limitDistance(SIGMA), included: cfg.included ?? ALL_INCLUDED, usePreference: cfg.usePreference ?? true,
+	const settings = { ...cfg, included: cfg.included ?? ALL_INCLUDED, usePreference: cfg.usePreference ?? true,
 		vividControl: cfg.vividControl ?? VIVIDNESS_DEFAULT, minApart: cfg.minApart ?? MIN_APART_DEFAULT, sMin: cfg.sMin ?? 0 };
 	settings.avoidCones = avoidConesFor(cfg);
 	const pool = poolFor(settings);
 	if (!pool.points.length)
 		return null;
 	let best = null;
-	for (let n = 0; n < ATTEMPTS && !(best && best.closestApart >= minSpacingOf(settings)); ++n) {
+	for (let n = 0; n < ATTEMPTS && !(best && best.closestApart >= settings.minApart); ++n) {
 		const made = attempt(mulberry32(settings.seed + n * SEED_STREAM), settings, pool);
 		if (!best || made.closestApart > best.closestApart)
 			best = made;
@@ -2986,9 +2970,8 @@ function haloGeometry(color, radius) {
 	return geometry;
 }
 
-// Half the generator's spacing around every color, the limit distance or the Min distance control, whichever is
-// wider, so two zones meet where the pair sits at it. Annotations like the pair line: depth testing off, drawn
-// between the shell and the marker ghosts.
+// Half the generator's spacing around every color, the Min distance control, so two zones meet where the pair sits at it.
+// Annotations like the pair line: depth testing off, drawn between the shell and the marker ghosts.
 function zoneMeshes(colors, radius) {
 	return colors.map(color => {
 		const zone = new THREE.Mesh(haloGeometry(color, radius),
@@ -3016,7 +2999,7 @@ window.update3D = (cfg, colors, pair) => {
 	if (line)
 		pairGroup.add(line);
 	clearGroup(zoneGroup);
-	const radius = Math.max(limitDistance(SIGMA), cfg.minApart) / 2;
+	const radius = cfg.minApart / 2;
 	if (radius > 0 && colors.length)
 		zoneGroup.add(...zoneMeshes(colors, radius));
 };

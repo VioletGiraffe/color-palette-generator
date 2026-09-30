@@ -21,7 +21,7 @@ const BANDS = [0, 1, 2, 3, 4, 6, 8, 12];
 // Spread of a boundary from palette to palette, in weighted deltaE.
 const SOFTNESS = [1, 1.5, 2, 3, 4, 6, 8];
 const LAPSES = [0.005, 0.02, 0.05];
-// The swap chance the generator allows one pair (ERROR_LIMIT in the page). The Distinctness default
+// A lone pair's swap chance at the page's default spacing (FINE_DISTANCE). The Distinctness default
 // puts a lone pair's swap chance at it FINE_MARGIN softness units past the fine threshold: at the
 // threshold itself a pair is still judged marginal half the time.
 const SWAP_LIMIT = 0.02;

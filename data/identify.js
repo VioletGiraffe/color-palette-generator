@@ -27,7 +27,7 @@ const fs = require("fs");
 const path = require("path");
 
 // Memory noise, standard deviation in weighted deltaE, for swatches of CALIBRATED_PX: a lone pair's swap chance falls
-// to the page's error limit at 14.4, by the median of the strict pair rounds' "fine" cuts, 14.3 (21 to 29). The weight tables,
+// to 2% at the page's FINE_DISTANCE, 14.4, by the median of the strict pair rounds' "fine" cuts, 14.3 (21 to 29). The weight tables,
 // the shape terms, LIGHTNESS_EXPONENT and the level densities are one fit to the preference rounds; see HUE_DENSITY and
 // data/scripts.md.
 const SIGMA = 3.5;

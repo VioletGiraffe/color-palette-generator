@@ -2024,6 +2024,9 @@ under it steps like one over the error limit, and an attempt ends the search onl
 13.5 the error limit already holds every pair apart where the ranges allow, so the minimum spacing starts there. The identification
 chances the page reports are at the one calibrated noise at every setting. State strings are v5; v4 strings are not read.
 
+Later the error limit stopped flooring the spacing: the Min distance alone sets it, from 3 to 40, default 14.4. A reroll's
+exclusion zone stays at 14.4 at every spacing. State strings stayed v5: a string's Min distance of 14 now spaces at 14.0, not the 14.4 limit.
+
 ## Shades and lightness at one hue
 
 A generated palette's hue-sorted pairs, graded blind four times each (round 25's named pairs), ran almost opposite to
@@ -2322,8 +2325,12 @@ The throw does not keep the pool's shares. Share of colors over the family's sha
 - No family has room of its own at the spacing: the deepest point of any family, its metric distance to the nearest
   other family, is 11.6 (pink), yellow's 7.0 to 67 and 9.4 to 100 (`tmp/family-depth.js`).
 - Yellow to 67 is 1% of the volume stretched over 72 degrees under the lightness cap and takes 6% of a saturated throw's
-  picks, a mid-size family's. Why a thin region at the box's surface wins is inferred, not measured: fewer points within
-  the spacing of it can be picked first.
+  picks, a mid-size family's.
+- The excess is a layer about one spacing thick along the box's surfaces, where part of a pick's exclusion zone lies
+  outside the box. Throws to saturation at 14.4 down to 3.5 deltaE (`tmp/throw-spacing-ladder.js`, pools of 120000) shrink
+  every family's excess over its metric-volume share in proportion to the spacing, toward none at zero: the throw is
+  uniform in the metric where the box is deep against the spacing. A family mostly within that layer stays high even at
+  3.5: yellow to 67 at 2.4, against cyan and blue at 1.0 from 14.4 on.
 - Red fits inside one color's exclusion zone (deepest point 2.0 to 2.2): at most one a palette, had when a red point comes
   first in the order among the points near it. The throw gives red 1.08 to 1.27 of its volume share, as it gives orange and
   turquoise; the red x8 boost above raises it through the same order.

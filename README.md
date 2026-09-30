@@ -8,7 +8,7 @@ Use live online in your browser: https://violetgiraffe.github.io/color-palette-g
 ## What you can do
 
 - **Choose how many colors** you need, from 1 to 40.
-- **Set how distinct they have to be**: the Min distance slider is the closest any two colors may come, in OKLab ΔE. Its lowest setting is where the author's strictest judging rounds stop calling a pair too close for one palette (see `data/scripts.md`), the spacing the memory noise alone keeps; raise it for palettes that survive a longer gap between seeing a color and naming it.
+- **Set how distinct they have to be**: the Min distance slider is the closest any two colors may come, in OKLab ΔE, from 3 to 40. Its default, 14.4, is where the author's strictest judging rounds stop calling a pair too close for one palette (see `data/scripts.md`); raise it for palettes that survive a longer gap between seeing a color and naming it, lower it to fit more colors into a range at the cost of pairs easier to confuse.
 - **Set how much saturation is preferred**: the Vividness slider is the weight of a color's saturation in where the colors land. At 0 they spread over the range on distinctness alone; higher buys saturation with a little of the worst color's identification. The default suits most ranges; a pastel range gains more from it than a wide one.
 - **See what each color is called**: every swatch carries the name people most often give that color, from the [xkcd color survey](https://blog.xkcd.com/2010/05/03/color-survey-results/). A tilde marks a color people never settled a name for - as usable as any other, just harder to call something. The names panel shows every name's territory; switching a name off keeps the generated colors out of it.
 - **Restrict the color space**: min and max sliders for hue, chroma and lightness in OKLCh. Both chroma and lightness are relative to each hue's own peak, so one setting selects the same standing in every hue's gamut. Lightness: 50 is the most vivid sRGB reaches at that hue, 0 is black and 100 is white - yellow peaks near absolute lightness 97 and blue near 45, so one absolute range would clip the first and admit only washed-out colors at the second. Chroma: 100 is all the hue has - teal peaks at absolute chroma 14.5 and magenta at 32.2, so an absolute floor above 14.5 drops teal from the palette while leaving magenta almost untouched. The hue range wraps around, so 300-60 covers magenta through orange. The lightness range can be switched to plain OKLab lightness, the same at every hue, when a fixed band of lightness matters more than every hue's best. Any value some sRGB color reaches is selectable; where a range runs past what sRGB can show, the gamut is the limit, and a range that holds no sRGB color at all says so instead of generating.
@@ -41,9 +41,8 @@ for that isolated recognition, not just pairwise difference.
   red is widest among dark colors, violet among pastels, yellow narrow throughout
   (`data/scripts.md`, `data/evolution.md`).
 - A pair's chance of being swapped follows from its weighted distance, and a color's chance of
-  being misidentified is the sum over its pairs. The generator keeps every pair at least a minimum
-  spacing apart: the distance at which one pair's swap chance falls to 2%, or the Min distance if that
-  is larger. Colors are drawn at random from one stated density over the selected range and picked one
+  being misidentified is the sum over its pairs. The generator keeps every pair at least the Min
+  distance apart. Colors are drawn at random from one stated density over the selected range and picked one
   by one where they keep that spacing from every color already picked, so
   every seed gives a palette of its own. Where the range cannot hold the count at that spacing, the
   widest spacing that fits is used, and colors still too close step off in random directions. The first
