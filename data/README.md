@@ -110,7 +110,7 @@ with the widest closest pair; an attempt is a throw and a relaxation:
    pick `count` so, the widest spacing it can, by bisection to `THROW_PRECISION`. A random sequential sample of the density;
    in a box full at the spacing, its family mix follows the box's shape more than the density (`evolution.md`, Hue families).
 3. **The relaxation** (`relax`), only while some pair is under the minimum spacing: the colors with such a pair, closest first,
-   each try up to `PROPOSALS` positions a step away in a random direction; an unusable proposal is dropped, nothing is
+   each try up to `PROPOSALS` positions a step away on the metric in a random direction; an unusable proposal is dropped, nothing is
    clamped; a proposal is kept when it widens the color's closest pair. A sweep with nothing kept halves the step, from
    `STEP_START`; the relaxation ends when no pair is under the minimum spacing, the step is under `STEP_MIN` or `SWEEPS_MAX`
    sweeps are spent. The state with the widest closest pair is kept.

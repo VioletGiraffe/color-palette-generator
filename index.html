@@ -1446,7 +1446,7 @@ function spacedThrow(order, fixed, count, cfg) {
 	return widest;
 }
 
-// The relaxation's first step in deltaE, and the step under which it ends.
+// The relaxation's first step in weighted deltaE, and the step under which it ends.
 const STEP_START = 2, STEP_MIN = 0.25;
 // Directions a color tries per sweep, the first that helps taken: with one, a sweep that keeps nothing is bad
 // luck, not a step too long, and the step halves for nothing.
@@ -1517,8 +1517,10 @@ function relax(rnd, colors, points, cfg) {
 		for (const { i } of crowded) {
 			const from = positionOf(points[i].lch), apart2 = nearest2(i);
 			for (let n = 0; n < PROPOSALS; ++n) {
-				const z = 2 * rnd() - 1, turn = 2 * Math.PI * rnd(), flat = Math.sqrt(1 - z * z);
-				const lch = lchOf([from[0] + step * z, from[1] + step * flat * Math.cos(turn), from[2] + step * flat * Math.sin(turn)].map(v => v / 100));
+				const z = 2 * rnd() - 1, turn = 2 * Math.PI * rnd(), flat = Math.sqrt(1 - z * z), direction = [z, flat * Math.cos(turn), flat * Math.sin(turn)];
+				const lchAt = length => lchOf(from.map((v, k) => (v + length * direction[k]) / 100));
+				// The proposal is `step` long on the metric, to first order: an OKLab probe of that length rescaled by its metric length
+				const lch = lchAt(step * step / Math.sqrt(apartWarped2(points[i], pointAt(lchAt(step)))));
 				if (!insideBox(lch, cfg) || !allowedLch(...lch, cfg))
 					continue;
 				const at = pointAt(lch);

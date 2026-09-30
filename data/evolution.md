@@ -2335,6 +2335,18 @@ The throw does not keep the pool's shares. Share of colors over the family's sha
   first in the order among the points near it. The throw gives red 1.08 to 1.27 of its volume share, as it gives orange and
   turquoise; the red x8 boost above raises it through the same order.
 
+The relaxation's step was a length in OKLab: 0.8 to over 4 on the metric by direction, a hue step at high chroma the longest.
+Against the step rescaled to its metric length, same throws and draws, 1000 seeds a box (`tmp/relax-metric.js`): no
+difference.
+
+- Colors changing family in a relaxation, author's box to 67: 2.79 a palette against 3.00; red leaves and enters 30 times
+  per 100 palettes under both. Coverage, the closest pair and worst identified move within noise.
+- Where a relaxation leaves a color is set by where the room is, not by the step: a proposal is kept only if it widens
+  the color's closest pair.
+- Under both, the relaxation moves colors out of pink, blue and purple (out 56, 47, 43 per 100 palettes, in 36, 26, 34)
+  into orange, yellow and cyan (out 27, 7, 26, in 40, 28, 43).
+- The page steps on the metric, for consistency; the relaxation costs 0.8 ms more at the median.
+
 ## Files
 
 - `index.html`: the generator rebuilt from the end state on the preference metric by lightness, with the
