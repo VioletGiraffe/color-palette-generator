@@ -64,8 +64,8 @@ the archived generator and the scripts.
 The noise width `SIGMA` (3.5) is fixed; a pair at distance `d` swaps with `swapChance(d, SIGMA)`, half the
 complementary error function of `d / (2 SIGMA)` in standard units, and `limitDistance(SIGMA)` is where that chance
 falls to `ERROR_LIMIT` (0.02): 14.4, by the median of the strict pair rounds' "fine" cuts, 14.3 (21 to 29), the recall
-calibration (`calibrate.html`, `fit.js`) having set the earliest one. The Min distance control, `minApart`, is a floor on
-top of that: a color with a pair under it is stepped like one over the error limit, and an attempt ends the search only
+calibration (`calibrate.html`, `fit.js`) having set the earliest one. The Min distance control, `minApart`, can raise the
+minimum spacing above that: a color with a pair under it is stepped like one over the error limit, and an attempt ends the search only
 with every pair at or above it. Below the limit the error limit already keeps pairs apart, so the control starts at 14. The
 level densities, the weight tables, the shape terms and the gain's exponent are one fit to the pair rounds under the
 preference question (`calibrate-boundaries.html`, `fit_hue_density.js`), the chroma power from the same rounds; the sources
@@ -76,12 +76,12 @@ its own.
 
 ## The generator
 
-A palette is `count` colors that are, in this order of priority: distinct, every pair at least the floor apart on
-`apart2` (`floorOf`: the limit distance, where one pair's swap chance is `ERROR_LIMIT`, or the Min distance, whichever
-is larger), or where the box cannot hold that the widest floor it can; a sample of one stated density over the usable
-part of the box; different for every seed. No spacing wider than the floor is sought: maximizing it forces every seed
-into the same arrangement. `identification` reports the floor, the worst color's chance of being identified, and
-`apart`, the closest pair's distance; pairs of two fixed colors are skipped.
+A palette is `count` colors that are, in this order of priority: distinct, every pair at least the minimum spacing apart
+on `apart2` (`minSpacingOf`: the limit distance, where one pair's swap chance is `ERROR_LIMIT`, or the Min distance,
+whichever is larger), or where the box cannot hold that the widest spacing it can; a sample of one stated density over the
+usable part of the box; different for every seed. No spacing wider than the minimum is sought: maximizing it forces every
+seed into the same arrangement. `identification` reports `worstIdentified`, the worst color's chance of being identified,
+and `apart`, the closest pair's distance; pairs of two fixed colors are skipped.
 
 The density carries every preference about where colors sit:
 
@@ -100,7 +100,7 @@ The density carries every preference about where colors sit:
   shadow, `shadowed`), zero elsewhere. The preferences act only through how often the pool draws a color: spacing is on
   `apart2` alone.
 
-`generate` runs up to `ATTEMPTS` attempts, stopping at the first whose closest pair keeps the floor, else keeping the one
+`generate` runs up to `ATTEMPTS` attempts, stopping at the first whose closest pair keeps the minimum spacing, else keeping the one
 with the widest closest pair; an attempt is a throw and a relaxation:
 
 1. **The pool** (`poolFor`, one per box and seed, cached): raw draws (`rawDraw`) cover the box without rejection by the gamut,
@@ -109,13 +109,13 @@ with the widest closest pair; an attempt is a throw and a relaxation:
    stands for, which undoes the uneven raw cover. `POOL_SIZE` points are kept by rejection against the density's peak
    over a survey of `RAW_SURVEY` usable draws. Where a range has no thickness, a lightness of one value or a chroma
    range beyond the gamut, the draw sits on the gamut's surface in a shell `SHELL` thick.
-2. **The throw** (`throwAt`, `floorThrow`): the pool in a seeded random order; a point is seated when its distance on
-   the metric to every seated color, the fixed ones included, is at least the floor, or where the box cannot seat
-   `count` so, the widest floor it can, by bisection to `THROW_PRECISION`. A random sequential sample of the density.
-3. **The relaxation** (`relax`), only while some pair is under the floor: the colors with such a pair, closest first,
+2. **The throw** (`throwAt`, `spacedThrow`): the pool in a seeded random order; a point is seated when its distance on
+   the metric to every seated color, the fixed ones included, is at least the minimum spacing, or where the box cannot
+   seat `count` so, the widest spacing it can, by bisection to `THROW_PRECISION`. A random sequential sample of the density.
+3. **The relaxation** (`relax`), only while some pair is under the minimum spacing: the colors with such a pair, closest first,
    each try up to `PROPOSALS` positions a step away in a random direction; an unusable proposal is dropped, nothing is
    clamped; a proposal is kept when it widens the color's closest pair. A sweep with nothing kept halves the step, from
-   `STEP_START`; the relaxation ends when no pair is under the floor, the step is under `STEP_MIN` or `SWEEPS_MAX`
+   `STEP_START`; the relaxation ends when no pair is under the minimum spacing, the step is under `STEP_MIN` or `SWEEPS_MAX`
    sweeps are spent. The state with the widest closest pair is kept.
 
 A reroll (`reroll`, for each slot in the config's `rerolls`, replayed after the attempts on the seeds after theirs): the
@@ -125,13 +125,13 @@ color alone would seat a near-twin: in a full box the room a color leaves behind
 (`evolution.md`). A slot past the count or of a fixed color is skipped.
 
 Where the metric enters, so a change to it moves all of these: `metricVolume` (the density, so the pool and the
-throw), the spacing (the throw's floor and a proposal's acceptance), `identification`, the shadows' hue
+throw), the spacing (the throw's minimum spacing and a proposal's acceptance), `identification`, the shadows' hue
 reach, `RIDGE` (the hue control's coordinate), and the 3D module's metric view. The preference model
-(`PREFERENCE`, from the palette member rounds) enters only as the floor.
+(`PREFERENCE`, from the palette member rounds) enters only as the preference floor.
 
 Not in the generator, and why (measured in `evolution.md`): descent toward the best spacing puts every seed on the
-same corners of the box; cells and their split geometry did not stop the pushes emptying the middle and cost floor at
-40 colors; push direction rules, stall counts, clamping and phases never moved the floor by a point, and clamping is
+same corners of the box; cells and their split geometry did not stop the pushes emptying the middle and cost worst
+identified at 40 colors; push direction rules, stall counts, clamping and phases never moved worst identified by a point, and clamping is
 what parks colors on walls; the hue marginal as a draw acceptance and a hue target toward `HUE_DENSITY`'s hue line
 put colors into hues with little room, and the table by lightness balances the hues on its own; the preference model
 as a draw weight dislikes yellows at any weight. Known gap: a box flat in lightness or in hue gets no relaxation, a

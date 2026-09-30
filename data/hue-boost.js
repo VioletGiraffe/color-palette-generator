@@ -1,10 +1,11 @@
 // HUE_BOOST_RANGES' parts, shared by data/fit_hue_boost.js (require) and data/tune-hue-boost.html (script tag): the
 // author's hue sectors, the boxes the boost is judged in, and the ranges as index.html holds them.
+// data/tune-name-boundaries.html sets the sectors.
 (function (root) {
 	"use strict";
 
-	// The author's hue families, red through pink, by where each starts in OKLCh hue
-	const SECTORS = [["red", 12], ["orange", 32], ["yellow", 72], ["green", 115], ["teal", 170], ["blue", 215], ["violet", 275], ["pink", 318]];
+	// The author's hue families, red through pink, by where each starts in OKLCh hue, judged at the cusp; ascending
+	const SECTORS = [["red", 25.5], ["orange", 30], ["yellow", 51], ["green", 123], ["turquoise", 150], ["cyan", 179], ["blue", 254], ["purple", 281], ["pink", 323]];
 	// The author's box, capped and uncapped in lightness, and the page's default box; `names` is a state string's names field
 	const AUTHOR_BOX = { count: 15, minApart: 14, hMin: 0, hMax: 360, cMin: 20, cMax: 100, lMin: 20, lMax: 67, lAbsolute: true, vividness: 0.15, names: "vkhsvlj" };
 	const BOXES = [

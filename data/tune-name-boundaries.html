@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Name boundary tuner</title>
+<style>
+	body { background: #2a2a2a; color: #ddd; font: 13px system-ui, sans-serif; margin: 16px; }
+	h2 { font-size: 15px; font-weight: 500; margin: 18px 0 6px; }
+	.hint { color: #999; max-width: 1100px; }
+	#strip { display: block; margin: 6px 0 14px; width: 100%; max-width: 900px; height: 46px; }
+	.slices { display: flex; flex-wrap: wrap; gap: 24px 30px; }
+	figure { margin: 0; }
+	figcaption { margin-bottom: 6px; line-height: 1.6; }
+	figcaption small { color: #999; }
+	input[type=number] { width: 62px; background: #1e1e1e; color: #ddd; border: 1px solid #555; border-radius: 3px; font: 13px system-ui, sans-serif; }
+	input.bad { border-color: #e06060; color: #e39a9a; }
+	.swatch { height: 72px; margin: 0 0 8px 26px; border: 1px solid #555; border-radius: 3px; }
+	.plot { position: relative; margin: 0 0 20px 26px; border-left: 1px solid #555; border-bottom: 1px solid #555; }
+	.plot canvas { display: block; }
+	.cusp { position: absolute; width: 10px; height: 10px; margin: -6px 0 0 -6px; border: 1px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px #000; }
+	.tick-l { position: absolute; left: -26px; transform: translateY(-50%); font-size: 11px; color: #999; }
+	.tick-c { position: absolute; bottom: -17px; transform: translateX(-50%); font-size: 11px; color: #999; }
+	button { background: #3a3a3a; color: #ddd; border: 1px solid #555; border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+	textarea { width: 100%; max-width: 1100px; height: 40px; background: #1e1e1e; color: #ddd; border: 1px solid #444; font: 12px monospace; }
+	#status { color: #bbb; min-height: 18px; }
+</style>
+</head>
+<body>
+<p class="hint">Sets SECTORS in data/hue-boost.js, the author's hue families, by where each starts in OKLCh hue. Each boundary shows its
+cusp color and the gamut's slice at its hue: chroma across from 10, lightness up, one scale for all, the ring at the cusp. The strip is the most vivid colors,
+spaced as the page's hue bar. A value past a neighbouring boundary is not applied. Served pages only: this page runs index.html's own
+color math, fetched from the server (<code>.claude/launch.json</code>, port 8734).</p>
+<div id="status"></div>
+<canvas id="strip" height="46"></canvas>
+<div class="slices" id="slices"></div>
+<h2>SECTORS, to paste into data/hue-boost.js</h2>
+<p><button id="copy">Copy</button> <button id="reset">Reset to hue-boost.js</button></p>
+<textarea id="out" readonly></textarea>
+
+<script src="hue-boost.js"></script>
+<script src="page-source.js"></script>
+<script>
+"use strict";
+const STORE_KEY = "name-boundary-tuner";
+const PAGE_EXPORTS = "; ({ labOfLch, oklabToRgb, gamutChroma, searchCuspLightness, ridgeHex, ridgeWarp, toHex })";
+// Slice plots: pixels per unit of L and C (x100), chroma shown from C_MIN to C_MAX
+const SCALE = 5, C_MIN = 10, C_MAX = 33, SLICE_WIDTH = (C_MAX - C_MIN) * SCALE, SLICE_HEIGHT = 100 * SCALE;
+// The strip: family names above a band of the ridge's colors
+const LABEL_HEIGHT = 16;
+const $ = id => document.getElementById(id);
+
+let page = null;
+// sectors: [name, from] each, ascending in [0, 360); a family runs to the next one's start, the last past 360
+const fromHueBoost = () => HueBoost.SECTORS.map(([name, from]) => [name, from]);
+const sectorsText = list => "const SECTORS = [" + list.map(([name, from]) => '["' + name + '", ' + from + "]").join(", ") + "];";
+// Edits are stored with the SECTORS they started from, only while they differ: a hue-boost.js changed since drops them
+let sectors = fromHueBoost();
+try {
+	const stored = JSON.parse(localStorage.getItem(STORE_KEY));
+	if (stored && JSON.stringify(stored.base) === JSON.stringify(sectors))
+		sectors = stored.sectors;
+	else if (stored && JSON.stringify(stored.sectors) !== JSON.stringify(sectors))
+		$("status").textContent = "hue-boost.js changed since your last edits, which were dropped: " + sectorsText(stored.sectors ?? stored);
+} catch {}
+
+function drawSlice(canvas, h) {
+	const ctx = canvas.getContext("2d"), image = ctx.createImageData(SLICE_WIDTH, SLICE_HEIGHT);
+	for (let y = 0; y < SLICE_HEIGHT; ++y) {
+		const L = 100 - (y + 0.5) / SCALE, reach = page.gamutChroma(L, h);
+		for (let x = 0; x < SLICE_WIDTH; ++x) {
+			const C = C_MIN + (x + 0.5) / SCALE;
+			if (C > reach)
+				break;
+			const rgb = page.oklabToRgb(...page.labOfLch(L, C, h)), at = (y * SLICE_WIDTH + x) * 4;
+			rgb.forEach((v, k) => { image.data[at + k] = Math.round(Math.min(1, Math.max(0, v)) * 255); });
+			image.data[at + 3] = 255;
+		}
+	}
+	ctx.putImageData(image, 0, 0);
+}
+
+// The strip in the page's hue coordinate: a tick at each start, each family's name centred over its span
+function drawStrip() {
+	const canvas = $("strip"), ctx = canvas.getContext("2d");
+	canvas.width = canvas.clientWidth;
+	const width = canvas.width, at = h => page.ridgeWarp(h) * width / 360;
+	for (let x = 0; x < width; ++x) {
+		ctx.fillStyle = page.ridgeHex(x * 360 / width);
+		ctx.fillRect(x, LABEL_HEIGHT, 1, canvas.height - LABEL_HEIGHT);
+	}
+	ctx.font = "11px system-ui, sans-serif";
+	ctx.textAlign = "center";
+	sectors.forEach(([name, from], k) => {
+		const start = at(from), end = at(sectors[(k + 1) % sectors.length][1]) + (k === sectors.length - 1 ? width : 0);
+		ctx.fillStyle = "#fff";
+		ctx.fillRect(Math.round(start), LABEL_HEIGHT - 4, 1, canvas.height - LABEL_HEIGHT + 4);
+		ctx.fillStyle = "#ccc";
+		ctx.fillText(name, ((start + end) / 2) % width, LABEL_HEIGHT - 5);
+	});
+}
+
+function changed() {
+	$("out").value = sectorsText(sectors);
+	const base = fromHueBoost();
+	try { JSON.stringify(sectors) === JSON.stringify(base) ? localStorage.removeItem(STORE_KEY) : localStorage.setItem(STORE_KEY, JSON.stringify({ base, sectors })); } catch {}
+	drawStrip();
+}
+
+function buildSlices() {
+	$("slices").innerHTML = "";
+	sectors.forEach((sector, k) => {
+		const figure = document.createElement("figure");
+		const ticks = [0, 20, 40, 60, 80, 100].map(L => "<span class='tick-l' style='top:" + (100 - L) * SCALE + "px'>" + L + "</span>").join("")
+			+ [10, 20, 30].map(C => "<span class='tick-c' style='left:" + (C - C_MIN) * SCALE + "px'>" + C + "</span>").join("");
+		figure.innerHTML = "<figcaption>" + sectors[(k + sectors.length - 1) % sectors.length][0] + " | " + sector[0] + "<br><input type='number' min='0' max='359.9' step='0.5' value='"
+			+ sector[1] + "'>° <small></small></figcaption><div class='swatch' style='width:" + SLICE_WIDTH + "px'></div><div class='plot' style='width:" + SLICE_WIDTH + "px;height:" + SLICE_HEIGHT + "px'><canvas width='"
+			+ SLICE_WIDTH + "' height='" + SLICE_HEIGHT + "'></canvas><span class='cusp'></span>" + ticks + "</div>";
+		const input = figure.querySelector("input"), canvas = figure.querySelector("canvas"), ring = figure.querySelector(".cusp"), cusp = figure.querySelector("small");
+		const swatch = figure.querySelector(".swatch");
+		const show = () => {
+			const h = sector[1], L = page.searchCuspLightness(h), C = page.gamutChroma(L, h);
+			const hex = page.toHex(page.oklabToRgb(...page.labOfLch(L, C, h)));
+			drawSlice(canvas, h);
+			swatch.style.background = hex;
+			ring.style.left = (C - C_MIN) * SCALE + "px";
+			ring.style.top = (100 - L) * SCALE + "px";
+			cusp.textContent = "cusp " + hex + ", L " + L.toFixed(1) + " C " + C.toFixed(1);
+		};
+		input.addEventListener("input", () => {
+			const value = Math.round(+input.value * 10) / 10, below = k ? sectors[k - 1][1] : -Infinity, above = k < sectors.length - 1 ? sectors[k + 1][1] : 360;
+			const valid = input.value !== "" && Number.isFinite(value) && value >= 0 && value > below && value < above;
+			input.classList.toggle("bad", !valid);
+			if (!valid)
+				return;
+			sector[1] = value;
+			show();
+			changed();
+		});
+		show();
+		$("slices").appendChild(figure);
+	});
+}
+
+async function start() {
+	let source;
+	try {
+		source = await fetchPageSource();
+	} catch (error) {
+		$("status").textContent = "index.html could not be fetched: open this page through the server, not from disk.";
+		return;
+	}
+	page = (0, eval)(source + PAGE_EXPORTS);
+	$("copy").addEventListener("click", () => navigator.clipboard.writeText($("out").value));
+	$("reset").addEventListener("click", () => { sectors = fromHueBoost(); buildSlices(); changed(); });
+	window.addEventListener("resize", drawStrip);
+	buildSlices();
+	changed();
+}
+start();
+</script>
+</body>
+</html>

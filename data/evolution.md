@@ -12,10 +12,10 @@ in OKLab (width `SIGMA`, lightness and chroma weighted by `W_L`, `W_C` against h
 nearest palette entry. Each color's accuracy is one minus its summed pair swap chances. Until the calibration
 it was the fraction of simulated recalls landing on the color; see the Calibration section for why.
 
-- **floor**: the palette's worst color accuracy. Mean overstates a palette with one bad entry.
-- **floor, all runs**: that floor averaged over 20 seeds, two range boxes (default s 45-90 l 35-65, wide
+- **worst identified**: the palette's worst color accuracy. Mean overstates a palette with one bad entry.
+- **worst identified, all runs**: the same, averaged over 20 seeds, two range boxes (default s 45-90 l 35-65, wide
   s 40-100 l 25-75, full hue) and 6, 8, 10 colors. The single number quoted below unless stated.
-- **worst seed**: the lowest floor among the 20 seeds. The tail a user hits by re-rolling.
+- **worst seed**: the lowest worst identified among the 20 seeds. The tail a user hits by re-rolling.
 - **min dE**: smallest unweighted OKLab distance in the palette, averaged over seeds.
 
 Every score below was measured at the provisional constants sigma 6, wL 1, wC 0.7, before calibration (see
@@ -33,7 +33,7 @@ off the page's own overlap table rather than a copy of the survey data.
 All at sigma 6, 20 seeds. Reference points: `index.html` scores 86.7; the pre-rework `experimental.html`
 (name-aware, same sampler) scored within 0.2 of `index.html`.
 
-| step | mechanism | floor, all | notes |
+| step | mechanism | worst identified, all | notes |
 |---|---|---|---|
 | 1. sum-of-swap gradient descent | farthest-point start from 1500 uniform draws, descent on the summed pairwise swap chance, projected into the box | 92.8 | collapses at large N: gap 0 at n=12 sigma 30 and at n=40 |
 | 2. soft-max over pairs | same descent, energy is a soft maximum (sharpness 20) | 92.5 | fixes the collapse (n=40 gap 10.8); saved as `experimental-gradient.html` |
@@ -41,9 +41,9 @@ All at sigma 6, 20 seeds. Reference points: `index.html` scores 86.7; the pre-re
 | 4. dart start | first uniform draw under the 2% limit, farthest of 1500 as fallback; then step 3's push | 88.5 | saved as `experimental-gradient-restricted-push.html` |
 | 5. cone push | step direction uniform within 120 deg of the away-axis, per-color stall after 25 rejections | 89.1 | flat from 60 deg up; straight is 88.5 |
 | 6. angle band | forbid directions within a minimum angle of the axis; sliders for both angles | 89.1 | free up to 40 deg, costs from 60 (88.7), 80 deg gives 86.8; saved as `push-with-angle-randomization.html` |
-| 7. crowd filter, best snapshot | no-worse rule replaced by "dropped if too close to another and closer than before"; return the best-floor state seen | 88.4 | fewer wall colors at n=10 (62% to 44%) |
+| 7. crowd filter, best snapshot | no-worse rule replaced by "dropped if too close to another and closer than before"; return the state with the best worst identified seen | 88.4 | fewer wall colors at n=10 (62% to 44%) |
 | 8. persistent heading | one direction per color, kept while accepted, redrawn on rejection | 88.6 | in full boxes 80% of steps are rejected, so it rarely persists |
-| 9. whole-set start | dart start replaced by whole uniform sets: the first with a floor at the bar, else the best of 2000; step 8's push | 87.6 | bar 0.85; loses 5 points at default n=10, clips more (63% vs 46% at 9 colors); reverted, saved as `experimental-wholeset-start.html` |
+| 9. whole-set start | dart start replaced by whole uniform sets: the first with its worst identified at the bar, else the best of 2000; step 8's push | 87.6 | bar 0.85; loses 5 points at default n=10, clips more (63% vs 46% at 9 colors); reverted, saved as `experimental-wholeset-start.html` |
 | 10. own-error filter, gamut margin | dart start back; a push is dropped if the color's summed swap chance rises or it lands on the gamut surface | 90.3 | default n=10 83.3 to 87.4, worst seed 79.9 to 84.7, clipping 46% to 1%; saved as `experimental-error-filter.html` |
 | 11. no budget | the 10 dE budget removed | 90.4 | worst seed 86.3; the budget was not binding (see the knob table) |
 | 12. spaced start | dart start at the widest spacing the draws fill: the limit, then 15% wider per try until a color finds no draw | 90.5 | no gain: random placement is at its packing ceiling near the limit already (finding 2); reverted, the limit kept as a distance |
@@ -51,7 +51,7 @@ All at sigma 6, 20 seeds. Reference points: `index.html` scores 86.7; the pre-re
 | 14. box-wall margin | the gamut margin replaced by every wall of the box, hue ends included: a push landing on one is dropped | 92.1 | empties the walls (default box saturation max 75% to 1%, hue ends of a 200-320 range 40% to 3%); costs 1.7 at default n=10; saved as `experimental-error-trigger.html` |
 | 15. clamp refusal | the wall margin replaced: a push is dropped only when the box or gamut had to pull its target back; a target inside the box is accepted wherever it lands | 92.2 | 9 colors 92.6, 46 ms against 71; colors settle within a step of the walls: 25 to 33% within half a unit at 10 colors, 27% with a 00 or FF channel; saved as `experimental-clamp-refusal.html` |
 | 16. clamp slack | a push is dropped only when the clamp pulled its target back by more than 0.3 dE; a slighter protrusion is clamped and kept | 92.4 | 9 colors 92.5; the walls fill again: saturation max 61 to 85% at 10 colors, 79% of colors with a 00 or FF channel at 9; not adopted |
-| 17. reachable floor, adaptive restarts | step 15 adopted as `index.html`; one wall-using attempt from its own seed gives the floor the box allows; restarts continue up to 16 while the best is under 90% or more than 2 points short of it; the status line shows the readout | 92.4 | default n=10 87.2 to 88.4, worst seed 81.7 to 87.3; 197 ms against 66 in the full default box, unchanged elsewhere |
+| 17. reachable worst identified, adaptive restarts | step 15 adopted as `index.html`; one wall-using attempt from its own seed gives the worst identified the box allows; restarts continue up to 16 while the best is under 90% or more than 2 points short of it; the status line shows the readout | 92.4 | default n=10 87.2 to 88.4, worst seed 81.7 to 87.3; 197 ms against 66 in the full default box, unchanged elsewhere |
 | 18. OKLCh box | the HSL ranges replaced by OKLab lightness, absolute chroma (0 to 33) and OKLCh hue; uniform draws by rejection, gamut mapping by chroma reduction, planes and 3D faces linear in OKLCh | 90.5 (new boxes) | not comparable with the rows above: the boxes changed shape; see the OKLCh baseline below; saved as `experimental-oklch.html` |
 
 Why steps 1 and 2 were abandoned despite the score: a maximin over a box has its optimum on the hull, so
@@ -60,7 +60,7 @@ repeated across seeds. Steps 3 onward trade score for seed variety and interior 
 
 ### Sweeps
 
-Cone half-angle, step 5 (floor all / default n=10): 0 deg 88.5 / 82.5; 60 deg 89.0 / 84.8; 90 deg 89.1 / 84.9;
+Cone half-angle, step 5 (worst identified all / default n=10): 0 deg 88.5 / 82.5; 60 deg 89.0 / 84.8; 90 deg 89.1 / 84.9;
 120 deg 89.1 / 84.9; 150 deg 89.1 / 84.7.
 
 Minimum angle with the maximum at 120 deg: 0 to 40 deg 89.1; 60 deg 88.7; 80 deg 86.8.
@@ -84,10 +84,10 @@ Minimum angle with the maximum at 120 deg: 0 to 40 deg 89.1; 60 deg 88.7; 80 deg
    on several sides, so nearly every direction approaches one by a hair and is rejected. Replaced in step 10.
 6. **The dart start is two heuristics.** In the s 21-100, l 15-68 box at 9 colors, the first six colors are
    Poisson-disk draws at the goal radius; colors 7 to 9 exhaust the draws and take the farthest, which is
-   greedy farthest-point sampling. Plain uniform draws score a floor of 57 in that box; the dart start alone
+   greedy farthest-point sampling. Plain uniform draws score a worst identified of 57 in that box; the dart start alone
    scores 86, and pushing adds 3 on top.
 7. **The trigger and the filter matter, the direction does not.** Steps 5, 6 and 8 (cone, band, persistent
-   heading) moved the floor under a point; steps 10 and 13 (filter and trigger on the color's own error)
+   heading) moved worst identified under a point; steps 10 and 13 (filter and trigger on the color's own error)
    moved it 4. The push stage is at 92.1 against the maximin optimum's 92.5, with every color off the walls
    and every seed distinct, so the remaining headroom is the restarts' tail and the box itself.
 
@@ -103,11 +103,11 @@ What was tried and did not pay, with the number that decided it. Details are in 
 4. **Straight push-apart** (step 3): 88.0, and 74.2 at default n=10, since pushes from several sides cancel
    and jostle in a full box.
 5. **Push direction**: cone (step 5), angle band (step 6), persistent heading (step 8) all moved the
-   all-runs floor by under a point. Bands narrower than 60 deg or restricted to the sideways half cost 1 to
+   all-runs worst identified by under a point. Bands narrower than 60 deg or restricted to the sideways half cost 1 to
    4 points under later filters. The direction was never the lever.
 6. **Crowd filter** (step 7): 88.4 against the no-worse rule's 89.1, and the limiter in full boxes, where
    80% of proposals were rejected because every direction approached some too-close neighbor.
-7. **Whole-set rejection** (idea 1, step 9): at 9 colors the best of 50000 uniform sets floors at 80,
+7. **Whole-set rejection** (idea 1, step 9): at 9 colors the best of 50000 uniform sets has its worst identified at 80,
    below the dart start alone at 86; with pushes on top it loses 5 points at default n=10 and 6 of worst
    seed. Viable only at 6 colors.
 8. **Push budget**: 30 dE changes nothing against 10, 5 dE costs a point, none gains 0.1. Removed.
@@ -123,17 +123,17 @@ What was tried and did not pay, with the number that decided it. Details are in 
 14. **Clamp detection by distance at 1e-6 dE** (step 15, first attempt): 86.4, because the color round trip
     moves an interior point by 2e-6 to 4e-6 dE. A measurement bug, not a rule result.
 15. **Clamp slack** (step 16): any allowance, 0.1 dE up, makes a wall absorbing again; 57 to 92% of colors
-    with a 00 / FF channel at 9 colors for under a point of floor.
+    with a 00 / FF channel at 9 colors for under a point of worst identified.
 16. **bench.js on the rework**: the name-based score prefers `index.html` (worst 0.579 against 0.496 to
     0.516), so the two metrics disagree in direction. Not a generator result; it is why calibration matters.
 
-17. **Reachable floor from the result's own seed** (step 17, first attempt): the wall-using run shares the
-    seed's dart start, so a poor seed reads as at its ceiling and no extra restart is made; floors identical
+17. **Reachable worst identified from the result's own seed** (step 17, first attempt): the wall-using run shares the
+    seed's dart start, so a poor seed reads as at its ceiling and no extra restart is made; worst identified identical
     to step 15. A run from its own seed fixes it. In a full box the wall-using run is not an upper bound
     either: at default n=10 it scores 87.9 against the normal 89.2 by the page's model, and the gradient
     page's descent 85.3. No cheap estimator bounds the optimum there, so the readout is a lower bound.
 18. **Shortfall rule alone** (step 17, second attempt): restart only while more than 2 points short of the
-    reachable floor: worst seed 86.0 and 118 ms at default n=10, against 87.3 and 197 ms with the 90% target
+    reachable worst identified: worst seed 86.0 and 118 ms at default n=10, against 87.3 and 197 ms with the 90% target
     added. A cap of 32 restarts instead of 16 gains nothing (worst seed 87.2) at 240 ms.
 
 One caveat on early numbers: `index.html` measured 83.7 in the first 20-seed run and 86.7 later in the same
@@ -144,7 +144,7 @@ numbers measured side by side.
 
 The current page defaults. 20 seeds, sigma 6. Scratch patches of step 8 unless named.
 
-| variant | floor | worst seed | min dE | clipped | distinct hexes of 180 |
+| variant | worst identified | worst seed | min dE | clipped | distinct hexes of 180 |
 |---|---|---|---|---|---|
 | uniform draws, no search, no pushes | 57.1 | 47.1 | 8.6 | 2% | 180 |
 | dart start only | 86.2 | 80.7 | 21.4 | 3% | 180 |
@@ -164,9 +164,9 @@ Reading: the clipping costs nothing to remove; the own-error filter buys 1.5 to 
 ### Wholesale rejection of uniform sets
 
 The original idea 1: draw whole sets uniformly, reject the bad ones. Measured on 50000 uniform sets in the
-same box, floor by the page's analytic model.
+same box, worst identified by the page's analytic model.
 
-| colors | median floor | best 1 in 100 | 1 in 1000 | 1 in 10000 | best of 50000 | best min dE |
+| colors | median worst identified | best 1 in 100 | 1 in 1000 | 1 in 10000 | best of 50000 | best min dE |
 |---|---|---|---|---|---|---|
 | 6 | 56 | 86 | 91 | 94 | 96 | 26.7 |
 | 9 | 28 | 64 | 72 | 77 | 80 | 16.6 |
@@ -180,7 +180,7 @@ is the same idea applied per color, and per-color rejection compounds where whol
 
 The bar is `START_FLOOR`: a drawn set below it is rejected and another drawn, up to `START_SETS`. 20 seeds.
 
-| start | floor, all runs | default n=10 | worst seed, all | 9 colors, new box | clipped | ms per run |
+| start | worst identified, all runs | default n=10 | worst seed, all | 9 colors, new box | clipped | ms per run |
 |---|---|---|---|---|---|---|
 | dart start (step 8) | 88.6 | 83.3 | 79.9 | 89.2 | 46% | 41 |
 | whole sets, bar 0.5 | 85.1 | 77.0 | 67.9 | 84.4 | 67% | 16 |
@@ -188,16 +188,16 @@ The bar is `START_FLOOR`: a drawn set below it is rejected and another drawn, up
 | whole sets, bar 0.85 | 87.6 | 78.5 | 73.8 | 88.4 | 63% | 109 |
 | whole sets, best of 2000 | 87.5 | 78.5 | 73.8 | 88.4 | 66% | 110 |
 
-Ties the dart start where the box has room (6 colors, 9 in the new box), loses 5 points of floor and 6 of
+Ties the dart start where the box has room (6 colors, 9 in the new box), loses 5 points of worst identified and 6 of
 worst seed where it is full. A bar above 0.7 is rarely reached at 8 or more colors, so the start is then
 best-of-2000 and pays for all 2000 evaluations. Every seed is distinct in every row.
 
 ### Knobs of step 10
 
-Scratch patches of step 10, 20 seeds. Columns: all-runs floor, default n=10 floor, worst seed over all runs,
+Scratch patches of step 10, 20 seeds. Columns: all-runs worst identified, default n=10 worst identified, worst seed over all runs,
 then the 9-color new-box run.
 
-| variant | floor all | default n=10 | worst seed all | n9 floor | n9 worst | n9 min dE | n9 clipped | ms per run |
+| variant | worst identified all | default n=10 | worst seed all | n9 worst identified | n9 worst | n9 min dE | n9 clipped | ms per run |
 |---|---|---|---|---|---|---|---|---|
 | step 10 as is (4 restarts, 1500 draws, budget 10) | 90.3 | 87.4 | 84.7 | 90.5 | 88.7 | 24.2 | 1% | 37 |
 | 8 restarts | 90.8 | 88.1 | 85.2 | 90.4 | 88.0 | 24.3 | 1% | 127 |
@@ -209,7 +209,7 @@ then the 9-color new-box run.
 Restarts buy half a point per doubling at proportional cost; kept at 4. More start draws buy nothing.
 The budget only costs when small, so it was removed.
 
-Angle band re-swept under the own-error filter (step 11, floor all / default n=10 / worst seed all):
+Angle band re-swept under the own-error filter (step 11, worst identified all / default n=10 / worst seed all):
 0-30 deg 89.3 / 85.1 / 80.4; 15-60 deg 90.0 / 87.3 / 82.8; 0-120 deg 90.5 / 88.2 / 86.2; 15-120 deg (kept)
 90.4 / 87.9 / 86.3; 45-120 deg 90.6 / 87.8 / 85.7; 15-180 deg 90.5 / 88.2 / 84.0; 90-180 deg 87.8 / 81.5 / 78.2.
 Unlike under the crowd filter, a narrow cone now costs a point: the wide band is what lets a color slide
@@ -222,7 +222,7 @@ seed 81.9 / 86.3 / 85.6. Both left as they were.
 
 Scratch patches of step 11. The per-color limit is the error a color may carry before it is pushed.
 
-| variant | floor all | default n=10 | worst seed all | n9 floor | n9 worst | n9 min dE | ms per run |
+| variant | worst identified all | default n=10 | worst seed all | n9 worst identified | n9 worst | n9 min dE | ms per run |
 |---|---|---|---|---|---|---|---|
 | step 11 (pair trigger, gamut margin) | 90.4 | 87.9 | 86.3 | 90.7 | 87.9 | 24.5 | 37 |
 | error trigger, limit 10% | 88.2 | 85.9 | 82.8 | 87.0 | 84.6 | 21.3 | 35 |
@@ -240,26 +240,26 @@ Wall occupancy at 10 colors, default box (saturation max 90, so the gamut margin
 step 11 has 75% of colors at the saturation max and 31% at the lightness min; step 13 with the gamut margin
 the same; the saturation-wall margin brings the saturation max to 2% and leaves the lightness min at 29%;
 the all-walls margin brings every wall to 2% or less. The wall margin is the typicality knob: it pays
-1.7 points of floor in the full box for interior colors, and nothing where the box has room.
+1.7 points of worst identified in the full box for interior colors, and nothing where the box has room.
 
-Under step 14 (floor all / default n=10 / worst seed all / n9 floor / n9 worst): angle band 0-60 deg
+Under step 14 (worst identified all / default n=10 / worst seed all / n9 worst identified / n9 worst): angle band 0-60 deg
 90.8 / 84.4 / 79.6 / 91.9 / 88.6; 0-120 92.0 / 86.7 / 82.6 / 92.7 / 89.6; 15-120 (kept) 92.1 / 86.6 / 82.0 /
 92.3 / 88.9; 45-150 92.1 / 87.0 / 82.4 / 92.2 / 90.0; 15-180 91.9 / 86.8 / 83.0 / 92.4 / 90.1. Restarts 8:
 92.4 / 87.9 / 86.6 / 92.6 / 90.4 at 170 ms per run against 71: the one knob left that moves the worst seed,
 at the cost of slider responsiveness. Kept at 4.
 
 Step 15 measured the clamp test two ways. By distance between the target and the color that came back,
-tolerance 1e-6 dE, the floor fell to 86.4: the OKLab to RGB to HSL round trip carries float error above
+tolerance 1e-6 dE, worst identified fell to 86.4: the OKLab to RGB to HSL round trip carries float error above
 that, so nearly every push read as clamped. Detecting the clamp where it happens, in colorInBox, gives
 92.2. Wall occupancy at 10 colors under step 15: default box saturation max 29%, lightness min 23%; new box
 saturation max 33%; hue ends of a 200-320 range 25% at 6 colors. Those colors are within half a unit of
 the wall, not on it, and no push put one there by clamping; in hex terms a third of them still show a
 00 or FF channel.
 
-Step 16 swept the slack (floor all / n9 floor / n9 clipped / distinct hexes of 180): 0.1 dE 92.3 / 92.8 / 57% /
+Step 16 swept the slack (worst identified all / n9 worst identified / n9 clipped / distinct hexes of 180): 0.1 dE 92.3 / 92.8 / 57% /
 180; 0.3 (kept) 92.4 / 92.5 / 79% / 179; 0.5 92.6 / 93.1 / 81% / 175; 1 dE, every clamp accepted, 92.8 / 92.9 /
 92% / 156. Any slack makes a wall absorbing again: a color that touches one keeps taking the glancing steps
-whose protrusion is under the slack, and slides along it. The floor gain over step 15 is under a point;
+whose protrusion is under the slack, and slides along it. The gain in worst identified over step 15 is under a point;
 the wall occupancy is back to step 13's. The round trip OKLab to RGB to HSL and back moves an interior
 point by 2e-6 to 4e-6 dE: step 15's first attempt, at 1e-6 tolerance, read every push as clamped.
 
@@ -271,7 +271,7 @@ lightness 20-80), narrow is chroma 8-33, lightness 35-65; the scratch 9-color bo
 lightness 30-75. Nothing here compares with the HSL rows: an absolute chroma range reaches the gamut
 surface for most hues, so the box's walls are largely the gamut itself, and the volumes differ.
 
-| box, N | floor | worst seed | min dE |
+| box, N | worst identified | worst seed | min dE |
 |---|---|---|---|
 | default 6 | 94.2 | 92.7 | 27.9 |
 | default 8 | 93.5 | 91.9 | 27.0 |
@@ -339,7 +339,7 @@ Verdicts were consistent with the fit, with two patterns the model does not carr
 Every far-hue pair was fine, including dull opposite-hue pairs at 12 deltaE chord (chroma 6 brown against
 chroma 6 navy). This decided the noise geometry. The Monte Carlo `data/identify.js` used until then drew
 chroma noise through the neutral axis, where a dull recall lands near every other dull color, and scored such
-pairs 8% confused; its floors at the calibrated constants (about 90% in the default box, against 98% from
+pairs 8% confused; its worst identified at the calibrated constants (about 90% in the default box, against 98% from
 the pages' analytic formula) were that artifact. Four Monte Carlo geometries were fitted to the verdicts
 through the same ordered-probit link as the analytic distance, each over sigma and both weights:
 
@@ -352,9 +352,9 @@ through the same ordered-probit link as the analytic distance, each over sigma a
 
 None came close, so the yardstick is now the analytic formula: pair swap chance from the polar weighted
 distance, a color's error the sum over its pairs, the same as the pages optimize. Baseline of step 18 on it
-at the adopted constants (floor / worst seed): default box 6, 8, 10 colors 98.6 / 98.2, 98.2 / 98.0,
+at the adopted constants (worst identified / worst seed): default box 6, 8, 10 colors 98.6 / 98.2, 98.2 / 98.0,
 98.1 / 98.0; narrow box 98.8 / 98.2, 98.2 / 98.1, 98.0 / 97.7. The narrow box still binds at 10 colors, by
-0.1 points of floor. Scores move with the constants, so they compare only within one set of them: at sigma
+0.1 points of worst identified. Scores move with the constants, so they compare only within one set of them: at sigma
 3.5 and wC 0.5 the same runs read 1 to 5 points lower, narrow 10 colors most of all. These boxes stop at
 lightness 20, so the lightness gain barely shows in them; it bites in a box that reaches the dark end.
 
@@ -397,7 +397,7 @@ The hue term was held because it was marginal and because it vanished under abso
 these rounds could not rule out: the two lightness coordinates correlate at 0.81 and relative won by 1.9
 units. The gain went in on the cusp-relative coordinate, as `apart2` and `recallDistance` multiplying the
 distance by the pair's standing in the gamut, which cost the generator 20 to 54 per cent more pair
-evaluations - the stricter metric lowers the floors it can reach, so the pushes stall later and the
+evaluations - the stricter metric lowers the worst identified it can reach, so the pushes stall later and the
 restarts run longer.
 
 Two rounds of `data/calibrate-cusp.html` then chose the coordinate. The two models were degenerate by
@@ -462,11 +462,11 @@ against the table.
 ### Knobs re-measured at the calibrated metric
 
 Every optimizer knob was tuned at the provisional constants. Re-measured at the calibrated ones over 20
-seeds, both benchmark boxes, 6 to 20 colors; deltas are points of floor / worst seed against the shipped
+seeds, both benchmark boxes, 6 to 20 colors; deltas are points of worst identified / worst seed against the shipped
 values. The steps themselves cannot be re-run: their pages predate the OKLCh controls the harness needs.
 
 The bar (every color under 2% error) holds through 10 colors in the default box and 8 in the narrow one;
-at 16 nearly every color is over it and at 20 all are, so above 12 the boxes are full and the floor is
+at 16 nearly every color is over it and at 20 all are, so above 12 the boxes are full and worst identified is
 what the packing allows.
 
 | knob | shipped | result |
@@ -477,7 +477,7 @@ what the packing allows.
 | `RESTART_SHORTFALL` 0.02 | kept | 0.01 and 0.05 within 0.1 |
 | `STALL_PUSHES` 25 | **60** | 10 loses 0.6 / 0.8 on average and 1.9 / 2.5 at 20; 60 gains 0.4 / 0.5 on average, 0.6 to 0.8 at 12 to 16, 1.1 / 1.4 at 20, within 1.3x time and faster at 20 in the default box since better attempts need fewer restarts (15.6 to 10.4); 100 and 150 add 0.1 to 0.2 more at up to 2x time |
 
-The stricter metric lowers the floors an attempt can reach, so a color that stalls at 25 rejections is
+The stricter metric lowers the worst identified an attempt can reach, so a color that stalls at 25 rejections is
 still short of what more patience finds. Nothing moves at 6 to 8 colors, which are at the bar already.
 
 ## Lightness relative to the cusp
@@ -903,8 +903,8 @@ the step there. The round is planned at 50% chroma, where the hue rounds have tw
 ## A preference density
 
 The judge's reading after the member and pairwise rounds: distinctness and preference are two metrics. The first
-is a constraint, a floor on the closest pair, measured to within session noise three ways and found uniform; the
-second is an objective over what the floor leaves free, and it collapses into the first only in a box too tight to
+is a constraint, a minimum spacing on the closest pair, measured to within session noise three ways and found uniform; the
+second is an objective over what the minimum spacing leaves free, and it collapses into the first only in a box too tight to
 leave anything free, which the tight-box pairwise round was. The member round is a measurement of preference's
 bottom, the colors thrown out, and `data/fit_preference.js` fits it: a logistic on absolute chroma and hue with two
 harmonics and a chroma by hue term, 164 log-likelihood units on eight parameters over 960 colors, lightness earning
@@ -913,7 +913,7 @@ harmonics and a chroma by hue term, 164 log-likelihood units on eight parameters
 The draw is weighted by it, and a color under a floor of 0.5, more likely thrown out than kept, is outside the box
 for the draw and the pushes alike: the pushes spread colors to the box's edges, so a draw weight alone left the
 dirty region filled (dirty names 52 to 34 of 320 over 40 seeds in the default box) where the floor empties it (52
-to 25, colors under chroma 12 from 108 to 61, the closest-pair floor unchanged at 0.98, 42 against 47 ms a
+to 25, colors under chroma 12 from 108 to 61, worst identified unchanged at 0.98, 42 against 47 ms a
 palette). The floor is a generator setting, `preference` in the config, on by default and off for the plain
 condition. The pairwise page now deals `--conditions preference`: shipped against plain in the default box, 60
 seeds at 7 and 10 colors, the round that tests whether the preferred draw makes preferred palettes. Not yet drawn
@@ -1043,30 +1043,30 @@ chroma 20% and up, and the preference gate empties the dull third. Against them,
 40 seeds, thirds of the box's relative coordinates (an earlier table here, in a tercile definition that could not
 be reproduced, is withdrawn):
 
-| reference or stage | count | chroma thirds | lightness thirds | floor | ms per attempt |
+| reference or stage | count | chroma thirds | lightness thirds | worst identified | ms per attempt |
 |---|---|---|---|---|---|
 | uniform by usable OKLab volume | | 21/45/34 | 14/48/38 | | |
 | uniform by metric volume | | 15/45/40 | 7/47/46 | | |
 | dart start alone | 8 | 15/40/45 | 14/38/48 | 0.97 | 0 |
-| best of 4 dart starts by floor, no pushes | 8 | 12/42/46 | 12/38/51 | 0.98 | |
+| best of 4 dart starts by worst identified, no pushes | 8 | 12/42/46 | 12/38/51 | 0.98 | |
 | plain draws pushed apart, best of 4 | 8 | 14/35/52 | 19/35/46 | 0.98 | 3 |
 | shipped: dart start pushed, best of 4 | 8 | 9/45/46 | 13/33/53 | 0.98 | 1 |
 | dart start alone | 16 | 16/31/53 | 17/25/58 | 0.89 | 63 |
-| best of 4 dart starts by floor, no pushes | 16 | 17/30/53 | 17/22/61 | 0.91 | |
+| best of 4 dart starts by worst identified, no pushes | 16 | 17/30/53 | 17/22/61 | 0.91 | |
 | plain draws pushed apart, best of 4 | 16 | 15/21/64 | 22/13/65 | 0.96 | 42 |
 | shipped: dart start pushed, best of 4 | 16 | 14/19/67 | 21/11/68 | 0.97 | 91 |
 
 Read off it:
-- The dart start is a Poisson-disc sample in the metric's measure: a draw is kept if it clears the floor from
+- The dart start is a Poisson-disc sample in the metric's measure: a draw is kept if it clears the minimum spacing from
   everything placed, and the exclusion ball around a placed color is small in box units where the metric is
   roomy, large where colors look alike. At count 8 it lands near the metric reference.
-- Restart selection by floor moves a share by two or three points at most.
+- Restart selection by worst identified moves a share by two or three points at most.
 - The pushes empty the middle third under either reference, mildly at 8, to a quarter of its share at 16:
   mutually repelling points in a bounded region settle toward the boundary, and the error-limit stop only delays
   it until the box is crowded. From plain draws the pushes land where the dart start's pushes land, so the
   distancing stage, not the start, is the larger term. The wall rule below counts colors clamped on a wall; this
   starvation happens inside the walls.
-- The dart start at 16 costs 63 ms because its draw budget runs out; plain draws pushed apart reach floor 0.95
+- The dart start at 16 costs 63 ms because its draw budget runs out; plain draws pushed apart reach worst identified 0.95
   in 42 ms against the shipped 0.96 in 91.
 - Purple and magenta are the cheapest hues in the metric (below), so metric seating gives them fewer seats than
   volume seating would: their over-abundance is the pushes' doing, not the hue density's.
@@ -1102,15 +1102,15 @@ in a target family would spend its cap on every rare family every round: a pool 
 The wall rule, clamped pushes rejected so colors stay off the box's walls. Measured over 40 seeds, colors within
 1% of a wall: default box at 8, none on the chroma wall and 3% on a lightness wall with the rule or without, the
 3% being what uniform draws put in a band that wide; at 16, 12% on the chroma wall with the rule against 26%
-without, 10% against 14% on a lightness wall, floor 0.968 against 0.971. The rule does what it says only in a
+without, 10% against 14% on a lightness wall, worst identified 0.968 against 0.971. The rule does what it says only in a
 crowded box and its one failure is a box that is all wall: with chroma min and max both 100 the box is the cusp
-ring, every push is clamped, the attempts cannot move and stay at the start's floor, 0.64 at count 6 and 0.00 at
+ring, every push is clamped, the attempts cannot move and stay at the start's worst identified, 0.64 at count 6 and 0.00 at
 14, while the hull estimate, which keeps clamped pushes, reaches 0.96, so the restart loop chases a target the
 attempts cannot reach. Every budget then runs out in full: 17 attempts, 1500 draws per color, 400 weighted tries
 per draw, 8 cell jitters per try; count 6 takes 13 s, count 14 a minute, the tab dead meanwhile. Bisected: the
 same on the commit before the preference density; not a regression. Changing the restart goal alone did not help,
 the hull estimate being the wrong ceiling there. The decision: keep the rule's effect, fix its failure, with the
-push in two phases, interior pushes first, then clamped pushes accepted for the colors still under the floor,
+push in two phases, interior pushes first, then clamped pushes accepted for the colors still under the minimum spacing,
 so a roomy box never changes, a crowded one clamps less than with the rule dropped, and the ring works.
 
 The plan, built the same day, as it stands in `index.html`:
@@ -1123,11 +1123,11 @@ The plan, built the same day, as it stands in `index.html`:
   takes its cell. Equal weight in a uniform pool is equal available space at any box, with no strata to define.
 - Pushes in three phases, each for the colors still over the limit when the one before is exhausted: within the
   color's cell, then the cell's walls kept, then the box's walls kept.
-- Restarts stop on a plateau: after the minimum four, only while the best floor improved within the last three.
+- Restarts stop on a plateau: after the minimum four, only while the best worst identified improved within the last three.
 
 Measured after the build, the same 40 seeds and thirds as above:
 
-| stage | count | chroma thirds | lightness thirds | floor | ms per palette |
+| stage | count | chroma thirds | lightness thirds | worst identified | ms per palette |
 |---|---|---|---|---|---|
 | uniform by metric volume | | 15/45/40 | 7/47/46 | | |
 | seats alone, no clearance test | 8 | 18/41/41 | 7/47/46 | | |
@@ -1146,10 +1146,10 @@ Read off it:
 - The pushes still empty the middle third, and the cells do not stop them. A cell's far wall is still a wall:
   neighbours across a shared wall push each other away from it, to the outer walls of their cells, and at count
   16 the splits are mostly in hue, the longest axis, so a cell spans the whole lightness range. In a crowded box
-  the emptied middle is the floor's optimum, so any coverage kept there is paid for in floor.
-- Count 40, two seeds: floor 0.55 to 0.60 against 0.68 before, the confinement's price where every cell is
+  the emptied middle is the optimum of worst identified, so any coverage kept there is paid for in worst identified.
+- Count 40, two seeds: worst identified 0.55 to 0.60 against 0.68 before, the confinement's price where every cell is
   compressed; the third phase does not recover it, since the push budget runs out inside the cells.
-- The ring, chroma 100 to 100: count 6 floor 0.97 in 0.5 s against 0.71 in 8 s, count 14 in 0.7 s against 67 s.
+- The ring, chroma 100 to 100: count 6 worst identified 0.97 in 0.5 s against 0.71 in 8 s, count 14 in 0.7 s against 67 s.
   The wall-phase fix works and the budgets no longer nest.
 - Cost at 8 unchanged within noise, at 16 half again the old.
 Hue, measured after the build in a saturated ring of a box (L 30-70, C 70-95), 60 sectors of 6 degrees, each
@@ -1165,9 +1165,9 @@ sector's share of the generated colors over its share of the metric volume (unif
   sectors at the sRGB primaries, blue at 264-270 five times its share, where a color sliding along the wall
   stops in the corner. At count 8 the same corners show at up to 1.9.
 The open decision: coverage of the middle at crowded counts is only had by stopping the pushes short of the
-floor's optimum, a margin inside the cell walls or an earlier stop, and the Distinctness slider says the floor
-comes first. The build as it stands keeps the floor; the seats are the coverage and the pushes take back what
-the floor needs. Whether that reads better than before is a pairwise round, dealt against `tmp/index-HEAD.html`
+optimum of worst identified, a margin inside the cell walls or an earlier stop, and the Distinctness slider says worst identified
+comes first. The build as it stands keeps worst identified; the seats are the coverage and the pushes take back what
+worst identified needs. Whether that reads better than before is a pairwise round, dealt against `tmp/index-HEAD.html`
 or the commit before.
 Open after it: the shadow's cone angle, 20 degrees by eye; the cell capacity and direction step rounds, built and
 shelved. The preference pairwise round was started and abandoned at 50 pairs: a palette is not a unit the judge
@@ -1188,8 +1188,8 @@ Alternatives noted and not taken, kept in case the plan disappoints:
 - A cap per family scaled by the name's size in the survey, purple two, salmon one: for palettes past the
   count where every stratum has a seat, if second purples still crowd.
 - A wall margin as an explicit inset of the box for the pushes, clamped pushes accepted within it: keeps colors
-  off the outermost shell even where the floor cannot be met inside, which prefers a confusable palette to a
-  wall-sitting one; the Distinctness slider says the floor comes first, so the two-phase push instead.
+  off the outermost shell even where the worst identified target cannot be met inside, which prefers a confusable palette to a
+  wall-sitting one; the Distinctness slider says worst identified comes first, so the two-phase push instead.
 
 ## A hue boundary the metric does not see
 
@@ -1694,7 +1694,7 @@ saturated, less violet, more yellow and lime, both good. One dark warm color (ma
 39, hue 36) sits in 86 of the 100, as in 77 before: the box's dark warm corner holds one seat far from everything,
 and an even spread fills every such seat in every palette. It is on the gamut's surface, fully vivid by the
 reach at its own lightness and 57% of its hue's cusp chroma. Vividness as the share of the cusp's chroma instead
-(`tmp/vivid-cusp.html`): 70 of 100, dark colors 4.4 to 3.0 a palette, floor 97.7 to 96.4%, and the judge finds
+(`tmp/vivid-cusp.html`): 70 of 100, dark colors 4.4 to 3.0 a palette, worst identified 97.7 to 96.4%, and the judge finds
 those palettes far worse. Left as is; the name control bans brown.
 
 A density per lightness, the pair's the mix of the two around its mean lightness (`--levels 30,58,85`, each level
@@ -1711,7 +1711,7 @@ the avoided colors' shadows measure their turn at the avoided color's lightness,
 its own. `HUE_DENSITY`, the one table, stays as the hue distribution of the draws and the rebuilt generator's hue
 line. The pages' distance against `identify.js` over 732 judged pairs: equal to rounding. The same hundred palettes:
 dark red, 330 to 60 under lightness 45, 1.4 to 1.7 of 15, blue to magenta 4.7 to 4.4, orange to lime 3.2 to 3.4,
-the floor and the one dark warm color unchanged: a small move in this box, whose lightness range holds few pastels.
+worst identified and the one dark warm color unchanged: a small move in this box, whose lightness range holds few pastels.
 
 The rebuilt generator on this metric ("The generator rebuilt from the end state" below): the hue target
 removed, the metric by lightness having taken over its work; vividness as the share of the hue's cusp chroma at the
@@ -1809,10 +1809,10 @@ Desirability as a weight, tried (`tmp/make-pack.js`, `tmp/pastel6.js`): a packer
 metric it packs on, so a density proportional to a weight w takes a packing metric of the distance times w to
 the 1/3 (the volume goes as the cube); the report stays on the true metric. Four page variants, the squared
 distance times (w(p) w(q)) to the e, w either `preferenceOf` (the member-round model) or the color's chroma as
-a share of its reach, e 1/3 (volume times w) or 1 (volume times w cubed). The same box, four seeds, the floor
+a share of its reach, e 1/3 (volume times w) or 1 (volume times w cubed). The same box, four seeds, worst identified
 recomputed on the true metric:
 
-| variant | share mean | share min | mean L | true floor | in 250 to 330 | in 30 to 120 |
+| variant | share mean | share min | mean L | true worst identified | in 250 to 330 | in 30 to 120 |
 |---|---|---|---|---|---|---|
 | built | 80% | 36% | 53 | 0.981 | 6.8 | 1.5 |
 | preference, e 1/3 | 86% | 43% | 53 | 0.983 | 7.3 | 1.8 |
@@ -1820,7 +1820,7 @@ recomputed on the true metric:
 | share of reach, e 1/3 | 88% | 60% | 54 | 0.983 | 6.0 | 2.0 |
 | share of reach, e 1 | 96% | 84% | 54 | 0.983 | 6.3 | 2.5 |
 
-The share weight at e 1 gives the recall page's vividness back at no cost in the true floor: the box has the
+The share weight at e 1 gives the recall page's vividness back at no cost in the true worst identified: the box has the
 slack, the packer just spent it elsewhere. The member-round model as the weight makes the hue balance worse:
 it dislikes moderate-chroma yellows and greens and likes blues and violets at any chroma, `preferenceOf` at
 chroma 8 being 0.16 at hue 90 and 0.84 at 270, at chroma 12 0.48 and 0.94, and even at 16 0.81 against 0.98.
@@ -1839,7 +1839,7 @@ palettes needs an instrument that shows palettes.
 What the stages of the current generator contribute (`tmp/pushes.js`, `tmp/start-vs-final.js`, the exposed copies
 in `tmp/`). The seats decide the hue balance and the pushes keep it: blue to magenta 6.2 of 14 seated, 6.3 final;
 26% of the colors move at all in a roomy box, by under one unit of the metric, 92% by about two units at 24 colors.
-The floor of the seats alone against the final palette: 0.970 to 0.980 in the reported box, 0.855 to 0.967 at 24
+Worst identified of the seats alone against the final palette: 0.970 to 0.980 in the reported box, 0.855 to 0.967 at 24
 colors in a wide box, 0.574 to 0.865 at 40 in 8 s, 0.247 to 0.516 in a pastel box. The pool counts the hue table
 twice, once as the draw's acceptance and once inside the volume element: its points are 33% blue to magenta, its
 weight 45%. The heaviest tenth of the pool's points hold 30% of the weight.
@@ -1857,7 +1857,7 @@ color's own lightness; the metric of the one hue table, before the refit. `tmp/c
 `tmp/contact-sheet.js` writes a page of palettes per generator to look at. Four seeds, Distinctness 3, the hue bins
 red, orange to lime, green to cyan, sky blue, blue to magenta; the target line is 18 / 22 / 18 / 11 / 31%:
 
-| box, colors | page | floor | ms | hue bins | 00 or ff channel |
+| box, colors | page | worst identified | ms | hue bins | 00 or ff channel |
 |---|---|---|---|---|---|
 | chroma 26-100, lightness 23-60, 14 | current | 0.980 | 178 | 14 / 18 / 16 / 5 / 46 | 9% |
 | | rebuilt | 0.965 | 21 | 20 / 21 / 14 / 14 / 30 | 11% |
@@ -1870,11 +1870,11 @@ red, orange to lime, green to cyan, sky blue, blue to magenta; the target line i
 | the ring, chroma 100-100, 14 | current | 0.586 | 1237 | | |
 | | rebuilt | 0.927 | 61 | | |
 
-The floor the rebuilt page gives up in a crowded box is the hue target's price, not the method's: with
-`HUE_TARGET_STRENGTH` 0 it reaches 0.982, 0.965, 0.878 and 0.507 on the first four boxes, the current page's floors, in a
+The worst identified the rebuilt page gives up in a crowded box is the hue target's price, not the method's: with
+`HUE_TARGET_STRENGTH` 0 it reaches 0.982, 0.965, 0.878 and 0.507 on the first four boxes, the current page's worst identified, in a
 twentieth of the time and with the current page's hue bins (43 to 46% blue to magenta). At 0.5: 0.980, 0.940, 0.812,
 0.517, blue to magenta 35 to 38%. `HUE_BOOST_MAX` 2 at strength 1: 0.975, 0.916, 0.760, 0.521. Sixteen attempts
-at strength 1 buy 0.01 to 0.05. The target puts colors into hues with little room; how much floor that is worth is
+at strength 1 buy 0.01 to 0.05. The target puts colors into hues with little room; how much worst identified that is worth is
 the judge's call, and the constant is the place to make it.
 
 ## On the metric by lightness
@@ -1883,9 +1883,9 @@ The first build's known gap, vividness as the share of the reach at the color's 
 near-black color on the gamut's surface counts as fully vivid, is what the cusp share below fixes.
 
 Measured again on the metric with the hue table by lightness (`tmp/strength-check.js`, `tmp/compare-generators.js`,
-six and four seeds): with the hue target at 1 the rebuilt page gives up 1.7 to 21 points of floor to the current
+six and four seeds): with the hue target at 1 the rebuilt page gives up 1.7 to 21 points of worst identified to the current
 page (95.9 against 97.6 at 15 colors, 56.9 against 77.8 at 40) and reads duller; at 0 it matches or beats the
-current page on floor (97.7 / 97.8 / 94.8 / 81.3 against 97.6 / 97.7 / 94.7 / 77.8) with the same hue balance,
+current page on worst identified (97.7 / 97.8 / 94.8 / 81.3 against 97.6 / 97.7 / 94.7 / 77.8) with the same hue balance,
 blue to magenta 29 to 36%: the metric by lightness left the target little to correct, and it is removed. The
 dullness that remained,
 most in magenta to red, was vividness as the share of the reach at the color's own lightness, which counts a dark
@@ -1893,7 +1893,7 @@ red on the gamut's surface as vivid; the rebuilt page samples the volume as it i
 park colors at the cusps. Vividness as the share of the hue's cusp chroma, a hundred palettes of 15 in chroma 46 to
 100, lightness 20 to 60, the current page for reference (`tmp/palette-set.js`, `tmp/dullness.js`, `tmp/red-sector.js`):
 
-| page | floor | mean chroma | colors of 15 at 90% of the cusp's chroma | magenta to red: mean L, C | dark ones of them |
+| page | worst identified | mean chroma | colors of 15 at 90% of the cusp's chroma | magenta to red: mean L, C | dark ones of them |
 |---|---|---|---|---|---|
 | current page | 97.7% | 18.0 | 4.8 | 53.0, 19.9 | 0.92 |
 | rebuilt, share of the reach | 97.5% | 17.3 | 3.5 | 49.7, 18.8 | 1.32 |
@@ -1901,7 +1901,7 @@ park colors at the cusps. Vividness as the share of the hue's cusp chroma, a hun
 | cusp share, power 1/2 | 97.5% | 18.7 | 6.1 | 53.7, 20.7 | 0.81 |
 | cusp share, power 1 | 95.9% | 20.4 | 9.0 | 56.5, 22.5 | 0.56 |
 
-The judge chose the power 1/2: as vivid as the current page and a little more, at its floor, in a tenth of the time.
+The judge chose the power 1/2: as vivid as the current page and a little more, at its worst identified, in a tenth of the time.
 
 ## Rerolling one color
 
@@ -1912,7 +1912,7 @@ a hundred palettes of 15 in the box above, one slot rerolled ten times each; `k`
 are thrown again with the slot, "excluded" means the pool points within the limit distance (12.3 ΔE at Distinctness 3)
 of the rejected color are not offered; the widest throw seats the removed ones, then the relaxation runs:
 
-| policy | variety, mean ΔE between the ten replacements | replacement from the rejected | floor drop | colors changed over 3 ΔE, the removed ones included |
+| policy | variety, mean ΔE between the ten replacements | replacement from the rejected | worst identified drop | colors changed over 3 ΔE, the removed ones included |
 |---|---|---|---|---|
 | k=0, escalating to 3 only when nothing seats at the palette's spacing | 5.0 | 5.3 | 0.03 pts | 0.4 |
 | k=1, rejected excluded | 7.5 | 15.8 | 0.62 | 1.6 |
@@ -2019,9 +2019,9 @@ without a term. Kinds are dead as a metric term; the map stands as a record of t
 
 The Distinctness slider set the noise width, so a lower setting spread colors against a noise the calibration never
 measured and reported identification chances under it. The noise width is now fixed at 3.3, the value the strict rounds
-put the 2% limit at 13.5 with, and the control is a floor on the closest pair in weighted deltaE, from 13.5 up: a pair
+put the 2% limit at 13.5 with, and the control is a minimum spacing on the closest pair in weighted deltaE, from 13.5 up: a pair
 under it steps like one over the error limit, and an attempt ends the search only with every pair at or above it. Below
-13.5 the error limit already holds every pair apart where the ranges allow, so the floor starts there. The identification
+13.5 the error limit already holds every pair apart where the ranges allow, so the minimum spacing starts there. The identification
 chances the page reports are at the one calibrated noise at every setting. State strings are v5; v4 strings are not read.
 
 ## Shades and lightness at one hue
@@ -2065,18 +2065,18 @@ evens out somewhat. `HUE_BOOST`, a factor per hue on the packing scale, moves co
 metric. `fit_hue_boost.js` fitted it toward even sector counts over the author's box, the same uncapped, and the default
 box, 40 seeds each:
 
-| box | before: floor, closest pair | even counts: floor, closest pair |
+| box | before: worst identified, closest pair | even counts: worst identified, closest pair |
 |---|---|---|
 | author's, to 67 | 0.951, 14.3 | 0.855, 10.8 |
 | author's, to 100 | 0.973, 15.6 | 0.916, 12.4 |
 | default, 10 colors | 0.981, 16.0 | 0.971, 15.1 |
 
-- Without a floor on the metric the throw sat boosted pairs at 8: packing scales set against each other let a pair of
+- Without a minimum spacing on the metric the throw sat boosted pairs at 8: packing scales set against each other let a pair of
   high scales take less metric distance than it reads at. The throw now keeps the error limit or Min distance on the
-  metric, or the widest floor the box allows. Unboosted, that moved the author's box from 0.949 and 14.1 to 0.951 and 14.3.
+  metric, or the widest spacing the box allows. Unboosted, that moved the author's box from 0.949 and 14.1 to 0.951 and 14.3.
 - A full box has no room to give: at 15 colors, colors moved into yellow and orange are colors moved closer. The
-  relaxation, which accepts a step by its error on the packing distance, still gives some of the floor away.
-- The boost ships at one; `tune-hue-boost.html` sets it by eye against the floor it costs.
+  relaxation, which accepts a step by its error on the packing distance, still gives some of worst identified away.
+- The boost ships at one; `tune-hue-boost.html` sets it by eye against the worst identified it costs.
 
 The boost was first a factor on the packing scale, so on all three axes: a hue's room went as its cube. It is now a
 stretch of the hue axis alone, so a hue's room goes as the boost. Colors per palette in a range with the range alone
@@ -2094,9 +2094,9 @@ boost would give:
 
 - Cuts follow the proportional share under the stretch; under the scale's cube they emptied a range.
 - Boosts stop short under both and saturate under the stretch: x2 and x4 seat the same counts.
-- The throw alone follows the share: one attempt, no floor, no relaxation, x2 seats 0.93, 4.28, 1.39, 4.10, 1.20 and
-  2.52 against 0.85, 4.93, 1.55, 4.83, 1.31 and 3.07 (its own baseline). One attempt with the floor and the relaxation
-  seats what four do: the floor and the relaxation, both on the metric, take the boost back.
+- The throw alone follows the share: one attempt, no minimum spacing, no relaxation, x2 seats 0.93, 4.28, 1.39, 4.10, 1.20 and
+  2.52 against 0.85, 4.93, 1.55, 4.83, 1.31 and 3.07 (its own baseline). One attempt with the minimum spacing and the relaxation
+  seats what four do: the minimum spacing and the relaxation, both on the metric, take the boost back.
 - The stretch ships as the boost plus one offset for every hue, not the boost over its mean: every hue pays a boost
   alike, the author's reading of a boost as reshaping the strip at a fixed area. The counts move by tenths at most:
   x0.5 and x2 seat 0.14 and 0.88, 1.95 and 4.27, 0.34 and 1.01, 1.75 and 3.95, 0.41 and 0.81, 1.30 and 2.17 in the rows'
@@ -2128,28 +2128,28 @@ absolute lightness, the author's box with lightness 20 to 100 and chroma from 20
   palettes, pale colors (L above 80, chroma under 8) go from 0.80 a palette to 0.57 at 0.05, 0.30 at 0.08 and none at
   0.10; darks stay at 4.1 to 4.6.
 
-## Palettes at the floor
+## Palettes at the minimum spacing
 
 At 15 colors the author could not tell a box's palettes apart from one palette varied slightly. The generator spread
 colors as far as the box allowed: the throw sought the widest spacing that still seated every color, the relaxation
 stepped colors toward more room, and the attempts kept the widest spread. A full box has few arrangements at the widest
-spacing, so seeds converged on them. The relaxation did most of it: in the author's box the throw already sat at the floor.
-The generator now holds the floor (the error limit or Min distance) and no more:
+spacing, so seeds converged on them. The relaxation did most of it: in the author's box the throw already sat at the minimum spacing.
+The generator now holds the minimum spacing (the error limit or Min distance) and no more:
 
-- The throw seats the pool in a seeded random order, a point when it is at the floor from every seated color; a box that
-  cannot seat the count at the floor gets the floor lowered by bisection.
-- The relaxation moves only colors with a pair under the floor, closest first, and keeps a step that widens its closest pair.
-- The attempts stop at the first with every pair at the floor.
+- The throw seats the pool in a seeded random order, a point when it is at the minimum spacing from every seated color; a box that
+  cannot seat the count at the minimum spacing gets it lowered by bisection.
+- The relaxation moves only colors with a pair under the minimum spacing, closest first, and keeps a step that widens its closest pair.
+- The attempts stop at the first with every pair at the minimum spacing.
 - The packing distance and the hue stretch are gone: the boost and Vividness act only through the pool's density.
 
 Sameness is scored as shared colors (`tmp/variety.js`): two palettes' colors matched one to one at the least total
 distance, each matched pair counting twice its swap chance at the calibrated noise, 1 for identical colors and 0.04 at
 the limit. The author's box (15 colors, L 14-71, `sMin` 0.119), 40 seeds, 780 pairs of palettes:
 
-| generator | shared of 15 (p10, p90) | closest pair | floor | ms per palette |
+| generator | shared of 15 (p10, p90) | closest pair | worst identified | ms per palette |
 |---|---|---|---|---|
 | widest spacing | 6.8 | 16.1 | 0.973 | 128 |
-| at the floor | 5.5 (4.3, 6.7) | 14.4 | 0.926 | 15 |
+| at the minimum spacing | 5.5 (4.3, 6.7) | 14.4 | 0.926 | 15 |
 | random picks from the pool | 4.0 (3.0, 5.2) | - | - | - |
 
 - The score ranks example pairs as the author does, most to least similar; its absolute values are not judged.
@@ -2190,7 +2190,7 @@ drawn from the palette's seed. 400 seeds a box, 79,800 pairs (`tmp/b-effect.js`)
 
 - Sameness drops by 0 to 2%: the box, not the shared sample, makes palettes alike.
 - Exact repeats go; what remains is one hex reached from different pools.
-- The closest pair, the floor and the mean vividness move by 0.02, 0.001 and 0.003 at most.
+- The closest pair, worst identified and the mean vividness move by 0.02, 0.001 and 0.003 at most.
 - Sector counts move by up to 0.13 a palette: yellow in the author's to 67, red and green in the one to 100.
 - One pool's sampling error is shared by every palette of its box; pools per seed average it out.
 - A palette pays its pool build, about 20 ms; a reroll keeps the seed and reuses the pool.
@@ -2217,6 +2217,86 @@ straight-line metric distances of every pair within W along the ridge. Share of 
 - Path length ships: the local limit of the straight distance, without a parameter, built from the metric at load.
 - The edge's hue turns back by at most 0.0055 degrees between `#0000ff` and `#0028ff`; kept rising, that stretch, 1.9 deltaE
   of the ridge, shares one hue, so a color with that hue is placed at one end of it, up to 4 of 360 off.
+
+## Hue families
+
+The author's families are `SECTORS` in `hue-boost.js`, set at the cusp with `tune-name-boundaries.html`: nine hue ranges,
+magenta counted with pink, turquoise apart from cyan.
+
+- The boundaries hold off the cusp: the slice at each boundary hue, chroma 10 up, shows no hue drift. Darker members
+  take names of their own (brown, olive, maroon, navy): a lightness cut inside a family, not a turn of hue. This refines
+  "family as a hue sector" in the section above: the sector holds, and a family's dark end carries a separate name.
+- Width across hue at the cusp, on the metric: red 2.6, turquoise 8.4, orange 9.0, blue 12.1, green 12.9, cyan 16.0,
+  yellow 18.5, purple 19.8, pink 23.4.
+
+Colors per family, 300 seeds a box (`tmp/occupancy.js`), share of colors; the ridge share is the family's metric
+length along the cusp line:
+
+| family | author's, to 67 | default, 10 colors | ridge share |
+|---|---|---|---|
+| red | 3.3% | 2.2% | 1.7% |
+| orange | 7.0% | 6.2% | 7.8% |
+| yellow | 7.1% | 10.4% | 14.9% |
+| green | 6.6% | 9.4% | 10.1% |
+| turquoise | 4.2% | 5.3% | 6.7% |
+| cyan | 15.1% | 15.4% | 15.1% |
+| blue | 13.2% | 11.5% | 14.5% |
+| purple | 18.6% | 17.2% | 13.5% |
+| pink | 24.9% | 22.3% | 15.7% |
+
+- In the author's box red is missing from 55% of palettes, turquoise from 40%; pink holds 4 or more in 65%. A palette
+  covers 8 of the 9 families at the median, 7 at p10.
+- The large families' excess is their dark members: pink's 3.74 a palette are magenta 1.11, maroon 0.61, mauve 0.49,
+  dark purple 0.43, pink 0.34 by the survey's names; cyan's 2.27 are teal and blue 0.56 each, navy 0.37, grey blue
+  0.32, black 0.30.
+
+The boost does not reach a full box. A family's count at the minimum spacing is capped by its room, and the seats the small
+families cannot hold go to the large ones. Colors a palette with the boost on the author's families, hard edges:
+
+| box | set | yellow | pink | red missing |
+|---|---|---|---|---|
+| author's, to 67, 15 colors | none | 1.06 | 3.74 | 55% |
+| | yellow x2 | 1.06 | 3.70 | |
+| | yellow x2, pink x0.6, purple x0.75 | 1.04 | 3.67 | |
+| | red x8 | | | 52% |
+| author's, to 67, 6 colors | none / yellow x2 | 0.14 / 0.30 | | |
+| default, 10 colors | none / red x8 | | | 79% / 24% |
+
+- Worst identified and the closest pair do not move under any set.
+- Red x8 in the author's box puts a red in 88% of the throws and 47% of the palettes: that box cannot seat 15 at the
+  minimum spacing, the relaxation runs on every palette, and a step of up to 2 deltaE carries a red out of a family 2.6 wide.
+- With the relaxation kept inside each color's family (a proposal changing it dropped), red x2, x4 and x8 leave red
+  missing from 38%, 21% and 9% of the author's palettes, the closest pair at 14.4 throughout. Orange pays (missing
+  18% to 40% at x4), and the lock alone leaves yellow missing from 23% against 3%: the drift was feeding yellow.
+
+A distance bonus across a family boundary is not in the judge's grades. Rounds 4 to 29, 4128 verdicts, 2439 of them
+across a boundary, the grade model on the built metric (`tmp/boundary-fit.js`, `tmp/boundary-margin.js`):
+
+- A step per boundary crossed fits at 0.07 deltaE, a bump of hue density at each boundary at 0.077 of the mean over
+  1.6 degrees; cross-validated loss 0.5996 against the built metric's 0.5994.
+- Matched on distance, pairs across a boundary read as pairs across none below 12 deltaE (factor 0.96 to 1.04). By margin
+  from the boundary the factor rises from 1.02 to 1.09, with the pairs' distance. Above 12 they read farther (1.09, 1.25), but among hue-only pairs 1.05 and 1.08 against 1.06
+  for hue-only pairs across none: the kind of pair, not the boundary.
+- As a preference, a step of 2, 4 and 8 raises the families a palette covers from 7.7 to 8.2, 8.6 and 8.9 and drops
+  the closest pair on the built metric to 11.2, 9.0 and 6.9. A step of 100 seats near-twins across boundaries (closest
+  4.1). With a margin of 3 deltaE on each side, coverage 7.9 and closest pair 8.7, red and yellow down: a family narrower
+  than twice the margin never clears it and its neighbours close in over it.
+
+The pool against measured volume (`tmp/pool-volume.js`): a reference uniform in OKLab, weighted by sqrt(det G) of
+`apart2` for the metric's volume.
+
+- `metricVolume` matches the numeric element within 1% (p1 to p99).
+- At Vividness 0 the pool is uniform in the metric's volume, 0.96 to 1.04 per lightness, chroma and hue band; hue 90-120
+  in the author's box reads 0.93 in two independent sets of pools, unexplained.
+- Vividness tilts hues: at 0.5, hue 60-90 gets 1.68 of its metric share and cyan to violet 0.92 to 0.94. The tilt is the gamut's
+  shape: weights by metric distance to the nearest point of the cusp line or to the own hue's cusp, strength matched on
+  the pool's mean chroma, give 1.87 and 1.88 there, and 0.59 and 0.57 for green to cyan in the author's box, whose cusps
+  sit above its lightness cap. Both also cut dark saturated colors harder (0.68 to 0.84 against 0.90 to 0.96) and greys
+  less. The nearest point costs 520 ms a pool, the own cusp 43, the share of the cusp chroma 28.
+- Dividing the factor by its metric-volume mean per 10 degrees of hue over the pool's survey (`tmp/vivid-norm.js`) keeps
+  every hue at 0.92 to 1.04 of its metric share at both strengths and both boxes, the chroma and lightness tilt and the
+  mean chroma unchanged, for 2 ms a pool. Normalized, the own cusp's distance still cuts dark saturated colors harder
+  than the share of the cusp chroma (0.76 to 0.80 against 0.94 to 0.97 at the stronger setting) and greys less.
 
 ## Files
 
@@ -2258,3 +2338,4 @@ straight-line metric distances of every pair within W along the ridge. Share of 
 - `data/calibrate-cells.html`, `data/make_cell_deal.js`, `data/fit_cells.js`: the cell capacity rounds, how many distinct and how many not same-y colors a cell of the space holds along each coordinate; the sectors are written into the page.
 - `data/calibrate-boundaries.html`, `data/make_boundary_deal.js`, `data/fit_boundaries.js`, `data/fit_hue_density.js`, `data/boundary-1-log.json` to `data/boundary-15-log.json`: the pair rounds under the preference question, one pair per trial: hue turns straddling or beside each primary and secondary hue or swept around the circle at several lightness and chroma levels and placements, lightness pairs, chroma pairs, and the violet placement rounds; the deal is written into the page, `data/scripts.md` lists what each round is. The density fit pools the logs; the metric's hue table, chroma power, chroma weight and lightness gain come from them.
 - `data/calibrate-kinds.html`, `data/make_kind_deal.js`, `data/kinds-1-log.json`: the kind round, each dealt color named alone with one of the judge's own kinds; the deal is written into the page.
+- `data/tune-hue-boost.html`, `data/fit_hue_boost.js`, `data/hue-boost.js`: the boost per hue, by eye and fitted; `data/tune-name-boundaries.html`: the author's hue families. Both pages run `index.html`'s code through `data/page-source.js`.

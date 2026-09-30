@@ -549,7 +549,7 @@ function confusionMatrix(labs, sigma) {
 	return matrix;
 }
 
-// Per-color accuracy, the palette's floor and mean, and the pair confused most (either way round).
+// Per-color accuracy, the worst color's and the mean, and the pair confused most (either way round).
 function summarize(matrix) {
 	const n = matrix.length;
 	const accuracy = matrix.map((row, i) => row[i]);
@@ -560,7 +560,7 @@ function summarize(matrix) {
 				confused = matrix[i][j] + matrix[j][i];
 				pair = [i, j];
 			}
-	return { accuracy, floor: Math.min(...accuracy), mean: accuracy.reduce((s, v) => s + v, 0) / n, pair, confused };
+	return { accuracy, worstIdentified: Math.min(...accuracy), mean: accuracy.reduce((s, v) => s + v, 0) / n, pair, confused };
 }
 
 function score(hexes) {
@@ -589,12 +589,12 @@ function printPalette(hexes, page) {
 		console.log("  " + hexes[i] + "  identified " + percent(result.accuracy[i])
 			+ "  named " + percent(naming.distinct[i]) + "  " + naming.names[i]);
 	const [a, b] = result.pair;
-	console.log("identification: floor %s  mean %s  min deltaE %s  worst pair %s %s confused %s at deltaE %s",
-		percent(result.floor), percent(result.mean), minimumGap(labs).toFixed(1),
+	console.log("identification: worst %s  mean %s  min deltaE %s  worst pair %s %s confused %s at deltaE %s",
+		percent(result.worstIdentified), percent(result.mean), minimumGap(labs).toFixed(1),
 		hexes[a], hexes[b], percent(result.confused), distance(labs[a], labs[b]).toFixed(1));
 	const [c, d] = naming.pair;
-	console.log("naming:         floor %s  mean %s  worst pair %s %s both %s / %s, colliding %s",
-		percent(naming.floor), percent(naming.mean), hexes[c], hexes[d],
+	console.log("naming:         worst %s  mean %s  worst pair %s %s both %s / %s, colliding %s",
+		percent(naming.worstNamed), percent(naming.mean), hexes[c], hexes[d],
 		naming.names[c], naming.names[d], percent(naming.collided));
 }
 
@@ -687,7 +687,7 @@ function nameCollision(hexes, page) {
 			}
 		}
 	const distinct = worst.map(v => 1 - v);
-	return { distinct, floor: Math.min(...distinct), mean: distinct.reduce((s, v) => s + v, 0) / hexes.length,
+	return { distinct, worstNamed: Math.min(...distinct), mean: distinct.reduce((s, v) => s + v, 0) / hexes.length,
 		pair, collided, names: cells.map(cell => page.CELL_NAMES[cell] ?? "unnamed") };
 }
 
@@ -710,33 +710,34 @@ function benchmarkPage(pagePath) {
 	console.log("                 identification          naming");
 	// The two scores are reported side by side and never combined: identification is the one the
 	// generator optimizes, naming the second opinion, and a run where they disagree is the finding.
-	let grandFloor = 0, grandMean = 0, grandNamed = 0, runs = 0;
+	// Per box and count: the worst color's chance averaged over the seeds, its lowest seed, and the mean
+	let grandIdentified = 0, grandMean = 0, grandNamed = 0, runs = 0;
 	for (const box of boxes)
 		for (const count of counts) {
-			let floor = 0, mean = 0, gap = 0, least = 1, namedFloor = 0, namedMean = 0, leastNamed = 1;
+			let identified = 0, mean = 0, gap = 0, lowest = 1, named = 0, namedMean = 0, lowestNamed = 1;
 			for (const seed of seeds) {
 				const hexes = generate({ count, seed, fixed: [], ...box }).colors.map(color => color.hex);
 				const result = score(hexes);
 				const naming = nameCollision(hexes, page);
-				floor += result.floor;
+				identified += result.worstIdentified;
 				mean += result.mean;
 				gap += minimumGap(hexes.map(labOf));
-				least = Math.min(least, result.floor);
-				namedFloor += naming.floor;
+				lowest = Math.min(lowest, result.worstIdentified);
+				named += naming.worstNamed;
 				namedMean += naming.mean;
-				leastNamed = Math.min(leastNamed, naming.floor);
+				lowestNamed = Math.min(lowestNamed, naming.worstNamed);
 			}
-			grandFloor += floor;
+			grandIdentified += identified;
 			grandMean += mean;
-			grandNamed += namedFloor;
+			grandNamed += named;
 			runs += seeds.length;
-			console.log("%s n=%s | floor %s worst %s mean %s | floor %s worst %s mean %s | min deltaE %s",
-				box.name.padEnd(7), String(count).padStart(2), percent(floor / seeds.length), percent(least),
-				percent(mean / seeds.length), percent(namedFloor / seeds.length), percent(leastNamed),
+			console.log("%s n=%s | worst %s lowest %s mean %s | worst %s lowest %s mean %s | min deltaE %s",
+				box.name.padEnd(7), String(count).padStart(2), percent(identified / seeds.length), percent(lowest),
+				percent(mean / seeds.length), percent(named / seeds.length), percent(lowestNamed),
 				percent(namedMean / seeds.length), (gap / seeds.length).toFixed(1).padStart(4));
 		}
-	console.log("over all runs: identification floor " + percent(grandFloor / runs) + "  mean " + percent(grandMean / runs)
-		+ " | naming floor " + percent(grandNamed / runs));
+	console.log("over all runs: identification worst " + percent(grandIdentified / runs) + "  mean " + percent(grandMean / runs)
+		+ " | naming worst " + percent(grandNamed / runs));
 }
 
 function main(args) {

@@ -4,7 +4,7 @@
 // range per sector, a hard step between sectors. A step moves each sector's log boost by the log of its count's
 // shortfall, damped: a hue's room goes as its boost. The boost stays within BOOST_RANGE, so a sector with little room is
 // not crammed.
-// Prints each box's counts before and after, the palettes' floor and closest pair, and the ranges to paste.
+// Prints each box's counts before and after, the palettes' worst identified color and closest pair, and the ranges to paste.
 //
 //     node data/fit_hue_boost.js [--steps 12] [--seeds 40] [page.html]
 
@@ -34,26 +34,26 @@ function main(args) {
 	}
 	const configs = BOXES.map(box => configOf(box, loadPage(pagePath).CELL_NAMES.length));
 
-	// Mean count per sector a palette, mean floor and closest pair, over the seeds, for each box
+	// Mean count per sector a palette, mean worst identified color and closest pair, over the seeds, for each box
 	const measure = logs => {
 		const page = loadPage(pagePath, { hueBoostRanges: rangesOf(logs) });
 		return configs.map(cfg => {
 			const counts = Array(SECTORS.length).fill(0);
-			let floor = 0, apart = 0;
+			let worstIdentified = 0, apart = 0;
 			for (let seed = 1; seed <= seeds; ++seed) {
 				const result = page.generate({ ...cfg, seed });
 				for (const color of result.colors)
 					++counts[sectorOf(color.lch[2])];
-				floor += result.floor / seeds;
+				worstIdentified += result.worstIdentified / seeds;
 				apart += result.apart / seeds;
 			}
-			return { counts: counts.map(n => n / seeds), floor, apart };
+			return { counts: counts.map(n => n / seeds), worstIdentified, apart };
 		});
 	};
 	const show = (label, results) => {
 		console.log(label);
 		results.forEach((r, b) => console.log("  " + BOXES[b].name.padEnd(28) + SECTORS.map(([name], s) => name + " " + r.counts[s].toFixed(2)).join("  ")
-			+ "  | floor " + r.floor.toFixed(3) + ", closest pair " + r.apart.toFixed(1)));
+			+ "  | worst identified " + r.worstIdentified.toFixed(3) + ", closest pair " + r.apart.toFixed(1)));
 	};
 
 	let logs = Array(SECTORS.length).fill(0), results = measure(logs);

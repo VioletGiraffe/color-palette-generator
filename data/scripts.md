@@ -82,12 +82,17 @@ Every script taking a page path defaults to `index.html`, and accepts any versio
 change can be compared against `git show <rev>:index.html` saved to a file. `identify.js` passes its
 range boxes as OKLCh ranges, so it needs a page whose controls are OKLCh. `build_cells.py` needs numpy.
 
-`tune-hue-boost.html` sets `HUE_BOOST_RANGES` by eye: hue ranges with a boost and ramp each, dragged on a hue strip or
-typed on a strip spaced as the page's hue bar, strips of each hue's room (the metric's length along the most vivid colors times the boost), the counts per
-sector and per range, floor and closest pair and the palettes over 30 seeds, the page's ranges beside the tuned ones, and
-the ranges to paste. It runs `index.html`'s own generator fetched from the server (`.claude/launch.json`, port 8734), so
-it does not work from disk. `hue-boost.js` holds what it shares with `fit_hue_boost.js`: the author's hue sectors, the
+`tune-hue-boost.html` sets `HUE_BOOST_RANGES` by eye: hue ranges with a boost and ramp each, typed or dragged on a strip
+spaced as the page's hue bar, strips of each hue's room (the metric's length along the most vivid colors times the boost), the counts per
+sector and per range, the worst identified color and the closest pair and the palettes over 30 seeds, the page's ranges beside the tuned ones, and
+the ranges to paste. `hue-boost.js` holds what it shares with `fit_hue_boost.js`: the author's hue sectors, the
 boxes, and the ranges' text as `index.html` holds them.
+
+`tune-name-boundaries.html` sets those sectors, the author's hue families: per boundary its hue, its cusp color and the
+gamut's lightness/chroma slice at that hue, redrawn as the hue changes, and the `SECTORS` line to paste into `hue-boost.js`.
+
+Both run `index.html`'s own code, fetched from the server by `page-source.js` (`.claude/launch.json`, port 8734), so
+they do not work from disk.
 
 ## Running the page headless
 
@@ -110,8 +115,8 @@ boxes, and the ranges' text as `index.html` holds them.
 - `generate(cfg)` takes `{ count, scale, hMin, hMax, cMin, cMax, lMin, lMax, seed, fixed, avoid }` with
   `fixed` and `avoid` as arrays of `colorFromHex` results, plus the optional `included` (name mask, all
   by default), `preference` (true), `lAbsolute` (false: the lightness range in absolute OKLab L), `rerolls` (none: slots of
-  the result rerolled, in order), `vividness` (the page's default: the density's vividness power). It returns `{ colors, floor, pair, apart,
-  confused, named }` or null for an empty box; a color is `{ lch, lab, rgb, hex, cell, confident }`.
+  the result rerolled, in order), `vividness` (the page's default: the density's vividness power). It returns `{ colors, worstIdentified, pair,
+  apart, confused, named }` or null for an empty box; a color is `{ lch, lab, rgb, hex, cell, confident }`.
   The ranges are the page's cusp-relative ones, see `README.md`.
 
 The module also exports the metric itself for the fit scripts: the constants (`SIGMA`, `HUE_WEIGHT_L`, `HUE_WEIGHT_C`,
@@ -152,7 +157,7 @@ sum over its pairs, the same formula the page optimizes. The noise width comes f
 recall calibration below, fitted on the step-round circle (the fit scripts' `--warped`); the
 circle by lightness, the lightness and chroma weights and the gain's exponent are one fit to the pair rounds under
 the preference question, the chroma power from the same rounds, see the boundary logs at the end. A
-palette reports each color's accuracy, the floor (the worst color), and the pair confused most. A
+palette reports each color's accuracy, the worst of them (`worstIdentified`), and the pair confused most. A
 Monte Carlo (noise drawn per recall, nearest entry answered) was tried in
 four geometries and fitted the calibration verdicts worse than this formula in every one, by 5 to
 13 log-likelihood units.

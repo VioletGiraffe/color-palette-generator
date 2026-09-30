@@ -86,13 +86,13 @@ offset alike so the total stays.</p>
 </div>
 
 <script src="hue-boost.js"></script>
+<script src="page-source.js"></script>
 <script>
 "use strict";
 const { SECTORS, BOXES, sectorOf, configOf, rangesText } = HueBoost;
 const STORE_KEY = "hue-boost-tuner-ranges";
 // Seeds generated and shown; the first FIRST_SHOWN are shown before the rest are generated
 const STATS_SEEDS = 30, FIRST_SHOWN = 10;
-const UI_SECTION = "// ---------- ui ----------";
 // The strip: a band of hue colors under the boost curve, whose log2 spans +-CURVE_RANGE
 const STRIP_BAND = 34, CURVE_RANGE = 2;
 const PAGE_EXPORTS = "; ({ generate, CELL_NAMES, HUE_BOOST_RANGES, boostAt, rangeWeight, roomOffset, RIDGE, ridgeWarp, ridgeUnwarp, ridgeHex })";
@@ -170,7 +170,7 @@ async function recompute() {
 				return;
 			side.generator ??= generatorWith(side.boostRanges);
 			const result = side.generator.generate({ ...cfg, seed: base + seed });
-			side.results.push({ colors: result.colors.map(({ lch, hex }) => ({ lch, hex })), floor: result.floor, apart: result.apart });
+			side.results.push({ colors: result.colors.map(({ lch, hex }) => ({ lch, hex })), worstIdentified: result.worstIdentified, apart: result.apart });
 		}
 		if (seed === FIRST_SHOWN || seed === STATS_SEEDS)
 			show(sides, cfg.count, seed, measured, base);
@@ -188,16 +188,16 @@ function show(sides, count, seeds, measured, base) {
 			}
 		const meanOf = key => shown.reduce((sum, result) => sum + result[key], 0) / seeds;
 		const palettes = shown.map(({ colors }) => colors.slice().sort((a, b) => a.lch[2] - b.lch[2]).map(color => color.hex));
-		return { counts, inRanges, floor: meanOf("floor"), apart: meanOf("apart"), palettes };
+		return { counts, inRanges, worstIdentified: meanOf("worstIdentified"), apart: meanOf("apart"), palettes };
 	}), mean = side => side.counts.map(n => n / seeds);
 	const pageMeans = mean(page), tunedMeans = mean(tuned);
 	const held = pageMeans.filter(n => n >= 0.25).length, even = count / held;
 	// The class of a value that moved from a to b by more than the tolerance
 	const change = (a, b, tolerance = 0.05) => b > a + tolerance ? "up" : b < a - tolerance ? "down" : "";
-	$("stats").innerHTML = "<tr><th></th>" + SECTORS.map(([name]) => "<th>" + name + "</th>").join("") + "<th>floor</th><th>closest pair</th></tr>"
-		+ "<tr><td>page's</td>" + pageMeans.map(n => "<td>" + n.toFixed(2) + "</td>").join("") + "<td>" + page.floor.toFixed(3) + "</td><td>" + page.apart.toFixed(1) + "</td></tr>"
+	$("stats").innerHTML = "<tr><th></th>" + SECTORS.map(([name]) => "<th>" + name + "</th>").join("") + "<th>worst identified</th><th>closest pair</th></tr>"
+		+ "<tr><td>page's</td>" + pageMeans.map(n => "<td>" + n.toFixed(2) + "</td>").join("") + "<td>" + page.worstIdentified.toFixed(3) + "</td><td>" + page.apart.toFixed(1) + "</td></tr>"
 		+ "<tr><td>yours</td>" + tunedMeans.map((n, s) => "<td class='" + change(pageMeans[s], n) + "'>" + n.toFixed(2) + "</td>").join("")
-		+ "<td class='" + change(page.floor, tuned.floor, 0.005) + "'>" + tuned.floor.toFixed(3) + "</td><td class='" + change(page.apart, tuned.apart, 0.2) + "'>" + tuned.apart.toFixed(1) + "</td></tr>"
+		+ "<td class='" + change(page.worstIdentified, tuned.worstIdentified, 0.005) + "'>" + tuned.worstIdentified.toFixed(3) + "</td><td class='" + change(page.apart, tuned.apart, 0.2) + "'>" + tuned.apart.toFixed(1) + "</td></tr>"
 		+ "<tr><td>even</td>" + pageMeans.map(n => "<td>" + (n >= 0.25 ? even.toFixed(2) : "-") + "</td>").join("") + "<td></td><td></td></tr>"
 		+ measured.map(({ from, to, boost, on }, k) => {
 			const pageIn = page.inRanges[k] / seeds, tunedIn = tuned.inRanges[k] / seeds;
@@ -316,9 +316,7 @@ function changed() {
 
 async function start() {
 	try {
-		const html = await (await fetch("../index.html", { cache: "no-store" })).text();
-		source = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map(match => match[1]).find(script => script.includes(UI_SECTION));
-		source = source.slice(0, source.indexOf(UI_SECTION));
+		source = await fetchPageSource();
 	} catch (error) {
 		$("status").textContent = "index.html could not be fetched: open this page through the server, not from disk.";
 		return;
