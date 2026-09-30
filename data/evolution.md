@@ -2298,6 +2298,36 @@ The pool against measured volume (`tmp/pool-volume.js`): a reference uniform in 
   mean chroma unchanged, for 2 ms a pool. Normalized, the own cusp's distance still cuts dark saturated colors harder
   than the share of the cusp chroma (0.76 to 0.80 against 0.94 to 0.97 at the stronger setting) and greys less.
 
+The throw does not keep the pool's shares. Share of colors over the family's share of the box's metric volume, Vividness 0,
+1000 seeds a box, attempt 0's throw before the relaxation (`tmp/throw-families.js`); the pool reads 0.98 to 1.01 throughout:
+
+| family | metric volume, author's to 67 | author's, to 67, 15 colors | author's, to 100, 15 colors | default, 10 colors |
+|---|---|---|---|---|
+| red | 2.8% | 1.15 | 1.27 | 1.08 |
+| orange | 4.7% | 1.36 | 1.30 | 1.25 |
+| yellow | 1.0% | 5.85 | 1.82 | 1.90 |
+| green | 3.9% | 1.73 | 1.25 | 1.21 |
+| turquoise | 3.1% | 1.28 | 0.92 | 1.04 |
+| cyan | 12.3% | 1.15 | 1.05 | 0.97 |
+| blue | 15.8% | 0.93 | 0.99 | 1.05 |
+| purple | 26.6% | 0.73 | 0.79 | 0.79 |
+| pink | 29.9% | 0.87 | 0.87 | 0.87 |
+
+- The relaxation and the attempts move these by 0.25 at most, yellow to 67 aside (5.85 to 7.15): the throw sets the family mix.
+- The spacing is the cause: at 3 colors the same box gives yellow 1.25 and purple 0.87.
+- A box full at the spacing takes colors by its shape, not its volume. A throw to saturation (`tmp/saturated-throw.js`) picks
+  9 colors at 14.4 in the author's box to 67 (median), 13 to 100, 12 in the default box. 15 colors are thrown at a closest
+  pair of 11.5 and 13.3 (median, `tmp/throw-spacing.js`) and the relaxation takes them to 14.4; the default box's throw
+  keeps 14.4 in 98% of seeds.
+- No family has room of its own at the spacing: the deepest point of any family, its metric distance to the nearest
+  other family, is 11.6 (pink), yellow's 7.0 to 67 and 9.4 to 100 (`tmp/family-depth.js`).
+- Yellow to 67 is 1% of the volume stretched over 72 degrees under the lightness cap and takes 6% of a saturated throw's
+  picks, a mid-size family's. Why a thin region at the box's surface wins is inferred, not measured: fewer points within
+  the spacing of it can be picked first.
+- Red fits inside one color's exclusion zone (deepest point 2.0 to 2.2): at most one a palette, had when a red point comes
+  first in the order among the points near it. The throw gives red 1.08 to 1.27 of its volume share, as it gives orange and
+  turquoise; the red x8 boost above raises it through the same order.
+
 ## Files
 
 - `index.html`: the generator rebuilt from the end state on the preference metric by lightness, with the

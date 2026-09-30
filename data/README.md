@@ -79,8 +79,7 @@ its own.
 A palette is `count` colors that are, in this order of priority: distinct, every pair at least the minimum spacing apart
 on `apart2` (`minSpacingOf`: the limit distance, where one pair's swap chance is `ERROR_LIMIT`, or the Min distance,
 whichever is larger), or where the box cannot hold that the widest spacing it can; a sample of one stated density over the
-usable part of the box; different for every seed. No spacing wider than the minimum is sought: maximizing it forces every
-seed into the same arrangement. `identification` reports `worstIdentified`, the worst color's chance of being identified,
+usable part of the box; different for every seed. `identification` reports `worstIdentified`, the worst color's chance of being identified,
 and `closestApart`, the closest pair's distance; pairs of two fixed colors are skipped.
 
 The density carries every preference about where colors sit:
@@ -111,7 +110,8 @@ with the widest closest pair; an attempt is a throw and a relaxation:
    range beyond the gamut, the draw sits on the gamut's surface in a shell `SHELL` thick.
 2. **The throw** (`throwAt`, `spacedThrow`): the pool in a seeded random order; a point is picked when its distance on
    the metric to every fixed color and every color picked before it is at least the minimum spacing, or where the box cannot
-   pick `count` so, the widest spacing it can, by bisection to `THROW_PRECISION`. A random sequential sample of the density.
+   pick `count` so, the widest spacing it can, by bisection to `THROW_PRECISION`. A random sequential sample of the density;
+   in a box full at the spacing, its family mix follows the box's shape more than the density (`evolution.md`, Hue families).
 3. **The relaxation** (`relax`), only while some pair is under the minimum spacing: the colors with such a pair, closest first,
    each try up to `PROPOSALS` positions a step away in a random direction; an unusable proposal is dropped, nothing is
    clamped; a proposal is kept when it widens the color's closest pair. A sweep with nothing kept halves the step, from
