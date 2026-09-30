@@ -16,7 +16,7 @@ Use live online in your browser: https://violetgiraffe.github.io/color-palette-g
 - **Keep colors you dislike out**: paste hex values as avoided colors, or right-click a color in the palette. Each bans what it lacks: at its hue, every color at least as dull, as dark or as light as it is, and never the pure version. The charts hatch the banned region.
 - **Reroll one color**: the glyph on a swatch replaces that color with one you could tell from it; its two nearest neighbours may move to make room, the rest stay. Rerolls are part of the state string, so the palette comes back with them.
 - **See the selected range**: the color space, and the limits you select, are rendered on the 2D color chart in real time.
-- **See where the colors landed**: two charts of the perceptual space with a dot per color. One is the outside of the selected region, hue across and lightness up, every point as vivid as the ranges allow; the other is hue across and chroma up, each hue drawn at the lightness within the range that makes it most vivid, so its top edge is the most chroma you can get at that hue and every color sits under it. Equal distance is equal perceived difference in any direction. The 3D gamut shows the same region as a solid, with a halo around each color reaching half the Distinctness width; a checkbox redraws it the way the generator measures distance, hues at their calibrated angles and darks shrunk.
+- **See where the colors landed**: two charts of the perceptual space with a dot per color. One is the outside of the selected region, hue across and lightness up, every point as vivid as the ranges allow; the other is hue across and chroma up, each hue drawn at the lightness within the range that makes it most vivid, so its top edge is the most chroma you can get at that hue and every color sits under it. Equal distance is equal perceived difference in any direction. The 3D gamut shows the same region as a solid, with a halo around each color reaching half the spacing the generator keeps; a checkbox redraws it the way the generator measures distance, hues at their calibrated angles and darks shrunk.
 - **Judge the colors together**: a tight grid of small squares, over a white, black, grey or custom backdrop.
 - **Switch light or dark**: the page follows the system theme; the selector overrides it for the session.
 - **Copy the result**: hex list, CSS custom properties, JSON, or a Python list. Click any swatch to copy its hex.
@@ -41,22 +41,23 @@ for that isolated recognition, not just pairwise difference.
   red is widest among dark colors, violet among pastels, yellow narrow throughout
   (`data/scripts.md`, `data/evolution.md`).
 - A pair's chance of being swapped follows from its weighted distance, and a color's chance of
-  being misidentified is the sum over its pairs. The generator keeps every color's chance under a
-  limit: the colors are thrown at random over the selected range with the widest spacing that seats
-  them all, so they follow one stated density and no region gets a second color while a comparable one
-  has none; any color still confused too often steps off in random directions until none is. A few
-  throws are made and the one whose worst color does best is kept.
-- Vividness is a preference, not a restriction: colors are spaced on the distance times their chroma's share
-  of the most saturated color of their hue, to the power the Vividness slider sets, so a pale or a dark placement
-  has to buy more distance than a vivid one to be taken. What counts as distinct, and what is reported, stays on
-  the distance itself.
+  being misidentified is the sum over its pairs. The generator keeps every pair at least a minimum
+  spacing apart: the distance at which one pair's swap chance falls to 2%, or the Min distance if that
+  is larger. Colors are drawn at random from one stated density over the selected range and seated one
+  by one where they keep that spacing from every color already seated. No wider spacing is sought, so
+  every seed gives a palette of its own. Where the range cannot hold the count at that spacing, the
+  widest spacing that fits is used, and colors still too close step off in random directions. The first
+  of a few attempts that keeps the spacing is kept.
+- Vividness is a preference, not a restriction: it weights where colors are drawn from by their chroma's
+  share of the most saturated color of their hue, to the power the Vividness slider sets. The spacing,
+  and what is reported, stay on the distance alone.
 - The selected range is a box in OKLCh, cut by the sRGB gamut and by the excluded names: draws
   outside it are discarded, and a step that would leave it is refused.
 - Names are looked up in a partition of color space derived from the xkcd survey's millions of
   votes (see `data/scripts.md` for the derivation). They label the result; beyond an exclusion
   they do not steer it.
 
-You always get the best palette found; nothing fails outright short of an empty range. The pair
+You always get a palette; nothing fails outright short of an empty range. The pair
 likeliest to be mixed up is reported above the swatches with its weighted distance and swap
 chance, and outlined; the worst color's identification rate is given, so a forced palette is visible as such.
 

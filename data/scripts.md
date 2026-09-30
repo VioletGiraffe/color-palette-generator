@@ -92,7 +92,8 @@ boxes, and the ranges' text as `index.html` holds them.
 gamut's lightness/chroma slice at that hue, redrawn as the hue changes, and the `SECTORS` line to paste into `hue-boost.js`.
 
 Both run `index.html`'s own code, fetched from the server by `page-source.js` (`.claude/launch.json`, port 8734), so
-they do not work from disk.
+they do not work from disk. The server is `serve.py`, which marks every response no-store: a page never runs the fresh
+`index.html` against a cached helper.
 
 ## Running the page headless
 
@@ -112,14 +113,15 @@ they do not work from disk.
   for the draw's hue weight of a page that has one, one or both; `hueBoostRanges` replaces `HUE_BOOST_RANGES`. Without it a page whose
   tables or metric constants differ from this file's is loaded with a warning: the scores `identify.js` prints are on this
   file's metric, the page's generator runs on its own.
-- `generate(cfg)` takes `{ count, scale, hMin, hMax, cMinPercentage, cMaxPercentage, lMin, lMax, seed, fixed, avoid }` with
+- `generate(cfg)` takes `{ count, hMin, hMax, cMinPercentage, cMaxPercentage, lMin, lMax, seed, fixed, avoid }` with
   `fixed` and `avoid` as arrays of `colorFromHex` results, plus the optional `included` (name mask, all
   by default), `usePreference` (true), `lAbsolute` (false: the lightness range in absolute OKLab L), `rerolls` (none: slots of
   the result rerolled, in order), `vividControl` (the page's default: the density's vividness power). It returns `{ colors, worstIdentified, pair,
   closestApart, confusionProbability, distinctNames }` or null for an empty box; a color is `{ lch, lab, rgb, hex, cell, confident }`.
   The ranges are the page's cusp-relative ones, see `README.md`.
 - A page from before those names (`cMin`, `cMax`, `vividness`, `preference`; `floor`, `apart`, `confused`, `named`) gets the
-  config translated going in and the result's fields coming out, so every script runs on older versions too.
+  config translated going in and the result's fields coming out, so every script runs on older versions too. Pages with
+  the box sampler also read a strictness `scale`, which `hue-marginals.js` passes.
 
 The module also exports the metric itself for the fit scripts: the constants (`SIGMA`, `HUE_WEIGHT_L`, `HUE_WEIGHT_C`,
 `W_L` and `W_C` their means, `CHROMA_POWER`, `CHROMA_REFERENCE`, `CHROMA_FLOOR`, `LIGHTNESS_EXPONENT`, `LIGHTNESS_REFERENCE`,

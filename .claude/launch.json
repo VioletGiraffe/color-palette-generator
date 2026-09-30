@@ -4,7 +4,7 @@
 		{
 			"name": "oklab-3d-demo",
 			"runtimeExecutable": "python",
-			"runtimeArgs": ["-m", "http.server", "8734", "--directory", "E:/Development/Projects/Personal/color-palette-generator"],
+			"runtimeArgs": ["E:/Development/Projects/Personal/color-palette-generator/data/serve.py", "8734"],
 			"port": 8734
 		}
 	]

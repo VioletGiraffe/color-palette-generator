@@ -21,6 +21,8 @@ const hueOf = lab => (Math.atan2(lab[2], lab[1]) * 180 / Math.PI + 360) % 360;
 const shareOf = density => Array.from({ length: 12 }, (_, b) => mean(density.slice(b * 30, b * 30 + 30)));
 const cv = xs => Math.sqrt(mean(xs.map(x => (x - mean(xs)) ** 2))) / mean(xs);
 const fmt = (x, w = 6, d = 2) => x.toFixed(d).padStart(w);
+// The strictness scale the pages this script runs read: their slider's default
+const OLD_PAGE_SCALE = 3;
 
 function main(args) {
 	let seeds = 200, counts = [7, 10], box = { lMin: 20, lMax: 60, cMinPercentage: 20, cMaxPercentage: 100 }, names = false, pagePath = null;
@@ -61,7 +63,7 @@ function main(args) {
 		let total = 0;
 		for (const count of counts)
 			for (let seed = 1; seed <= seeds; ++seed)
-				for (const color of page.generate({ count, hMin: 0, hMax: 360, ...box, seed, fixed: [] }).colors) {
+				for (const color of page.generate({ count, hMin: 0, hMax: 360, scale: OLD_PAGE_SCALE, ...box, seed, fixed: [] }).colors) {
 					++bins[Math.floor(hueOf(color.lab) / 30)];
 					++total;
 					tally(perName, page.CELL_NAMES[color.cell] ?? "unnamed");
@@ -74,8 +76,9 @@ function main(args) {
 	if (!names)
 		return;
 
-	// The box's own name marginal: uniform draws over the box, as generate() draws them before weighting.
-	const cfg = { hMin: 0, hMax: 360, ...box, included: new Array(page.CELL_NAMES.length + 1).fill(true) };
+	// The box's own name marginal: uniform draws over the box, as generate() draws them before weighting. The sampler reads
+	// the avoided colors' shadows generate() would add: none here.
+	const cfg = { hMin: 0, hMax: 360, scale: OLD_PAGE_SCALE, ...box, shadows: [], included: new Array(page.CELL_NAMES.length + 1).fill(true) };
 	const cells = page.boxCells(cfg);
 	cfg.cells = cells.fraction < page.SPARSE_FRACTION ? cells : null;
 	const rnd = page.mulberry32(7), boxNames = new Map(), BOX_DRAWS = 20000;
