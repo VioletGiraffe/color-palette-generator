@@ -1427,29 +1427,29 @@ function limitDistance(sigma) {
 	return above;
 }
 
-// The throw: the pool's points in the given order, a point seated when its distance on the metric to every point seated,
-// the fixed ones included, is at least `spacing`. Null when fewer than `count` find a seat.
+// The throw: the pool's points in the given order, a point picked when its distance on the metric to every fixed point and
+// every point picked before it is at least `spacing`. Returns the fixed points, then the `count` picked; null when fewer are picked.
 function throwAt(order, fixed, count, spacing) {
-	const seated = fixed.slice(), spacing2 = spacing * spacing;
+	const picked = fixed.slice(), spacing2 = spacing * spacing;
 	for (const point of order) {
-		if (seated.length - fixed.length === count)
+		if (picked.length - fixed.length === count)
 			break;
-		if (seated.every(other => apartWarped2(point, other) >= spacing2))
-			seated.push(point);
+		if (picked.every(other => apartWarped2(point, other) >= spacing2))
+			picked.push(point);
 	}
-	return seated.length - fixed.length === count ? seated : null;
+	return picked.length - fixed.length === count ? picked : null;
 }
 
 // The palette's minimum spacing: the error limit or cfg.minApart, whichever is larger.
 const minSpacingOf = cfg => Math.max(cfg.limitDistance, cfg.minApart);
 // The throw at the minimum spacing, no wider spacing sought: a random sample of the density with every pair at least that
-// spacing apart, so each order seats its own set. A box that cannot seat `count` so keeps the widest spacing it can, by
-// bisection to THROW_PRECISION. Fewer points than `count` seat them all.
+// spacing apart, so each order picks its own set. A box that cannot pick `count` so keeps the widest spacing it can, by
+// bisection to THROW_PRECISION. Fewer points than `count` are all picked.
 const THROW_PRECISION = 0.02;
 function spacedThrow(order, fixed, count, cfg) {
-	const wanted = Math.min(count, order.length), spacing = minSpacingOf(cfg), seated = throwAt(order, fixed, wanted, spacing);
-	if (seated)
-		return seated;
+	const wanted = Math.min(count, order.length), spacing = minSpacingOf(cfg), picked = throwAt(order, fixed, wanted, spacing);
+	if (picked)
+		return picked;
 	let low = 0, high = spacing, widest = throwAt(order, fixed, wanted, 0);
 	while (high - low > THROW_PRECISION * high) {
 		const mid = (low + high) / 2, made = throwAt(order, fixed, wanted, mid);
@@ -1574,14 +1574,14 @@ const scored = (colors, cfg) => ({ colors, ...identification(colors, cfg), disti
 function attempt(rnd, cfg, pool) {
 	const order = shuffled(pool.points, rnd);
 	const fixed = cfg.fixed.map(color => pointAt(color.lch));
-	const seated = spacedThrow(order, fixed, cfg.count, cfg);
-	const thrown = [...cfg.fixed, ...seated.slice(fixed.length).map(point => colorAt(...point.lch))];
-	return scored(relax(rnd, thrown, seated, cfg), cfg);
+	const picked = spacedThrow(order, fixed, cfg.count, cfg);
+	const thrown = [...cfg.fixed, ...picked.slice(fixed.length).map(point => colorAt(...point.lch))];
+	return scored(relax(rnd, thrown, picked, cfg), cfg);
 }
 
 // A reroll of the color at `slot` of a result: it and its REROLL_VICINITY nearest generated colors are thrown again
 // among the rest, from the pool less the rejected color's confusion zone, so the replacement is a color one could
-// tell from the rejected one; then relaxed. The rest keep their slots. Removing the color alone would seat a
+// tell from the rejected one; then relaxed. The rest keep their slots. Removing the color alone would pick a
 // near-twin: in a full box the room a color leaves behind is about one spacing wide.
 const REROLL_VICINITY = 2;
 function reroll(result, cfg, slot, rnd, pool) {
@@ -1592,7 +1592,7 @@ function reroll(result, cfg, slot, rnd, pool) {
 	const removed = [slot, ...nearest], kept = points.filter((point, i) => !removed.includes(i));
 	const order = shuffled(pool.points.filter(point => apartWarped2(point, rejected) >= cfg.limitDistance ** 2), rnd);
 	const fresh = spacedThrow(order, kept, removed.length, cfg).slice(kept.length);
-	// A pool with fewer points outside the zone than slots seats fewer: the slots left over keep their color.
+	// A pool with fewer points outside the zone than slots picks fewer: the slots left over keep their color.
 	const next = colors.slice(), nextPoints = points.slice();
 	fresh.forEach((point, n) => { next[removed[n]] = colorAt(...point.lch); nextPoints[removed[n]] = point; });
 	return scored(relax(rnd, next, nextPoints, cfg), cfg);

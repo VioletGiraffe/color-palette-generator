@@ -109,9 +109,9 @@ with the widest closest pair; an attempt is a throw and a relaxation:
    stands for, which undoes the uneven raw cover. `POOL_SIZE` points are kept by rejection against the density's peak
    over a survey of `RAW_SURVEY` usable draws. Where a range has no thickness, a lightness of one value or a chroma
    range beyond the gamut, the draw sits on the gamut's surface in a shell `SHELL` thick.
-2. **The throw** (`throwAt`, `spacedThrow`): the pool in a seeded random order; a point is seated when its distance on
-   the metric to every seated color, the fixed ones included, is at least the minimum spacing, or where the box cannot
-   seat `count` so, the widest spacing it can, by bisection to `THROW_PRECISION`. A random sequential sample of the density.
+2. **The throw** (`throwAt`, `spacedThrow`): the pool in a seeded random order; a point is picked when its distance on
+   the metric to every fixed color and every color picked before it is at least the minimum spacing, or where the box cannot
+   pick `count` so, the widest spacing it can, by bisection to `THROW_PRECISION`. A random sequential sample of the density.
 3. **The relaxation** (`relax`), only while some pair is under the minimum spacing: the colors with such a pair, closest first,
    each try up to `PROPOSALS` positions a step away in a random direction; an unusable proposal is dropped, nothing is
    clamped; a proposal is kept when it widens the color's closest pair. A sweep with nothing kept halves the step, from
@@ -121,7 +121,7 @@ with the widest closest pair; an attempt is a throw and a relaxation:
 A reroll (`reroll`, for each slot in the config's `rerolls`, replayed after the attempts on the seeds after theirs): the
 slot's color and its `REROLL_VICINITY` nearest generated colors are thrown again among the rest, from the pool less the
 points within the limit distance of the rejected color, then relaxed; the other colors keep their slots. Removing the
-color alone would seat a near-twin: in a full box the room a color leaves behind is about one spacing wide
+color alone would pick a near-twin: in a full box the room a color leaves behind is about one spacing wide
 (`evolution.md`). A slot past the count or of a fixed color is skipped.
 
 Where the metric enters, so a change to it moves all of these: `metricVolume` (the density, so the pool and the

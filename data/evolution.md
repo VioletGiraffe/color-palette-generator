@@ -1031,7 +1031,7 @@ State of the argument on 2026-09-16, after the avoided colors shipped and the ju
 The judge's account of the page: light blues and magentas over-abundant, reds under-represented, and the members
 of a family distinguishable from each other, a light, a dark and a deep blue can all coexist; the complaint is
 that a family's second and third members are over-abundant and appear before every family has a first. Excluding
-brown and grey by name did not help much: the freed seats went to blues and magentas. A quota per family was
+brown and grey by name did not help much: the colors they freed went to blues and magentas. A quota per family was
 considered and rejected: nothing should be forbidden, the order of arrival is what is wrong.
 
 The measured mechanism. "Uniform over the available space" has two defensible measures, and both were
@@ -1068,8 +1068,8 @@ Read off it:
   starvation happens inside the walls.
 - The dart start at 16 costs 63 ms because its draw budget runs out; plain draws pushed apart reach worst identified 0.95
   in 42 ms against the shipped 0.96 in 91.
-- Purple and magenta are the cheapest hues in the metric (below), so metric seating gives them fewer seats than
-  volume seating would: their over-abundance is the pushes' doing, not the hue density's.
+- Purple and magenta are the cheapest hues in the metric (below), so picking by metric volume gives them fewer colors than
+  picking by OKLab volume would: their over-abundance is the pushes' doing, not the hue density's.
 
 How far the metric departs from OKLab: each axis of the same pool cut into twelve slices of equal usable volume,
 the slice's metric volume over its OKLab volume (1.0 where they agree; hue with a flat draw weight, slice bounds
@@ -1094,7 +1094,7 @@ Reds hold 8 to 10% of the usable volume under every hue weighting: the red short
 
 The decisions: the metric is significant enough that everything is done in its measure unless there is a
 concrete reason not to, so the start covers the box by metric volume, the hue density stays in the draw, the
-metric decides whether a seat can be filled, and the pushes may not undo the coverage. Draws per family, uniform
+metric decides whether a color can be picked, and the pushes may not undo the coverage. Draws per family, uniform
 over the box: default box off white 1 in 426, lime green 1 in 196, purple 10%, blue 9%; tight box beige 1 in
 20000, maroon 1 in 1176; pastel box grey 1 in 1538, light blue 30%. So a start that rejects draws until one lands
 in a target family would spend its cap on every rare family every round: a pool per attempt instead, partitioned.
@@ -1118,7 +1118,7 @@ The plan, built the same day, as it stands in `index.html`:
   weighted draw so the hue density and the preference weight apply, remembered per box like the hue weight,
   each point carrying the metric's volume element. Per attempt the pool is cut into `count` cells of equal
   weight by recursive quantile splits along the cell's longest axis in metric length, the cells sub-boxes in the
-  box's own coordinates. The cells in a random order, each seating the first of its points, taken in an order
+  box's own coordinates. The cells in a random order, each picking the first of its points, taken in an order
   drawn by weight, that clears the limit from everything placed, else the farthest; a fixed color inside the box
   takes its cell. Equal weight in a uniform pool is equal available space at any box, with no strata to define.
 - Pushes in three phases, each for the colors still over the limit when the one before is exhausted: within the
@@ -1130,16 +1130,16 @@ Measured after the build, the same 40 seeds and thirds as above:
 | stage | count | chroma thirds | lightness thirds | worst identified | ms per palette |
 |---|---|---|---|---|---|
 | uniform by metric volume | | 15/45/40 | 7/47/46 | | |
-| seats alone, no clearance test | 8 | 18/41/41 | 7/47/46 | | |
-| seats alone | 8 | 15/38/47 | 11/41/48 | | |
-| built, seats pushed | 8 | 11/38/51 | 12/36/52 | 0.98 | 55 |
+| picks alone, no clearance test | 8 | 18/41/41 | 7/47/46 | | |
+| picks alone | 8 | 15/38/47 | 11/41/48 | | |
+| built, picks pushed | 8 | 11/38/51 | 12/36/52 | 0.98 | 55 |
 | before, for reference | 8 | 9/45/46 | 13/33/53 | 0.98 | 44 |
-| seats alone | 16 | 17/30/54 | 13/38/49 | | |
-| built, seats pushed | 16 | 14/22/64 | 23/11/66 | 0.96 | 900 |
+| picks alone | 16 | 17/30/54 | 13/38/49 | | |
+| built, picks pushed | 16 | 14/22/64 | 23/11/66 | 0.96 | 900 |
 | before, for reference | 16 | 14/19/67 | 21/11/68 | 0.97 | 635 |
 
 Read off it:
-- The seats without the clearance test reproduce the metric reference exactly: the cells and the weighted order
+- The picks without the clearance test reproduce the metric reference exactly: the cells and the weighted order
   do what they were built for.
 - The clearance test is the Poisson-disc bias again at the scale of a cell, four to six points off the reference.
   Capping it at 4 or 16 candidates or dropping it changes the end result by a point or two: the pushes decide.
@@ -1166,7 +1166,7 @@ sector's share of the generated colors over its share of the metric volume (unif
   stops in the corner. At count 8 the same corners show at up to 1.9.
 The open decision: coverage of the middle at crowded counts is only had by stopping the pushes short of the
 optimum of worst identified, a margin inside the cell walls or an earlier stop, and the Distinctness slider says worst identified
-comes first. The build as it stands keeps worst identified; the seats are the coverage and the pushes take back what
+comes first. The build as it stands keeps worst identified; the picks are the coverage and the pushes take back what
 worst identified needs. Whether that reads better than before is a pairwise round, dealt against `tmp/index-HEAD.html`
 or the commit before.
 Open after it: the avoid cone's angle, 20 degrees by eye; the cell capacity and direction step rounds, built and
@@ -1177,16 +1177,16 @@ Alternatives noted and not taken, kept in case the plan disappoints:
   references differ by up to 3x per hue slice and 2.8x per lightness slice, so the choice is visible in a
   palette; it is one switch in the pool and can be dealt as a pairwise condition if the metric coverage
   disappoints. The same for a flat hue weight in the draw, the existing `uniform` condition.
-- Strata by name cell by lightness third by chroma third of the box, a seat each in rounds, the first plan:
-  coverage by coordinates, which seats the dark third at a third of the count where it holds 15% of the space
-  and gives off white a seat where it holds 1 in 426.
+- Strata by name cell by lightness third by chroma third of the box, a color each in rounds, the first plan:
+  coverage by coordinates, which gives the dark third a third of the count where it holds 15% of the space
+  and off white a color where it holds 1 in 426.
 - Family as the naming overlap with a longer fade: the generator already places colors by name overlap between
   cells fading past about 8 weighted units; lengthening the fade makes same-named colors repel while
   distinguishable, graded by the survey's overlap, one constant and no table of ours. Not taken because the
   rounds address order of arrival, which the judge named as the complaint, and repulsion does not.
 - Family as a hue sector: ignores lightness, navy and light blue one family, wrong in the direction observed.
 - A cap per family scaled by the name's size in the survey, purple two, salmon one: for palettes past the
-  count where every stratum has a seat, if second purples still crowd.
+  count where every stratum has a color, if second purples still crowd.
 - A wall margin as an explicit inset of the box for the pushes, clamped pushes accepted within it: keeps colors
   off the outermost shell even where the worst identified target cannot be met inside, which prefers a confusable palette to a
   wall-sitting one; the Distinctness slider says worst identified comes first, so the two-phase push instead.
@@ -1691,8 +1691,8 @@ Applied: W_L 0.46, W_C 0.86, the gain's exponent 0.19 and the table of the run w
 (`tmp/palette-set.js`; chroma 46 to 100, lightness 20 to 60, push angles 5 to 120): blue to magenta 7.1 of 15
 before, 4.7 after, orange to lime 2.2 to 3.2, green to cyan 2.1 to 3.1, mean lightness 53 to 59; the judge: more
 saturated, less violet, more yellow and lime, both good. One dark warm color (maroon, brown, brick red, lightness
-39, hue 36) sits in 86 of the 100, as in 77 before: the box's dark warm corner holds one seat far from everything,
-and an even spread fills every such seat in every palette. It is on the gamut's surface, fully vivid by the
+39, hue 36) sits in 86 of the 100, as in 77 before: the box's dark warm corner has room for one color far from everything,
+and an even spread fills all such room in every palette. It is on the gamut's surface, fully vivid by the
 reach at its own lightness and 57% of its hue's cusp chroma. Vividness as the share of the cusp's chroma instead
 (`tmp/vivid-cusp.html`): 70 of 100, dark colors 4.4 to 3.0 a palette, worst identified 97.7 to 96.4%, and the judge finds
 those palettes far worse. Left as is; the name control bans brown.
@@ -1837,9 +1837,9 @@ changes the ranking by thousandths and the violet share of a palette by 9 points
 palettes needs an instrument that shows palettes.
 
 What the stages of the current generator contribute (`tmp/pushes.js`, `tmp/start-vs-final.js`, the exposed copies
-in `tmp/`). The seats decide the hue balance and the pushes keep it: blue to magenta 6.2 of 14 seated, 6.3 final;
+in `tmp/`). The picks decide the hue balance and the pushes keep it: blue to magenta 6.2 of 14 picked, 6.3 final;
 26% of the colors move at all in a roomy box, by under one unit of the metric, 92% by about two units at 24 colors.
-Worst identified of the seats alone against the final palette: 0.970 to 0.980 in the reported box, 0.855 to 0.967 at 24
+Worst identified of the picks alone against the final palette: 0.970 to 0.980 in the reported box, 0.855 to 0.967 at 24
 colors in a wide box, 0.574 to 0.865 at 40 in 8 s, 0.247 to 0.516 in a pastel box. The pool counts the hue table
 twice, once as the draw's acceptance and once inside the volume element: its points are 33% blue to magenta, its
 weight 45%. The heaviest tenth of the pool's points hold 30% of the weight.
@@ -1906,15 +1906,15 @@ The judge chose the power 1/2: as vivid as the current page and a little more, a
 ## Rerolling one color
 
 A reroll replaces one color the user rejects and leaves the rest. Removing the color alone cannot do it: the throw is a
-maximal Poisson-disc sample, so the room a color leaves behind is smaller than the spacing, and a replacement seated at
+maximal Poisson-disc sample, so the room a color leaves behind is smaller than the spacing, and a replacement picked at
 the palette's spacing lands 5 ΔE from the rejected one, a near-twin. The options measured (`tmp/reroll-experiment.js`),
 a hundred palettes of 15 in the box above, one slot rerolled ten times each; `k` is how many nearest generated colors
 are thrown again with the slot, "excluded" means the pool points within the limit distance (12.3 ΔE at Distinctness 3)
-of the rejected color are not offered; the widest throw seats the removed ones, then the relaxation runs:
+of the rejected color are not offered; the widest throw picks the removed ones, then the relaxation runs:
 
 | policy | variety, mean ΔE between the ten replacements | replacement from the rejected | worst identified drop | colors changed over 3 ΔE, the removed ones included |
 |---|---|---|---|---|
-| k=0, escalating to 3 only when nothing seats at the palette's spacing | 5.0 | 5.3 | 0.03 pts | 0.4 |
+| k=0, escalating to 3 only when nothing can be picked at the palette's spacing | 5.0 | 5.3 | 0.03 pts | 0.4 |
 | k=1, rejected excluded | 7.5 | 15.8 | 0.62 | 1.6 |
 | k=2, rejected excluded | 12.2 | 15.4 | 0.59 | 2.6 |
 | k=3, rejected excluded | 13.6 | 16.1 | 0.61 | 3.7 |
@@ -2093,13 +2093,13 @@ boost would give:
 | default, 215-275 (1.80) | 0.53, 0.52 | 0.21, 1.21, 0.99 | 3.02, 2.27, 3.05 | 2.67, 4.68 |
 
 - Cuts follow the proportional share under the stretch; under the scale's cube they emptied a range.
-- Boosts stop short under both and saturate under the stretch: x2 and x4 seat the same counts.
-- The throw alone follows the share: one attempt, no minimum spacing, no relaxation, x2 seats 0.93, 4.28, 1.39, 4.10, 1.20 and
+- Boosts stop short under both and saturate under the stretch: x2 and x4 give the same counts.
+- The throw alone follows the share: one attempt, no minimum spacing, no relaxation, x2 gives 0.93, 4.28, 1.39, 4.10, 1.20 and
   2.52 against 0.85, 4.93, 1.55, 4.83, 1.31 and 3.07 (its own baseline). One attempt with the minimum spacing and the relaxation
-  seats what four do: the minimum spacing and the relaxation, both on the metric, take the boost back.
+  gives what four do: the minimum spacing and the relaxation, both on the metric, take the boost back.
 - The stretch ships as the boost plus one offset for every hue, not the boost over its mean: every hue pays a boost
   alike, the author's reading of a boost as reshaping the strip at a fixed area. The counts move by tenths at most:
-  x0.5 and x2 seat 0.14 and 0.88, 1.95 and 4.27, 0.34 and 1.01, 1.75 and 3.95, 0.41 and 0.81, 1.30 and 2.17 in the rows'
+  x0.5 and x2 give 0.14 and 0.88, 1.95 and 4.27, 0.34 and 1.01, 1.75 and 3.95, 0.41 and 0.81, 1.30 and 2.17 in the rows'
   order.
 - The boost is stored as the author's ranges, `HUE_BOOST_RANGES`, not a table per whole degree: an edge sits where it is
   set, and a ramp holds the range's boost up to its edges and blends outside them.
@@ -2131,13 +2131,13 @@ absolute lightness, the author's box with lightness 20 to 100 and chroma from 20
 ## Palettes at the minimum spacing
 
 At 15 colors the author could not tell a box's palettes apart from one palette varied slightly. The generator spread
-colors as far as the box allowed: the throw sought the widest spacing that still seated every color, the relaxation
+colors as far as the box allowed: the throw sought the widest spacing that still picked every color, the relaxation
 stepped colors toward more room, and the attempts kept the widest spread. A full box has few arrangements at the widest
 spacing, so seeds converged on them. The relaxation did most of it: in the author's box the throw already sat at the minimum spacing.
 The generator now holds the minimum spacing (the error limit or Min distance) and no more:
 
-- The throw seats the pool in a seeded random order, a point when it is at the minimum spacing from every seated color; a box that
-  cannot seat the count at the minimum spacing gets it lowered by bisection.
+- The throw walks the pool in a seeded random order and picks a point when it is at the minimum spacing from every picked color; a
+  box that cannot pick the count at the minimum spacing gets it lowered by bisection.
 - The relaxation moves only colors with a pair under the minimum spacing, closest first, and keeps a step that widens its closest pair.
 - The attempts stop at the first with every pair at the minimum spacing.
 - The packing distance and the hue stretch are gone: the boost and Vividness act only through the pool's density.
@@ -2153,7 +2153,7 @@ the limit. The author's box (15 colors, L 14-71, `sMin` 0.119), 40 seeds, 780 pa
 | random picks from the pool | 4.0 (3.0, 5.2) | - | - | - |
 
 - The score ranks example pairs as the author does, most to least similar; its absolute values are not judged.
-- The preferences act only where the box has room. In the author's box to 67, 100 seeds, blue (215-275) seats 3.11 at x2
+- The preferences act only where the box has room. In the author's box to 67, 100 seeds, blue (215-275) gets 3.11 at x2
   and 2.96 at x0.5 against 3.07 (before: 4.32 and 1.89 against 3.15), yellow (75-115) 0.68 and 0.54 against 0.57. In the
   default 10-color box yellow at x0.5 goes from 0.61 to 0.34, blue at x2 from 1.61 to 2.08.
 - The pool is drawn once per box with a fixed seed, and a color the relaxation leaves in place is a pool point: over 40
@@ -2250,7 +2250,7 @@ length along the cusp line:
   dark purple 0.43, pink 0.34 by the survey's names; cyan's 2.27 are teal and blue 0.56 each, navy 0.37, grey blue
   0.32, black 0.30.
 
-The boost does not reach a full box. A family's count at the minimum spacing is capped by its room, and the seats the small
+The boost does not reach a full box. A family's count at the minimum spacing is capped by its room, and the colors the small
 families cannot hold go to the large ones. Colors a palette with the boost on the author's families, hard edges:
 
 | box | set | yellow | pink | red missing |
@@ -2263,7 +2263,7 @@ families cannot hold go to the large ones. Colors a palette with the boost on th
 | default, 10 colors | none / red x8 | | | 79% / 24% |
 
 - Worst identified and the closest pair do not move under any set.
-- Red x8 in the author's box puts a red in 88% of the throws and 47% of the palettes: that box cannot seat 15 at the
+- Red x8 in the author's box puts a red in 88% of the throws and 47% of the palettes: that box cannot pick 15 at the
   minimum spacing, the relaxation runs on every palette, and a step of up to 2 deltaE carries a red out of a family 2.6 wide.
 - With the relaxation kept inside each color's family (a proposal changing it dropped), red x2, x4 and x8 leave red
   missing from 38%, 21% and 9% of the author's palettes, the closest pair at 14.4 throughout. Orange pays (missing
@@ -2278,7 +2278,7 @@ across a boundary, the grade model on the built metric (`tmp/boundary-fit.js`, `
   from the boundary the factor rises from 1.02 to 1.09, with the pairs' distance. Above 12 they read farther (1.09, 1.25), but among hue-only pairs 1.05 and 1.08 against 1.06
   for hue-only pairs across none: the kind of pair, not the boundary.
 - As a preference, a step of 2, 4 and 8 raises the families a palette covers from 7.7 to 8.2, 8.6 and 8.9 and drops
-  the closest pair on the built metric to 11.2, 9.0 and 6.9. A step of 100 seats near-twins across boundaries (closest
+  the closest pair on the built metric to 11.2, 9.0 and 6.9. A step of 100 picks near-twins across boundaries (closest
   4.1). With a margin of 3 deltaE on each side, coverage 7.9 and closest pair 8.7, red and yellow down: a family narrower
   than twice the margin never clears it and its neighbours close in over it.
 
@@ -2318,7 +2318,7 @@ The pool against measured volume (`tmp/pool-volume.js`): a reference uniform in 
     stop crossing.
   - `experimental-recall-metric.html`: the page before the preference metric, its distance the recall
     calibration's: the step-round hue circle, linear chroma, dark pairs counted closer.
-  - `experimental-cells-pushes.html`: the page before the rebuilt generator, cells over the pool, seats, phased
+  - `experimental-cells-pushes.html`: the page before the rebuilt generator, cells over the pool, a pick per cell, phased
     pushes and restarts, on the preference metric by lightness; the vividness packing weight as the share of the reach.
 - `data/README.md`: the engineering overview of the page, its coordinates, the metric and the generator; `data/scripts.md`: every script, log and fit here.
 - `data/identify.js`, `data/fit.js`, `data/calibrate.html`: the metric and its calibration; see `data/scripts.md`.

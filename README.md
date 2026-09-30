@@ -43,8 +43,8 @@ for that isolated recognition, not just pairwise difference.
 - A pair's chance of being swapped follows from its weighted distance, and a color's chance of
   being misidentified is the sum over its pairs. The generator keeps every pair at least a minimum
   spacing apart: the distance at which one pair's swap chance falls to 2%, or the Min distance if that
-  is larger. Colors are drawn at random from one stated density over the selected range and seated one
-  by one where they keep that spacing from every color already seated. No wider spacing is sought, so
+  is larger. Colors are drawn at random from one stated density over the selected range and picked one
+  by one where they keep that spacing from every color already picked. No wider spacing is sought, so
   every seed gives a palette of its own. Where the range cannot hold the count at that spacing, the
   widest spacing that fits is used, and colors still too close step off in random directions. The first
   of a few attempts that keeps the spacing is kept.
