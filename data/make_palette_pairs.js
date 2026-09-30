@@ -3,7 +3,7 @@
 // condition, paired condition against condition, so a verdict is about the spread and not the draw.
 // Writes the deal into the page itself, between its deal markers: a page opened from disk can fetch nothing.
 //
-//     node data/make_palette_pairs.js [--seeds 20] [--counts 7,10] [--box lMin lMax cMin cMax] [--conditions hue|preference] [page.html]
+//     node data/make_palette_pairs.js [--seeds 20] [--counts 7,10] [--box lMin lMax cMinPercentage cMaxPercentage] [--conditions hue|preference] [page.html]
 //
 // The hue conditions, each a hue density in the generator's two roles, the metric's warp and the draw's acceptance:
 //     shipped   HUE_DENSITY in both, the page as it is
@@ -24,14 +24,14 @@ const HUE_LOGS = ["hue-1-steps-log.json", "hue-2-steps-log.json", "hue-3-c70-ste
 const hueOf = lab => (Math.atan2(lab[2], lab[1]) * 180 / Math.PI + 360) % 360;
 
 function main(args) {
-	let seeds = 20, counts = [7, 10], box = { lMin: 40, lMax: 60, cMin: 60, cMax: 100 }, set = "hue", pagePath = path.join(__dirname, "..", "index.html");
+	let seeds = 20, counts = [7, 10], box = { lMin: 40, lMax: 60, cMinPercentage: 60, cMaxPercentage: 100 }, set = "hue", pagePath = path.join(__dirname, "..", "index.html");
 	for (let i = 0; i < args.length; ++i) {
 		if (args[i] === "--seeds")
 			seeds = +args[++i];
 		else if (args[i] === "--counts")
 			counts = args[++i].split(",").map(Number);
 		else if (args[i] === "--box")
-			box = { lMin: +args[++i], lMax: +args[++i], cMin: +args[++i], cMax: +args[++i] };
+			box = { lMin: +args[++i], lMax: +args[++i], cMinPercentage: +args[++i], cMaxPercentage: +args[++i] };
 		else if (args[i] === "--conditions")
 			set = args[++i];
 		else if (args[i].endsWith(".html"))
@@ -47,7 +47,7 @@ function main(args) {
 		uniform: { page: loadPage(pagePath, { draw: new Array(360).fill(1) }), settings: {}, about: "HUE_DENSITY in the metric, a uniform draw" },
 	} : set === "preference" ? {
 		shipped: { page, settings: {}, about: "the page as it is, the draw weighted by PREFERENCE" },
-		plain: { page, settings: { preference: false }, about: "the draw without the preference density" },
+		plain: { page, settings: { usePreference: false }, about: "the draw without the preference density" },
 	} : (() => { throw new Error("unknown condition set " + set); })();
 	const names = Object.keys(conditions), CELL_NAMES = page.CELL_NAMES;
 	const palettes = [], pairs = [];
@@ -67,7 +67,7 @@ function main(args) {
 	const data = { version: 1, page: path.basename(pagePath), box, seeds, counts, conditions: about, palettes, pairs };
 	writeDeal("calibrate-palettes.html", "PALETTE_PAIRS", data);
 	console.log(palettes.length + " palettes, " + pairs.length + " pairs, " + names.length + " conditions at " + counts.join(", ") + " colors over " + seeds
-		+ " seeds; box L " + box.lMin + "-" + box.lMax + ", C " + box.cMin + "-" + box.cMax + "%; written into data/calibrate-palettes.html");
+		+ " seeds; box L " + box.lMin + "-" + box.lMax + ", C " + box.cMinPercentage + "-" + box.cMaxPercentage + "%; written into data/calibrate-palettes.html");
 }
 
 main(process.argv.slice(2));

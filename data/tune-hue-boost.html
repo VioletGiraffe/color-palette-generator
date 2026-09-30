@@ -130,8 +130,8 @@ function currentConfig(generator) {
 	const f = text.split("|"), [count, minApart, hMin, hMax, c1, c2, l1, l2] = f.slice(1, 9).map(Number);
 	if (f[0] !== "v5" || f.length < 13 || [count, minApart, hMin, hMax, c1, c2, l1, l2].some(v => !Number.isFinite(v)))
 		throw new Error("not a v5 state string");
-	return configOf({ cfg: { count, minApart, hMin, hMax, cMin: Math.min(c1, c2), cMax: Math.max(c1, c2), lMin: Math.min(l1, l2), lMax: Math.max(l1, l2),
-		lAbsolute: f[17] === "1", ...(f[19] ? { vividness: +f[19] } : {}), ...(f[20] ? { sMin: +f[20] } : {}), ...(f[15] ? { names: f[15] } : {}) } }, generator.CELL_NAMES.length);
+	return configOf({ cfg: { count, minApart, hMin, hMax, cMinPercentage: Math.min(c1, c2), cMaxPercentage: Math.max(c1, c2), lMin: Math.min(l1, l2), lMax: Math.max(l1, l2),
+		lAbsolute: f[17] === "1", ...(f[19] ? { vividControl: +f[19] } : {}), ...(f[20] ? { sMin: +f[20] } : {}), ...(f[15] ? { names: f[15] } : {}) } }, generator.CELL_NAMES.length);
 }
 
 // Generated results per ranges and box, one per seed from seedBase + 1: a run resumes where a cancelled one stopped
@@ -170,7 +170,7 @@ async function recompute() {
 				return;
 			side.generator ??= generatorWith(side.boostRanges);
 			const result = side.generator.generate({ ...cfg, seed: base + seed });
-			side.results.push({ colors: result.colors.map(({ lch, hex }) => ({ lch, hex })), worstIdentified: result.worstIdentified, apart: result.apart });
+			side.results.push({ colors: result.colors.map(({ lch, hex }) => ({ lch, hex })), worstIdentified: result.worstIdentified, closestApart: result.closestApart });
 		}
 		if (seed === FIRST_SHOWN || seed === STATS_SEEDS)
 			show(sides, cfg.count, seed, measured, base);
@@ -188,16 +188,16 @@ function show(sides, count, seeds, measured, base) {
 			}
 		const meanOf = key => shown.reduce((sum, result) => sum + result[key], 0) / seeds;
 		const palettes = shown.map(({ colors }) => colors.slice().sort((a, b) => a.lch[2] - b.lch[2]).map(color => color.hex));
-		return { counts, inRanges, worstIdentified: meanOf("worstIdentified"), apart: meanOf("apart"), palettes };
+		return { counts, inRanges, worstIdentified: meanOf("worstIdentified"), closestApart: meanOf("closestApart"), palettes };
 	}), mean = side => side.counts.map(n => n / seeds);
 	const pageMeans = mean(page), tunedMeans = mean(tuned);
 	const held = pageMeans.filter(n => n >= 0.25).length, even = count / held;
 	// The class of a value that moved from a to b by more than the tolerance
 	const change = (a, b, tolerance = 0.05) => b > a + tolerance ? "up" : b < a - tolerance ? "down" : "";
 	$("stats").innerHTML = "<tr><th></th>" + SECTORS.map(([name]) => "<th>" + name + "</th>").join("") + "<th>worst identified</th><th>closest pair</th></tr>"
-		+ "<tr><td>page's</td>" + pageMeans.map(n => "<td>" + n.toFixed(2) + "</td>").join("") + "<td>" + page.worstIdentified.toFixed(3) + "</td><td>" + page.apart.toFixed(1) + "</td></tr>"
+		+ "<tr><td>page's</td>" + pageMeans.map(n => "<td>" + n.toFixed(2) + "</td>").join("") + "<td>" + page.worstIdentified.toFixed(3) + "</td><td>" + page.closestApart.toFixed(1) + "</td></tr>"
 		+ "<tr><td>yours</td>" + tunedMeans.map((n, s) => "<td class='" + change(pageMeans[s], n) + "'>" + n.toFixed(2) + "</td>").join("")
-		+ "<td class='" + change(page.worstIdentified, tuned.worstIdentified, 0.005) + "'>" + tuned.worstIdentified.toFixed(3) + "</td><td class='" + change(page.apart, tuned.apart, 0.2) + "'>" + tuned.apart.toFixed(1) + "</td></tr>"
+		+ "<td class='" + change(page.worstIdentified, tuned.worstIdentified, 0.005) + "'>" + tuned.worstIdentified.toFixed(3) + "</td><td class='" + change(page.closestApart, tuned.closestApart, 0.2) + "'>" + tuned.closestApart.toFixed(1) + "</td></tr>"
 		+ "<tr><td>even</td>" + pageMeans.map(n => "<td>" + (n >= 0.25 ? even.toFixed(2) : "-") + "</td>").join("") + "<td></td><td></td></tr>"
 		+ measured.map(({ from, to, boost, on }, k) => {
 			const pageIn = page.inRanges[k] / seeds, tunedIn = tuned.inRanges[k] / seeds;

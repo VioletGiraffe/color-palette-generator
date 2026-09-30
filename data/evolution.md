@@ -914,7 +914,7 @@ The draw is weighted by it, and a color under a floor of 0.5, more likely thrown
 for the draw and the pushes alike: the pushes spread colors to the box's edges, so a draw weight alone left the
 dirty region filled (dirty names 52 to 34 of 320 over 40 seeds in the default box) where the floor empties it (52
 to 25, colors under chroma 12 from 108 to 61, worst identified unchanged at 0.98, 42 against 47 ms a
-palette). The floor is a generator setting, `preference` in the config, on by default and off for the plain
+palette). The floor is a generator setting, `usePreference` in the config, on by default and off for the plain
 condition. The pairwise page now deals `--conditions preference`: shipped against plain in the default box, 60
 seeds at 7 and 10 colors, the round that tests whether the preferred draw makes preferred palettes. Not yet drawn
 on the charts: the region under the floor is not hatched.
@@ -927,13 +927,13 @@ avoided colors beside the fixed ones, from a textarea or a right-click on a pale
 string. The first version was an isotropic zone: a gate at twice the limit trapped starts inside it, one color in
 eight, and a repulsive point at 1.5 limits, measured clean, banned the pure version of a color along with the
 dull one. The judge's complaint is never about a point, it is about what the color lacks: too dull, too dark, too
-light. So an avoided color casts a shadow away from the cusp. In the cusp-relative plane of its hue, the cusp at
+light. So an avoided color bans a cone pointing away from the cusp. In the cusp-relative plane of its hue, the cusp at
 (50, 100), the points at least as far from the cusp as the color and within a cone of 20 degrees around its own
-direction are banned, nothing toward the cusp is. The shadow reaches across hues as far as the color's own chroma
-turns one noise width, capped at a half circle, so a grey still shadows every hue and a dull red 16 degrees each side;
+direction are banned, nothing toward the cusp is. The cone reaches across hues as far as the color's own chroma
+turns one noise width, capped at a half circle, so a grey's cone still spans every hue and a dull red's 16 degrees each side;
 one limit was tried first and read as too aggressive on the chart, 65 degrees each side for a dull red. It
 is a gate in `usableLch` like an excluded name, safe from trapping because a push toward the cusp always leaves
-it, and both charts hatch it. A color at the cusp casts no shadow: too vivid is the chroma maximum's job.
+it, and both charts hatch it. A color at the cusp bans no cone: too vivid is the chroma maximum's job.
 
 ## Cell capacity rounds
 
@@ -1169,7 +1169,7 @@ optimum of worst identified, a margin inside the cell walls or an earlier stop, 
 comes first. The build as it stands keeps worst identified; the seats are the coverage and the pushes take back what
 worst identified needs. Whether that reads better than before is a pairwise round, dealt against `tmp/index-HEAD.html`
 or the commit before.
-Open after it: the shadow's cone angle, 20 degrees by eye; the cell capacity and direction step rounds, built and
+Open after it: the avoid cone's angle, 20 degrees by eye; the cell capacity and direction step rounds, built and
 shelved. The preference pairwise round was started and abandoned at 50 pairs: a palette is not a unit the judge
 can rank, both sides always carried a disliked color, and the verdicts were coin tosses.
 Alternatives noted and not taken, kept in case the plan disappoints:
@@ -1482,7 +1482,7 @@ Built from the ten rounds, the archive of the page before it kept as
   below `CHROMA_FLOOR` 1: `hueScaleAt` in both files, a `hueScale` argument on `weightedDistance` that the fit
   scripts leave at one.
 - The lightness gain is `lightnessGain`: one at 50, the square root of the ratio to 50 either side, held below
-  `LIGHTNESS_FLOOR` 20, on absolute lightness. The 3D metric view, the shadows' hue reach and the pool's volume
+  `LIGHTNESS_FLOOR` 20, on absolute lightness. The 3D metric view, the avoid cones' hue reach and the pool's volume
   element take it through the same functions.
 - `W_L`, `SIGMA`, the limit distance and the state string are unchanged: the lightness weight held under the
   preference rounds. `W_C` is 1 from round 11 and `LIGHTNESS_REFERENCE` 68 from rounds 12 and 13, below; at
@@ -1707,7 +1707,7 @@ violet widest pastel. The gain is a sixth of what the refit of the weights and t
 
 Built: the three level densities in the metric of `index.html`, `generator-next.html` and `identify.js`, W_C 0.83
 and the exponent 0.21 with them; a pair's hues turn to the mix of the two levels' warps around its mean lightness;
-the avoided colors' shadows measure their turn at the avoided color's lightness, the 3D view turns each point at
+the avoided colors' cones measure their turn at the avoided color's lightness, the 3D view turns each point at
 its own. `HUE_DENSITY`, the one table, stays as the hue distribution of the draws and the rebuilt generator's hue
 line. The pages' distance against `identify.js` over 732 judged pairs: equal to rounding. The same hundred palettes:
 dark red, 330 to 60 under lightness 45, 1.4 to 1.7 of 15, blue to magenta 4.7 to 4.4, orange to lime 3.2 to 3.4,
@@ -1747,7 +1747,7 @@ three to five. The pair rounds are not wrong about any of this: a pale red and a
 What the objective lacks is a term for wanting the color itself; `preferenceOf` only gates the draw and the
 floor, so once the pushes run, chroma and lightness are free currency.
 
-Raising the chroma floor restores the vividness: at cMin 60 the share mean is 91 to 96%, at 85 it is 99%; the
+Raising the chroma floor restores the vividness: at `cMinPercentage` 60 the share mean is 91 to 96%, at 85 it is 99%; the
 violet clumping stays, 6 to 7 of 14. Open, none built:
 
 - a per-color desirability term in the objective, or pushes biased toward the reach, so a pale placement has to

@@ -39,21 +39,21 @@ function main(args) {
 		const page = loadPage(pagePath, { hueBoostRanges: rangesOf(logs) });
 		return configs.map(cfg => {
 			const counts = Array(SECTORS.length).fill(0);
-			let worstIdentified = 0, apart = 0;
+			let worstIdentified = 0, closestApart = 0;
 			for (let seed = 1; seed <= seeds; ++seed) {
 				const result = page.generate({ ...cfg, seed });
 				for (const color of result.colors)
 					++counts[sectorOf(color.lch[2])];
 				worstIdentified += result.worstIdentified / seeds;
-				apart += result.apart / seeds;
+				closestApart += result.closestApart / seeds;
 			}
-			return { counts: counts.map(n => n / seeds), worstIdentified, apart };
+			return { counts: counts.map(n => n / seeds), worstIdentified, closestApart };
 		});
 	};
 	const show = (label, results) => {
 		console.log(label);
 		results.forEach((r, b) => console.log("  " + BOXES[b].name.padEnd(28) + SECTORS.map(([name], s) => name + " " + r.counts[s].toFixed(2)).join("  ")
-			+ "  | worst identified " + r.worstIdentified.toFixed(3) + ", closest pair " + r.apart.toFixed(1)));
+			+ "  | worst identified " + r.worstIdentified.toFixed(3) + ", closest pair " + r.closestApart.toFixed(1)));
 	};
 
 	let logs = Array(SECTORS.length).fill(0), results = measure(logs);

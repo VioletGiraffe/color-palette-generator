@@ -295,8 +295,9 @@ document.addEventListener("keydown", e => {
 	e.preventDefault();
 });
 
+// A deal made before the rename names the chroma range cMin and cMax
 $("deal-status").textContent = DEAL.pairs.length + " pairs from " + DEAL.page + ": " + DEAL.seeds + " seeds at " + DEAL.counts.join(", ") + " colors, box L "
-	+ DEAL.box.lMin + "-" + DEAL.box.lMax + ", C " + DEAL.box.cMin + "-" + DEAL.box.cMax + "%; conditions " + Object.keys(DEAL.conditions).join(", ") + ".";
+	+ DEAL.box.lMin + "-" + DEAL.box.lMax + ", C " + (DEAL.box.cMinPercentage ?? DEAL.box.cMin) + "-" + (DEAL.box.cMaxPercentage ?? DEAL.box.cMax) + "%; conditions " + Object.keys(DEAL.conditions).join(", ") + ".";
 saveLog();
 </script>
 </body>

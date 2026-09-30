@@ -262,8 +262,9 @@ document.addEventListener("keydown", e => {
 	e.preventDefault();
 });
 
+// A deal made before the rename names the chroma range cMin and cMax
 $("deal-status").textContent = DEAL.palettes.length + " palettes of " + DEAL.count + " from " + DEAL.page + ", box L " + DEAL.box.lMin + "-" + DEAL.box.lMax
-	+ ", C " + DEAL.box.cMin + "-" + DEAL.box.cMax + "%; " + DEAL.shared + " colors shared between two palettes.";
+	+ ", C " + (DEAL.box.cMinPercentage ?? DEAL.box.cMin) + "-" + (DEAL.box.cMaxPercentage ?? DEAL.box.cMax) + "%; " + DEAL.shared + " colors shared between two palettes.";
 saveLog();
 </script>
 </body>

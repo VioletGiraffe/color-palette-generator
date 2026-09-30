@@ -372,10 +372,10 @@
 	</div>
 
 	<div class="plane" id="hl-plane"><canvas id="hl-canvas"></canvas></div>
-	<div class="hint">Hue across, lightness up, each point at the most vivid chroma the ranges allow: the outside of the selected region. Lightness here is plain black to white, so the band the range allows rises and falls with each hue's peak. Hatching is outside the hue or lightness range, where the chroma minimum leaves nothing, or in an avoided color's shadow. Dots are the generated colors, triangles the fixed ones.</div>
+	<div class="hint">Hue across, lightness up, each point at the most vivid chroma the ranges allow: the outside of the selected region. Lightness here is plain black to white, so the band the range allows rises and falls with each hue's peak. Hatching is outside the hue or lightness range, where the chroma minimum leaves nothing, or in an avoided color's cone. Dots are the generated colors, triangles the fixed ones.</div>
 
 	<div class="plane" id="hc-plane"><canvas id="hc-canvas"></canvas></div>
-	<div class="hint">Hue across, chroma up. Each hue is drawn at the lightness within the range that makes it most vivid, so the top edge is the most chroma the ranges allow at that hue. Blank above it: no lightness in the range reaches that far. The solid line is the chroma reached at the top of the lightness range, the dashed line at the bottom; between them and the top edge lies what the range gives up. Hatching is outside the hue or chroma range, or in an avoided color's shadow; chroma here is absolute, so the band the range allows rises and falls with each hue's peak. Dots are the generated colors, triangles the fixed ones.</div>
+	<div class="hint">Hue across, chroma up. Each hue is drawn at the lightness within the range that makes it most vivid, so the top edge is the most chroma the ranges allow at that hue. Blank above it: no lightness in the range reaches that far. The solid line is the chroma reached at the top of the lightness range, the dashed line at the bottom; between them and the top edge lies what the range gives up. Hatching is outside the hue or chroma range, or in an avoided color's cone; chroma here is absolute, so the band the range allows rises and falls with each hue's peak. Dots are the generated colors, triangles the fixed ones.</div>
 
 	<hr>
 
@@ -763,7 +763,7 @@ const relativeC = (C, h) => C / cuspChroma(h) * 100;
 // less saturated, so the floor removes near-whites before dark colors.
 const saturationFloor = (L, cfg) => cfg.sMin * L;
 // The least chroma the box allows at a lightness: the chroma floor or the saturation floor, whichever is higher.
-const lowestC = (L, h, cfg) => Math.max(absoluteC(cfg.cMin, h), saturationFloor(L, cfg));
+const lowestC = (L, h, cfg) => Math.max(absoluteC(cfg.cMinPercentage, h), saturationFloor(L, cfg));
 
 // ---------- color naming ----------
 
@@ -869,8 +869,8 @@ function mulberry32(seed) {
 const ALL_INCLUDED = Array.from({ length: NAME_SLOTS }, () => true);
 
 // Whether a point inside the gamut may hold a generated color: its name in use, at or above the preference floor,
-// outside every shadow.
-const allowedLch = (L, C, h, cfg) => wantedLch(C, h, cfg) && !shadowed(L, C, h, cfg) && cfg.included[cellOf(oklabToRgb(...labOfLch(L, C, h))).cell];
+// outside every avoided color's cone.
+const allowedLch = (L, C, h, cfg) => wantedLch(C, h, cfg) && !inAvoidCone(L, C, h, cfg) && cfg.included[cellOf(oklabToRgb(...labOfLch(L, C, h))).cell];
 // The same for any point: sRGB has to show it.
 const usableLch = (L, C, h, cfg) => showsLch(L, C, h) && allowedLch(L, C, h, cfg);
 
@@ -1166,7 +1166,7 @@ function apartWarped2(p, q) {
 
 // Where colors are drawn from is one density over the box: the metric's volume times the cube of a color's vividness
 // to the config's power, times its hue's boost (data/README.md, "The generator"). Colors are spaced on the metric alone.
-// The power vividness enters the density at for a config or state string without `vividness`, the Vividness control's
+// The power vividness enters the density at for a config or state string without `vividControl`, the Vividness control's
 // value. Measured at 1/4, 1/2 and 1 by eye, see data/evolution.md. The control itself starts at 0.
 const VIVIDNESS_DEFAULT = 0.5;
 // A grey's vividness is held above zero: at zero its density vanishes.
@@ -1287,37 +1287,37 @@ function preferenceOf(C, h) {
 // A color under the floor is outside the box for the draw and the pushes alike: the pushes spread colors to the box's
 // edges, so a draw density alone leaves the floor's region filled. Above it the draw is still weighted by preference.
 const PREFERENCE_FLOOR = 0.5;
-const wantedLch = (C, h, cfg) => !cfg.preference || preferenceOf(C, h) >= PREFERENCE_FLOOR;
+const wantedLch = (C, h, cfg) => !cfg.usePreference || preferenceOf(C, h) >= PREFERENCE_FLOOR;
 
 // An avoided color bans what it lacks. In the cusp-relative plane of a hue (lightness relative to the cusp, chroma
-// as a share of the cusp's, the cusp at (CUSP_ANCHOR, 100)) it casts a shadow away from the cusp: the points at
+// as a share of the cusp's, the cusp at (CUSP_ANCHOR, 100)) it bans a cone pointing away from the cusp: the points at
 // least as far from the cusp as it is, within AVOID_CONE degrees of the color's direction, so a dull color bans duller
-// ones, a dark one darker ones, and nothing toward the cusp. The shadow reaches across hues as far as the color's
+// ones, a dark one darker ones, and nothing toward the cusp. The cone reaches across hues as far as the color's
 // own chroma turns one noise width, the turn within which a recalled color is the avoided one, capped at a half
 // circle: a dull color's hue is barely defined.
-// A shadow is a gate like an excluded name, not a repulsion: a push toward the cusp always leaves it.
+// A cone is a gate like an excluded name, not a repulsion: a push toward the cusp always leaves it.
 const AVOID_CONE = 20;
 const COS_AVOID_CONE = Math.cos(AVOID_CONE * Math.PI / 180);
 const warpOfHue = (h, level) => warpedHue(Math.cos(h * Math.PI / 180), Math.sin(h * Math.PI / 180), level);
-function shadowsOf(colors, sigma) {
+function avoidConesOf(colors, sigma) {
 	return colors.map(color => {
 		const [L, C, h] = color.lch;
 		const away = [relativeL(L, h) - CUSP_ANCHOR, relativeC(C, h) - 100], length = Math.hypot(...away);
 		const perRadian = C * hueScaleAt(C) * lightnessGain(L);
 		const level = hueLevelAt(L);
 		return { level, hue: warpOfHue(h, level), reach: Math.min(Math.PI, sigma / Math.max(perRadian, 1e-6)), away: away.map(v => v / length), length };
-	}).filter(shadow => shadow.length > 1e-6);
+	}).filter(cone => cone.length > 1e-6);
 }
-const shadowsFor = cfg => shadowsOf(cfg.avoid ?? [], SIGMA);
-function shadowed(L, C, h, cfg) {
-	if (!cfg.shadows.length)
+const avoidConesFor = cfg => avoidConesOf(cfg.avoid ?? [], SIGMA);
+function inAvoidCone(L, C, h, cfg) {
+	if (!cfg.avoidCones.length)
 		return false;
 	const away = [relativeL(L, h) - CUSP_ANCHOR, relativeC(C, h) - 100], length = Math.hypot(...away);
 	// The turn is measured on the hue circle of the avoided color's lightness
-	return cfg.shadows.some(shadow => {
-		const turn = Math.abs(warpOfHue(h, shadow.level) - shadow.hue);
-		return Math.min(turn, 2 * Math.PI - turn) <= shadow.reach && length >= shadow.length
-			&& away[0] * shadow.away[0] + away[1] * shadow.away[1] >= length * COS_AVOID_CONE;
+	return cfg.avoidCones.some(cone => {
+		const turn = Math.abs(warpOfHue(h, cone.level) - cone.hue);
+		return Math.min(turn, 2 * Math.PI - turn) <= cone.reach && length >= cone.length
+			&& away[0] * cone.away[0] + away[1] * cone.away[1] >= length * COS_AVOID_CONE;
 	});
 }
 
@@ -1331,7 +1331,7 @@ const POOL_SIZE = 2000, RAW_SURVEY = 10000, RAW_TRIES = 150000;
 const SHELL = 1;
 
 // A raw draw, always inside the ranges and the gamut: hue evenly, lightness evenly over the hue's interval, chroma
-// by its square over what the range and the gamut leave at that lightness. `slab` is the OKLab volume the draw
+// by its square over what the range and the gamut leave at that lightness. `coverVolume` is the OKLab volume the draw
 // stands for, up to a constant: multiplying a weight by it undoes the uneven cover of the raw draws.
 // Null where the chroma range starts more than SHELL beyond the gamut, or the saturation floor above the chroma the range
 // and the gamut allow: the box holds no color at that lightness and hue. The saturation floor has no shell: it exists
@@ -1339,13 +1339,13 @@ const SHELL = 1;
 function rawDraw(rnd, cfg) {
 	const h = (cfg.hMin + rnd() * hueSpan(cfg.hMin, cfg.hMax)) % 360;
 	const low = rangeL(cfg.lMin, h, cfg), high = rangeL(cfg.lMax, h, cfg), L = low + rnd() * (high - low);
-	const reach = gamutChroma(L, h), chromaFloor = absoluteC(cfg.cMin, h), saturated = saturationFloor(L, cfg);
-	const cHigh = Math.min(absoluteC(cfg.cMax, h), reach);
+	const reach = gamutChroma(L, h), chromaFloor = absoluteC(cfg.cMinPercentage, h), saturated = saturationFloor(L, cfg);
+	const cHigh = Math.min(absoluteC(cfg.cMaxPercentage, h), reach);
 	if (chromaFloor > reach + SHELL || saturated > cHigh)
 		return null;
 	const cLow = Math.min(Math.max(chromaFloor, saturated), cHigh);
 	const span2 = cHigh * cHigh - cLow * cLow;
-	return { lch: [L, Math.sqrt(cLow * cLow + rnd() * span2), h], slab: Math.max(high - low, SHELL) * Math.max(span2, 2 * cHigh * SHELL) };
+	return { lch: [L, Math.sqrt(cLow * cLow + rnd() * span2), h], coverVolume: Math.max(high - low, SHELL) * Math.max(span2, 2 * cHigh * SHELL) };
 }
 
 // The offset that keeps a total room: the volumes times their boosts plus it, floored at zero, sum to the volumes' sum.
@@ -1369,9 +1369,9 @@ function roomOffset(volumes, boosts) {
 const pointAt = lch => ({ ...warpedPoint(positionOf(lch)), lch });
 
 // The box's geometry: everything the pool and the box's views (the charts' fields, the 3D region) are drawn from.
-const boxKey = cfg => [cfg.hMin, cfg.hMax, cfg.lMin, cfg.lMax, cfg.lAbsolute ? "abs" : "rel", cfg.cMin, cfg.cMax, cfg.sMin,
+const boxKey = cfg => [cfg.hMin, cfg.hMax, cfg.lMin, cfg.lMax, cfg.lAbsolute ? "abs" : "rel", cfg.cMinPercentage, cfg.cMaxPercentage, cfg.sMin,
 	(cfg.avoid ?? []).map(color => color.hex).join()].join("|");
-const poolKey = cfg => [boxKey(cfg), cfg.vividness, cfg.preference, cfg.included.map(Number).join(""), cfg.seed].join("|");
+const poolKey = cfg => [boxKey(cfg), cfg.vividControl, cfg.usePreference, cfg.included.map(Number).join(""), cfg.seed].join("|");
 let poolCache = { key: null, pool: null };
 // A palette's random streams, SEED_STREAM apart: the pool's at seed - SEED_STREAM, attempt n's at seed + n * SEED_STREAM,
 // then the rerolls'.
@@ -1384,7 +1384,7 @@ function poolFor(cfg) {
 
 	const rnd = mulberry32(cfg.seed - SEED_STREAM);
 	// A draw's density before its hue's boost
-	const volumeOf = draw => metricVolume(...draw.lch) * vividness(draw.lch[1], draw.lch[2]) ** (3 * cfg.vividness) * draw.slab;
+	const volumeOf = draw => metricVolume(...draw.lch) * vividness(draw.lch[1], draw.lch[2]) ** (3 * cfg.vividControl) * draw.coverVolume;
 	// The survey: the box's volume per hue for the boost's offset, the density's peak, the rejection's ceiling
 	const survey = [];
 	let tries = 0;
@@ -1441,7 +1441,7 @@ function throwAt(order, fixed, count, spacing) {
 }
 
 // The palette's minimum spacing: the error limit or cfg.minApart, whichever is larger.
-const minSpacingOf = cfg => Math.max(cfg.limit, cfg.minApart);
+const minSpacingOf = cfg => Math.max(cfg.limitDistance, cfg.minApart);
 // The throw at the minimum spacing, no wider spacing sought: a random sample of the density with every pair at least that
 // spacing apart, so each order seats its own set. A box that cannot seat `count` so keeps the widest spacing it can, by
 // bisection to THROW_PRECISION. Fewer points than `count` seat them all.
@@ -1469,15 +1469,15 @@ const PROPOSALS = 8;
 const SWEEPS_MAX = 400;
 
 // The chance each generated color is misidentified, summed over the others; `worstIdentified` is the worst
-// color's chance of being identified. The pair is the one likeliest swapped, `apart` its weighted
-// deltaE and `confused` that chance. Null pair below two colors, where no pair exists.
-// The swap chance falls with distance, so `apart` is also the closest pair's distance, which ranks
+// color's chance of being identified. The pair is the one likeliest swapped, `closestApart` its weighted
+// deltaE and `confusionProbability` that chance. Null pair below two colors, where no pair exists.
+// The swap chance falls with distance, so `closestApart` is also the closest pair's distance, which ranks
 // attempts against each other. Pairs of two fixed colors are skipped: generation cannot move
 // either, so such a pair must neither rank an attempt nor be pointed at as the offender.
 // A caller stepping the colors passes the points it already keeps for them.
 function identification(colors, cfg, points = positionsOf(colors).map(warpedPoint)) {
 	const error = colors.map(() => 0);
-	let pair = null, apart = Infinity, confused = -1;
+	let pair = null, closestApart = Infinity, confusionProbability = -1;
 	for (let i = 0; i < colors.length; ++i)
 		for (let j = i + 1; j < colors.length; ++j) {
 			if (colors[i].fixed && colors[j].fixed)
@@ -1487,10 +1487,10 @@ function identification(colors, cfg, points = positionsOf(colors).map(warpedPoin
 			const chance = swapChance(d, SIGMA);
 			error[i] += chance;
 			error[j] += chance;
-			if (chance > confused) {
-				confused = chance;
+			if (chance > confusionProbability) {
+				confusionProbability = chance;
 				pair = [colors[i], colors[j]];
-				apart = d;
+				closestApart = d;
 			}
 		}
 	let worstIdentified = 1;
@@ -1498,7 +1498,7 @@ function identification(colors, cfg, points = positionsOf(colors).map(warpedPoin
 		if (!color.fixed)
 			worstIdentified = Math.min(worstIdentified, Math.max(0, 1 - error[i]));
 	});
-	return { worstIdentified, pair, apart, confused };
+	return { worstIdentified, pair, closestApart, confusionProbability };
 }
 
 // Whether a point is inside the ranges and the gamut. Where the chroma range starts within SHELL beyond the gamut,
@@ -1506,8 +1506,8 @@ function identification(colors, cfg, points = positionsOf(colors).map(warpedPoin
 function insideBox([L, C, h], cfg) {
 	if (!hueInRange(h, cfg.hMin, cfg.hMax) || !withinLightness(L, h, cfg))
 		return false;
-	const reach = gamutChroma(L, h), chromaFloor = absoluteC(cfg.cMin, h);
-	return C <= Math.min(absoluteC(cfg.cMax, h), reach) && C >= saturationFloor(L, cfg)
+	const reach = gamutChroma(L, h), chromaFloor = absoluteC(cfg.cMinPercentage, h);
+	return C <= Math.min(absoluteC(cfg.cMaxPercentage, h), reach) && C >= saturationFloor(L, cfg)
 		&& (C >= chromaFloor || (chromaFloor <= reach + SHELL && C >= reach - SHELL));
 }
 
@@ -1521,7 +1521,7 @@ function relax(rnd, colors, points, cfg) {
 	// A color's closest pair, squared, with the color at `at`
 	const nearest2 = (i, at = points[i]) => Math.min(...points.map((point, j) => j === i ? Infinity : apartWarped2(at, point)));
 	const spacing2 = minSpacingOf(cfg) ** 2;
-	let best = colors.slice(), bestApart = identification(colors, cfg, points).apart;
+	let best = colors.slice(), bestApart = identification(colors, cfg, points).closestApart;
 	for (let sweep = 0, step = STEP_START; sweep < SWEEPS_MAX && step >= STEP_MIN; ++sweep) {
 		const crowded = colors.map((color, i) => ({ i, apart2: color.fixed ? Infinity : nearest2(i) }))
 			.filter(({ apart2 }) => apart2 < spacing2).sort((p, q) => p.apart2 - q.apart2);
@@ -1549,7 +1549,7 @@ function relax(rnd, colors, points, cfg) {
 			step /= 2;
 			continue;
 		}
-		const apart = identification(colors, cfg, points).apart;
+		const apart = identification(colors, cfg, points).closestApart;
 		if (apart > bestApart) {
 			best = colors.slice();
 			bestApart = apart;
@@ -1568,7 +1568,7 @@ function shuffled(list, rnd) {
 }
 
 // A result: the colors with their scores and the count of distinct names among them.
-const scored = (colors, cfg) => ({ colors, ...identification(colors, cfg), named: new Set(colors.map(color => color.cell)).size });
+const scored = (colors, cfg) => ({ colors, ...identification(colors, cfg), distinctNames: new Set(colors.map(color => color.cell)).size });
 
 // One throw, relaxed, with its scores.
 function attempt(rnd, cfg, pool) {
@@ -1590,7 +1590,7 @@ function reroll(result, cfg, slot, rnd, pool) {
 	const nearest = colors.map((color, i) => i).filter(i => i !== slot && !colors[i].fixed)
 		.sort((a, b) => apartWarped2(rejected, points[a]) - apartWarped2(rejected, points[b])).slice(0, REROLL_VICINITY);
 	const removed = [slot, ...nearest], kept = points.filter((point, i) => !removed.includes(i));
-	const order = shuffled(pool.points.filter(point => apartWarped2(point, rejected) >= cfg.limit ** 2), rnd);
+	const order = shuffled(pool.points.filter(point => apartWarped2(point, rejected) >= cfg.limitDistance ** 2), rnd);
 	const fresh = spacedThrow(order, kept, removed.length, cfg).slice(kept.length);
 	// A pool with fewer points outside the zone than slots seats fewer: the slots left over keep their color.
 	const next = colors.slice(), nextPoints = points.slice();
@@ -1607,16 +1607,16 @@ const ATTEMPTS = 4;
 // control's lowest value, under the error limit's own spacing, so the requirement adds nothing.
 const MIN_APART_DEFAULT = 14;
 function generate(cfg) {
-	const settings = { ...cfg, limit: limitDistance(SIGMA), included: cfg.included ?? ALL_INCLUDED, preference: cfg.preference ?? true,
-		vividness: cfg.vividness ?? VIVIDNESS_DEFAULT, minApart: cfg.minApart ?? MIN_APART_DEFAULT, sMin: cfg.sMin ?? 0 };
-	settings.shadows = shadowsFor(cfg);
+	const settings = { ...cfg, limitDistance: limitDistance(SIGMA), included: cfg.included ?? ALL_INCLUDED, usePreference: cfg.usePreference ?? true,
+		vividControl: cfg.vividControl ?? VIVIDNESS_DEFAULT, minApart: cfg.minApart ?? MIN_APART_DEFAULT, sMin: cfg.sMin ?? 0 };
+	settings.avoidCones = avoidConesFor(cfg);
 	const pool = poolFor(settings);
 	if (!pool.points.length)
 		return null;
 	let best = null;
-	for (let n = 0; n < ATTEMPTS && !(best && best.apart >= minSpacingOf(settings)); ++n) {
+	for (let n = 0; n < ATTEMPTS && !(best && best.closestApart >= minSpacingOf(settings)); ++n) {
 		const made = attempt(mulberry32(settings.seed + n * SEED_STREAM), settings, pool);
-		if (!best || made.apart > best.apart)
+		if (!best || made.closestApart > best.closestApart)
 			best = made;
 	}
 	(cfg.rerolls ?? []).forEach((slot, n) => {
@@ -1647,15 +1647,15 @@ const ordered = (a, b) => a <= b ? [a, b] : [b, a];
 const bounded = id => Math.min(+$(id).max, Math.max(+$(id).min, +$(id).value));
 
 function readConfig() {
-	const [cMin, cMax] = ordered(+$("c-min").value, +$("c-max").value);
+	const [cMinPercentage, cMaxPercentage] = ordered(+$("c-min").value, +$("c-max").value);
 	const [lMin, lMax] = ordered(+$("l-min").value, +$("l-max").value);
 	return {
 		count: bounded("count"),
 		minApart: +$("min-apart").value,
-		vividness: +$("vivid").value,
+		vividControl: +$("vivid").value,
 		// The hue sliders run in the ridge coordinate; the config, the labels and the state are in degrees.
 		hMin: Math.round(ridgeUnwarp(+$("h-min").value)), hMax: Math.round(ridgeUnwarp(+$("h-max").value)),
-		cMin, cMax, sMin: +$("s-min").value, lMin, lMax, lAbsolute: $("l-absolute").checked,
+		cMinPercentage, cMaxPercentage, sMin: +$("s-min").value, lMin, lMax, lAbsolute: $("l-absolute").checked,
 		seed: +$("seed").value | 0,
 		fixed: parseHexColors($("fixed-colors").value),
 		avoid: parseHexColors($("avoid-colors").value),
@@ -1725,19 +1725,19 @@ function drawMarker(ctx, x, y, color) {
 // Hue across, chroma up to CHROMA_MAX, at one cusp-relative lightness, so every column is drawn at
 // its own absolute lightness; pixels sRGB cannot show are left transparent.
 // The lightness bound is not hatched: the caller picks a lightness the range allows, so every pixel
-// is already inside it. The avoided colors' shadows are hatched.
+// is already inside it. The avoided colors' cones are hatched.
 // The mask is per-pixel because a wrapped hue range is two segments, which overlay bands would
 // have to cross, doubling the hatch where they met.
 function hcField(w, h, cfg) {
 	const image = new ImageData(w, h);
 	const data = image.data;
-	const shade = { shadows: shadowsFor(cfg) };
+	const shade = { avoidCones: avoidConesFor(cfg) };
 
 	for (let x = 0; x < w; ++x) {
 		const hue = ridgeUnwarp(x / w * 360);
 		const inHue = hueInRange(hue, cfg.hMin, cfg.hMax);
 		const lightness = mostVividL(hue, cfg);
-		const cLow = lowestC(lightness, hue, cfg), cHigh = absoluteC(cfg.cMax, hue);
+		const cLow = lowestC(lightness, hue, cfg), cHigh = absoluteC(cfg.cMaxPercentage, hue);
 
 		for (let y = 0; y < h; ++y) {
 			const C = CHROMA_MAX * (1 - y / (h - 1));
@@ -1747,7 +1747,7 @@ function hcField(w, h, cfg) {
 			let r = rgb[0] * 255, g = rgb[1] * 255, b = rgb[2] * 255;
 
 			// Same hatch as the CSS masks: 5px of black at 70%, then 5px of white at 32%.
-			if (!inHue || C < cLow || C > cHigh || shadowed(lightness, C, hue, shade)) {
+			if (!inHue || C < cLow || C > cHigh || inAvoidCone(lightness, C, hue, shade)) {
 				if ((x + y) % 10 < 5) {
 					r *= .3; g *= .3; b *= .3;
 				} else {
@@ -1792,10 +1792,10 @@ function reachAt(table, x, y, w, h) {
 // Hue across, lightness up, each pixel at the box's chroma cap for that hue and lightness: the
 // most vivid color the ranges allow there, the outside of the selected region. Hatched outside
 // the hue and lightness ranges, where the gamut stays below the chroma or saturation minimum, and in an avoided
-// color's shadow.
+// color's cone.
 function hlField(canvas, cfg) {
 	const w = canvas.width, h = canvas.height;
-	const shade = { shadows: shadowsFor(cfg) };
+	const shade = { avoidCones: avoidConesFor(cfg) };
 	// The table is the palette chart's; before its first layout the caller's own size serves.
 	const main = $("hl-canvas"), table = gamutTable(main.clientWidth || w, main.clientHeight || h);
 	const exact = table.w === w && table.h === h;
@@ -1804,7 +1804,7 @@ function hlField(canvas, cfg) {
 	for (let x = 0; x < w; ++x) {
 		const hue = ridgeUnwarp(x / w * 360);
 		const inHue = hueInRange(hue, cfg.hMin, cfg.hMax);
-		const cHigh = absoluteC(cfg.cMax, hue);
+		const cHigh = absoluteC(cfg.cMaxPercentage, hue);
 		for (let y = 0; y < h; ++y) {
 			const L = 100 * (1 - y / (h - 1)), reach = exact ? table.reach[y * w + x] : reachAt(table, x, y, w, h);
 			if (reach === 0)
@@ -1812,7 +1812,7 @@ function hlField(canvas, cfg) {
 			const C = Math.min(reach, cHigh);
 			const rgb = oklabToRgb(...labOfLch(L, C, hue)).map(v => Math.min(1, Math.max(0, v)));
 			let r = rgb[0] * 255, g = rgb[1] * 255, b = rgb[2] * 255;
-			if (!inHue || !withinLightness(L, hue, cfg) || reach < lowestC(L, hue, cfg) || shadowed(L, C, hue, shade)) {
+			if (!inHue || !withinLightness(L, hue, cfg) || reach < lowestC(L, hue, cfg) || inAvoidCone(L, C, hue, shade)) {
 				if ((x + y) % 10 < 5) {
 					r *= .3; g *= .3; b *= .3;
 				} else {
@@ -1900,7 +1900,7 @@ function drawHCPlane(cfg, colors) {
 function faceCurves(w, h, cfg) {
 	return [cfg.lMax, cfg.lMin].map(value => Array.from({ length: w }, (_, x) => {
 		const hue = ridgeUnwarp(x / w * 360);
-		return (1 - Math.min(gamutChroma(rangeL(value, hue, cfg), hue), absoluteC(cfg.cMax, hue)) / CHROMA_MAX) * (h - 1);
+		return (1 - Math.min(gamutChroma(rangeL(value, hue, cfg), hue), absoluteC(cfg.cMaxPercentage, hue)) / CHROMA_MAX) * (h - 1);
 	}));
 }
 // The most vivid lightness the range allows at a hue: the cusp where the range covers it, its nearer edge otherwise.
@@ -1950,11 +1950,11 @@ function refreshLabels() {
 	const cfg = readConfig();
 	refreshBars(cfg);
 	$("min-apart-value").textContent = cfg.minApart.toFixed(1);
-	$("vivid-value").textContent = cfg.vividness.toFixed(2);
+	$("vivid-value").textContent = cfg.vividControl.toFixed(2);
 	$("h-value").textContent = cfg.hMin + "–" + cfg.hMax + "°" + (cfg.hMin > cfg.hMax ? " (wraps)" : "");
 	// Chroma carries its unit, lightness does not: chroma is a plain fraction of the hue's peak,
 	// while lightness is piecewise with 50 pinned to the cusp and so is a landmark, not a percentage.
-	$("c-value").textContent = cfg.cMin + "–" + cfg.cMax + "%";
+	$("c-value").textContent = cfg.cMinPercentage + "–" + cfg.cMaxPercentage + "%";
 	$("s-value").textContent = cfg.sMin.toFixed(3);
 	$("l-value").textContent = cfg.lMin + "–" + cfg.lMax + (cfg.lAbsolute ? " L" : "");
 	$("fixed-preview").innerHTML = cfg.fixed.map(color => '<span style="background:' + color.hex + '"></span>').join("");
@@ -1987,11 +1987,11 @@ function render(result, cfg) {
 
 	const status = $("status");
 	// A null pair means no measurable one at all: one color and nothing fixed to place it against.
-	const repeated = result ? result.colors.length - result.named : 0;
+	const repeated = result ? result.colors.length - result.distinctNames : 0;
 	status.textContent = !result ? "sRGB has no color within these ranges" + (cfg.included.every(Boolean) ? "." : " with a name in use.")
-		: (result.pair ? "Hardest pair to tell apart (outlined): weighted ΔE " + result.apart.toFixed(1)
-			+ ", confused " + (result.confused * 100).toFixed(1) + "% · worst color identified " + (result.worstIdentified * 100).toFixed(0) + "%" + " · " : "")
-		+ result.named + " distinct color name" + (result.named === 1 ? "" : "s")
+		: (result.pair ? "Hardest pair to tell apart (outlined): weighted ΔE " + result.closestApart.toFixed(1)
+			+ ", confused " + (result.confusionProbability * 100).toFixed(1) + "% · worst color identified " + (result.worstIdentified * 100).toFixed(0) + "%" + " · " : "")
+		+ result.distinctNames + " distinct color name" + (result.distinctNames === 1 ? "" : "s")
 		+ (repeated ? ", " + repeated + " repeating one of them" : "");
 
 	const clashing = new Set(worstPair || []);
@@ -2210,11 +2210,11 @@ const stripHash = value => value.replace("#", "");
 // ordered. The seed is written unsigned, which mulberry32 treats as identical and which keeps a
 // minus sign out of the fields.
 function stateString(cfg) {
-	return [STATE_VERSION, cfg.count, cfg.minApart, cfg.hMin, cfg.hMax, cfg.cMin, cfg.cMax,
+	return [STATE_VERSION, cfg.count, cfg.minApart, cfg.hMin, cfg.hMax, cfg.cMinPercentage, cfg.cMaxPercentage,
 		cfg.lMin, cfg.lMax, cfg.seed >>> 0, $("sort").checked ? 1 : 0,
 		stripHash($("backdrop").value), stripHash($("backdrop-color").value), $("format").value,
 		cfg.fixed.map(color => stripHash(color.hex)).join(","), stateNameField(), cfg.avoid.map(color => stripHash(color.hex)).join(","),
-		cfg.lAbsolute ? 1 : 0, cfg.rerolls.join(","), cfg.vividness, cfg.sMin
+		cfg.lAbsolute ? 1 : 0, cfg.rerolls.join(","), cfg.vividControl, cfg.sMin
 	].join(STATE_SEPARATOR);
 }
 
@@ -2229,7 +2229,7 @@ function findOption(id, stored) {
 function parseState(text) {
 	const [tag, ...fields] = text.trim().split(STATE_SEPARATOR);
 	// The sort flag, backdrop, custom color and export format always follow the nine control values.
-	// Fixed colors, the included names, the avoided colors, the absolute-lightness flag, the rerolls, the vividness, then
+	// Fixed colors, the included names, the avoided colors, the absolute-lightness flag, the rerolls, the Vividness control, then
 	// the saturation floor were each added later: a string written before one of them ends where it was added, and the rest
 	// take their defaults.
 	const required = STATE_IDS.length + 4;
@@ -2237,7 +2237,7 @@ function parseState(text) {
 		return null;
 
 	const numbers = fields.slice(0, STATE_IDS.length + 1).map(f => f.trim() === "" ? NaN : Number(f));
-	const [backdrop, custom, format, fixed = "", included = "", avoid = "", lAbsolute = "0", rerolls = "", vividness = String(VIVIDNESS_DEFAULT),
+	const [backdrop, custom, format, fixed = "", included = "", avoid = "", lAbsolute = "0", rerolls = "", vividControl = String(VIVIDNESS_DEFAULT),
 		sMin = "0"] = fields.slice(STATE_IDS.length + 1);
 	const backdropOption = findOption("backdrop", backdrop);
 	const formatOption = findOption("format", format);
@@ -2246,11 +2246,11 @@ function parseState(text) {
 	if (numbers.some(n => !Number.isFinite(n)) || !backdropOption || !formatOption || !/^[0-9a-f]{6}$/i.test(custom)
 		|| !(fixed === "" || hexList.test(fixed)) || !(avoid === "" || hexList.test(avoid))
 		|| !(included === "" || /^[0-9a-z]{1,8}$/.test(included)) || !/^[01]$/.test(lAbsolute) || !(rerolls === "" || /^\d+(,\d+)*$/.test(rerolls))
-		|| !(vividness.trim() !== "" && +vividness >= 0 && +vividness <= 1) || !(sMin.trim() !== "" && +sMin >= 0 && +sMin <= 1))
+		|| !(vividControl.trim() !== "" && +vividControl >= 0 && +vividControl <= 1) || !(sMin.trim() !== "" && +sMin >= 0 && +sMin <= 1))
 		return null;
 
 	return { numbers, backdrop: backdropOption.value, custom, format: formatOption.value, fixed, included, avoid, lAbsolute: lAbsolute === "1",
-		rerolls: rerolls === "" ? [] : rerolls.split(",").map(Number), vividness: +vividness, sMin: +sMin };
+		rerolls: rerolls === "" ? [] : rerolls.split(",").map(Number), vividControl: +vividControl, sMin: +sMin };
 }
 
 const hexesFromField = field => field.split(",").filter(Boolean).map(hex => "#" + hex.toLowerCase());
@@ -2259,11 +2259,11 @@ const hexesFromField = field => field.split(",").filter(Boolean).map(hex => "#" 
 // so a palette built from here matches the one the controls produce once the string is applied.
 function configFromState(parsed) {
 	const [count, minApart, hMin, hMax, c1, c2, l1, l2, seed] = parsed.numbers;
-	const [cMin, cMax] = ordered(c1, c2);
+	const [cMinPercentage, cMaxPercentage] = ordered(c1, c2);
 	const [lMin, lMax] = ordered(l1, l2);
-	return { count, minApart, hMin, hMax, cMin, cMax, sMin: parsed.sMin, lMin, lMax, lAbsolute: parsed.lAbsolute, seed: seed | 0,
+	return { count, minApart, hMin, hMax, cMinPercentage, cMaxPercentage, sMin: parsed.sMin, lMin, lMax, lAbsolute: parsed.lAbsolute, seed: seed | 0,
 		fixed: hexesFromField(parsed.fixed).map(colorFromHex), avoid: hexesFromField(parsed.avoid).map(colorFromHex), ...nameTableFrom(parsed),
-		rerolls: parsed.rerolls, vividness: parsed.vividness };
+		rerolls: parsed.rerolls, vividControl: parsed.vividControl };
 }
 
 // Out-of-range numbers are left to the inputs, which clamp to their own min and max.
@@ -2275,7 +2275,7 @@ function applyStateString(text) {
 	STATE_IDS.forEach((id, i) => $(id).value = id === "h-min" || id === "h-max" ? ridgeWarp(parsed.numbers[i]) : parsed.numbers[i]);
 	$("sort").checked = parsed.numbers[STATE_IDS.length] !== 0;
 	$("l-absolute").checked = parsed.lAbsolute;
-	$("vivid").value = parsed.vividness;
+	$("vivid").value = parsed.vividControl;
 	$("s-min").value = parsed.sMin;
 	$("backdrop").value = parsed.backdrop;
 	$("backdrop-color").value = "#" + parsed.custom.toLowerCase();
@@ -2877,7 +2877,7 @@ function regionMeshes(cfg) {
 	const hue = t => (cfg.hMin + t * span) % 360;
 	// Both bounds follow each hue's cusp, so the lightness and chroma faces are curved, not flat. The lower chroma bound
 	// rises with lightness under a saturation floor.
-	const chroma = (t, L, h) => { const low = Math.min(lowestC(L, h, cfg), absoluteC(cfg.cMax, h)); return low + t * (absoluteC(cfg.cMax, h) - low); };
+	const chroma = (t, L, h) => { const low = Math.min(lowestC(L, h, cfg), absoluteC(cfg.cMaxPercentage, h)); return low + t * (absoluteC(cfg.cMaxPercentage, h) - low); };
 	const light = (t, h) => rangeL(cfg.lMin + t * (cfg.lMax - cfg.lMin), h, cfg);
 	const shown = (L, C, h) => colorAt(L, Math.min(C, gamutChroma(L, h)), h).rgb;
 

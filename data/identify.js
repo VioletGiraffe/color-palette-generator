@@ -553,14 +553,14 @@ function confusionMatrix(labs, sigma) {
 function summarize(matrix) {
 	const n = matrix.length;
 	const accuracy = matrix.map((row, i) => row[i]);
-	let pair = null, confused = -1;
+	let pair = null, confusionProbability = -1;
 	for (let i = 0; i < n; ++i)
 		for (let j = i + 1; j < n; ++j)
-			if (matrix[i][j] + matrix[j][i] > confused) {
-				confused = matrix[i][j] + matrix[j][i];
+			if (matrix[i][j] + matrix[j][i] > confusionProbability) {
+				confusionProbability = matrix[i][j] + matrix[j][i];
 				pair = [i, j];
 			}
-	return { accuracy, worstIdentified: Math.min(...accuracy), mean: accuracy.reduce((s, v) => s + v, 0) / n, pair, confused };
+	return { accuracy, worstIdentified: Math.min(...accuracy), mean: accuracy.reduce((s, v) => s + v, 0) / n, pair, confusionProbability };
 }
 
 function score(hexes) {
@@ -591,7 +591,7 @@ function printPalette(hexes, page) {
 	const [a, b] = result.pair;
 	console.log("identification: worst %s  mean %s  min deltaE %s  worst pair %s %s confused %s at deltaE %s",
 		percent(result.worstIdentified), percent(result.mean), minimumGap(labs).toFixed(1),
-		hexes[a], hexes[b], percent(result.confused), distance(labs[a], labs[b]).toFixed(1));
+		hexes[a], hexes[b], percent(result.confusionProbability), distance(labs[a], labs[b]).toFixed(1));
 	const [c, d] = naming.pair;
 	console.log("naming:         worst %s  mean %s  worst pair %s %s both %s / %s, colliding %s",
 		percent(naming.worstNamed), percent(naming.mean), hexes[c], hexes[d],
@@ -606,6 +606,9 @@ function parseHexes(text) {
 // The page's generator and its naming tables, cached per path: the eval is the costly part and both
 // scores reach for it. The naming tables are the page's own, so the score is about the names it shows.
 const pages = new Map();
+// generate's config keys and result fields as renamed, each to its name in earlier pages
+const RENAMED_CONFIG = { cMinPercentage: "cMin", cMaxPercentage: "cMax", vividControl: "vividness", usePreference: "preference" };
+const RENAMED_RESULT = { worstIdentified: "floor", closestApart: "apart", confusionProbability: "confused", distinctNames: "named" };
 // The metric's constants the page holds a copy of, checked as its tables are.
 const METRIC_SCALARS = { SIGMA, CHROMA_POWER, LIGHTNESS_EXPONENT, SHADE_DISCOUNT, SAME_HUE_LIGHTNESS, SAME_HUE_SPAN };
 // `densities`, when given, swaps the page's hue density for the metric's warp and for the draw's
@@ -644,6 +647,30 @@ function loadPage(pagePath, densities = null) {
 			+ " scalars: { " + scalars + " },"
 			// The box sampler of pages before the rebuilt generator (data/past-experiments/experimental-cells-pushes.html), for hue-marginals.js.
 			+ " ...(typeof boxCells === 'undefined' ? {} : { boxCells, samplePoint, SPARSE_FRACTION }) })");
+			// A page from before the config and result renames reads the old keys and returns the old fields: both translated
+			if (!source.includes("cMinPercentage")) {
+				const oldConfig = cfg => {
+					const old = { ...cfg };
+					for (const [now, before] of Object.entries(RENAMED_CONFIG))
+						if (now in old) {
+							old[before] = old[now];
+							delete old[now];
+						}
+					return old;
+				};
+				const { generate, boxCells, samplePoint } = page;
+				page.generate = cfg => {
+					const result = generate(oldConfig(cfg));
+					for (const [now, before] of Object.entries(RENAMED_RESULT))
+						if (result && !(now in result) && before in result)
+							result[now] = result[before];
+					return result;
+				};
+				if (boxCells) {
+					page.boxCells = cfg => boxCells(oldConfig(cfg));
+					page.samplePoint = (rnd, cfg) => samplePoint(rnd, oldConfig(cfg));
+				}
+			}
 		// A page respacing hue or weighing an axis differently from this file is scored on a metric other than its own.
 		const sameTable = (a, b) => !!a && a.length === b.length && a.every((v, h) => v === b[h]);
 		const sameLevels = page.HUE_LEVEL_DENSITIES?.length === HUE_LEVEL_DENSITIES.length
@@ -693,14 +720,14 @@ function nameCollision(hexes, page) {
 
 // Fixed seeds over fixed range boxes, so two versions of the page compare run for run. The boxes
 // are OKLCh ranges as the page's controls state them: lightness and chroma both relative to the
-// hue's cusp, hue in degrees. Pages before the relative chroma control read cMin and cMax as
+// hue's cusp, hue in degrees. Pages before the relative chroma control read the chroma range as
 // absolute chroma x100 and cannot be compared with these numbers.
 function benchmarkPage(pagePath) {
 	const page = loadPage(pagePath);
 	const generate = page.generate;
 	const boxes = [
-		{ name: "default", hMin: 0, hMax: 360, cMin: 20, cMax: 100, lMin: 20, lMax: 80 },
-		{ name: "narrow", hMin: 0, hMax: 360, cMin: 35, cMax: 100, lMin: 35, lMax: 65 },
+		{ name: "default", hMin: 0, hMax: 360, cMinPercentage: 20, cMaxPercentage: 100, lMin: 20, lMax: 80 },
+		{ name: "narrow", hMin: 0, hMax: 360, cMinPercentage: 35, cMaxPercentage: 100, lMin: 35, lMax: 65 },
 	];
 	const counts = [6, 8, 10];
 	const seeds = Array.from({ length: 20 }, (_, i) => i + 1);

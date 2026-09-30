@@ -29,7 +29,7 @@ Five conventions coexist. Which one a number is in is the first thing to check.
 
 | where | lightness | chroma | hue |
 |---|---|---|---|
-| range controls, state string, cells, shadows | relative to the cusp: 50 is the hue's cusp lightness, 0 black, 100 white, linear on each side (`absoluteL`, `relativeL`, `CUSP_ANCHOR`); the lightness range alone is absolute OKLab L with the `absolute` box ticked (`cfg.lAbsolute`; `rangeL`, `withinLightness` take the mode) | share of the cusp's chroma: 100 is `cuspChroma(h)`, whatever the color's lightness (`absoluteC`, `relativeC`); a share the lightness cannot reach is cut to the gamut (`rawDraw`, `insideBox`); the saturation floor `sMin` is absolute chroma over absolute lightness, the same at every hue (`lowestC`) | degrees of OKLab hue; the hue sliders alone run in the ridge coordinate (`ridgeWarp`, `ridgeUnwarp`) |
+| range controls, state string, cells, avoid cones | relative to the cusp: 50 is the hue's cusp lightness, 0 black, 100 white, linear on each side (`absoluteL`, `relativeL`, `CUSP_ANCHOR`); the lightness range alone is absolute OKLab L with the `absolute` box ticked (`cfg.lAbsolute`; `rangeL`, `withinLightness` take the mode) | share of the cusp's chroma: 100 is `cuspChroma(h)`, whatever the color's lightness (`absoluteC`, `relativeC`); a share the lightness cannot reach is cut to the gamut (`rawDraw`, `insideBox`); the saturation floor `sMin` is absolute chroma over absolute lightness, the same at every hue (`lowestC`) | degrees of OKLab hue; the hue sliders alone run in the ridge coordinate (`ridgeWarp`, `ridgeUnwarp`) |
 | a color's `lch` | absolute OKLab L, 0 to 100 | absolute, 0 to about 32 | degrees |
 | metric positions (`positionsOf`, `apart2`), every distance and deltaE | OKLab times 100 | | |
 | a color's `lab` and `rgb` | OKLab and sRGB in 0 to 1 | | |
@@ -81,7 +81,7 @@ on `apart2` (`minSpacingOf`: the limit distance, where one pair's swap chance is
 whichever is larger), or where the box cannot hold that the widest spacing it can; a sample of one stated density over the
 usable part of the box; different for every seed. No spacing wider than the minimum is sought: maximizing it forces every
 seed into the same arrangement. `identification` reports `worstIdentified`, the worst color's chance of being identified,
-and `apart`, the closest pair's distance; pairs of two fixed colors are skipped.
+and `closestApart`, the closest pair's distance; pairs of two fixed colors are skipped.
 
 The density carries every preference about where colors sit:
 
@@ -90,14 +90,14 @@ The density carries every preference about where colors sit:
   density the level tables mixed at `L`.
 - `vividness(C, h)`: the chroma as a share of the hue's cusp chroma, floored at `VIVIDNESS_FLOOR`: a dark or a pale
   color on the gamut's surface is not vivid. It enters the density to the power of three times the config's
-  `vividness`, the Vividness control (`VIVIDNESS_DEFAULT` without one).
+  `vividControl`, the Vividness control (`VIVIDNESS_DEFAULT` without one).
 - `HUE_BOOST_RANGES`: hue ranges with a boost each, exact at any hue (`boostAt`), plus one offset for every hue
   (`roomOffset`) so the box's total density is kept, floored at zero. Set by eye with `tune-hue-boost.html`
   (`fit_hue_boost.js` fits one range per hue family toward even counts). It moves where colors sit, not how close they
   read.
 - The density is the volume times those two factors, on usable points (`insideBox`, `usableLch`: inside the ranges and sRGB, a
   name in use, at or above the preference floor `PREFERENCE_FLOOR` of `preferenceOf`, outside every avoided color's
-  shadow, `shadowed`), zero elsewhere. The preferences act only through how often the pool draws a color: spacing is on
+  cone, `inAvoidCone`), zero elsewhere. The preferences act only through how often the pool draws a color: spacing is on
   `apart2` alone.
 
 `generate` runs up to `ATTEMPTS` attempts, stopping at the first whose closest pair keeps the minimum spacing, else keeping the one
@@ -105,7 +105,7 @@ with the widest closest pair; an attempt is a throw and a relaxation:
 
 1. **The pool** (`poolFor`, one per box and seed, cached): raw draws (`rawDraw`) cover the box without rejection by the gamut,
    hue evenly over the range, lightness evenly over the hue's interval, chroma by its square over the interval the
-   ranges and the gamut leave at that lightness; a draw's weight is the density times `slab`, the OKLab volume it
+   ranges and the gamut leave at that lightness; a draw's weight is the density times `coverVolume`, the OKLab volume it
    stands for, which undoes the uneven raw cover. `POOL_SIZE` points are kept by rejection against the density's peak
    over a survey of `RAW_SURVEY` usable draws. Where a range has no thickness, a lightness of one value or a chroma
    range beyond the gamut, the draw sits on the gamut's surface in a shell `SHELL` thick.
@@ -125,7 +125,7 @@ color alone would seat a near-twin: in a full box the room a color leaves behind
 (`evolution.md`). A slot past the count or of a fixed color is skipped.
 
 Where the metric enters, so a change to it moves all of these: `metricVolume` (the density, so the pool and the
-throw), the spacing (the throw's minimum spacing and a proposal's acceptance), `identification`, the shadows' hue
+throw), the spacing (the throw's minimum spacing and a proposal's acceptance), `identification`, the avoid cones' hue
 reach, `RIDGE` (the hue control's coordinate), and the 3D module's metric view. The preference model
 (`PREFERENCE`, from the palette member rounds) enters only as the preference floor.
 
@@ -141,7 +141,7 @@ random step never lands inside it.
 
 `stateString` writes, `parseState` reads and `configFromState` turns into a generator config:
 
-    v5|count|minApart|hMin|hMax|cMin|cMax|lMin|lMax|seed|sort|backdrop|custom|format|fixed|names|avoid|lAbsolute|rerolls|vividness|sMin
+    v5|count|minApart|hMin|hMax|cMinPercentage|cMaxPercentage|lMin|lMax|seed|sort|backdrop|custom|format|fixed|names|avoid|lAbsolute|rerolls|vividControl|sMin
 
 - `minApart` is the Min distance value in weighted deltaE; the ranges are in the control coordinates above (hue in
   degrees, not the ridge coordinate); `seed` is written unsigned.
@@ -149,7 +149,7 @@ random step never lands inside it.
   custom backdrop's hex without `#`.
 - `fixed` and `avoid` are comma-joined hexes without `#`; `names` is the included-name mask, one bit
   per cell, as a base-36 number (`stateNameField`, `nameTableFrom`); `lAbsolute` is 0 or 1, the lightness range's
-  coordinate; `rerolls` is the comma-joined slots rerolled, in order, indexes into the result; `vividness` is the
+  coordinate; `rerolls` is the comma-joined slots rerolled, in order, indexes into the result; `vividControl` is the
   Vividness value, 0 to 1; `sMin` is the Saturation min value, chroma over lightness, 0 to 1. These seven were added later in that order, so an older string ends earlier and the missing
   ones take their defaults.
 - `STATE_VERSION` changes only when a field's meaning changes; an added field goes at the end.

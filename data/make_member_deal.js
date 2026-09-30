@@ -3,7 +3,7 @@
 // keeps one color of the palette before it as a fixed color, so that color is judged in two companies.
 // Writes the deal into the page itself, between its deal markers: a page opened from disk can fetch nothing.
 //
-//     node data/make_member_deal.js [--palettes 120] [--count 8] [--box lMin lMax cMin cMax] [--shared 0.5] [page.html]
+//     node data/make_member_deal.js [--palettes 120] [--count 8] [--box lMin lMax cMinPercentage cMaxPercentage] [--shared 0.5] [page.html]
 //
 // --shared is the fraction of palettes that carry a fixed color from the palette before them.
 // Every palette is sorted by hue from 0, as the page shows it with sorting on.
@@ -15,7 +15,7 @@ const { loadPage, writeDeal } = require("./identify.js");
 const hueOf = lab => (Math.atan2(lab[2], lab[1]) * 180 / Math.PI + 360) % 360;
 
 function main(args) {
-	let count = 8, palettes = 120, shared = 0.5, box = { lMin: 20, lMax: 60, cMin: 20, cMax: 100 }, pagePath = path.join(__dirname, "..", "index.html");
+	let count = 8, palettes = 120, shared = 0.5, box = { lMin: 20, lMax: 60, cMinPercentage: 20, cMaxPercentage: 100 }, pagePath = path.join(__dirname, "..", "index.html");
 	for (let i = 0; i < args.length; ++i) {
 		if (args[i] === "--palettes")
 			palettes = +args[++i];
@@ -24,7 +24,7 @@ function main(args) {
 		else if (args[i] === "--shared")
 			shared = +args[++i];
 		else if (args[i] === "--box")
-			box = { lMin: +args[++i], lMax: +args[++i], cMin: +args[++i], cMax: +args[++i] };
+			box = { lMin: +args[++i], lMax: +args[++i], cMinPercentage: +args[++i], cMaxPercentage: +args[++i] };
 		else if (args[i].endsWith(".html"))
 			pagePath = args[i];
 		else
@@ -45,7 +45,7 @@ function main(args) {
 	const data = { version: 1, page: path.basename(pagePath), box, count, shared: sharedCount, palettes: dealt };
 	writeDeal("calibrate-members.html", "MEMBER_DEAL", data);
 	console.log(dealt.length + " palettes of " + count + " colors, " + sharedCount + " sharing a color with the palette before; box L " + box.lMin + "-" + box.lMax
-		+ ", C " + box.cMin + "-" + box.cMax + "%; written into data/calibrate-members.html");
+		+ ", C " + box.cMinPercentage + "-" + box.cMaxPercentage + "%; written into data/calibrate-members.html");
 }
 
 main(process.argv.slice(2));

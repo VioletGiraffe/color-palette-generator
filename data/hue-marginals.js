@@ -3,7 +3,7 @@
 // with --names, per color name, over many seeds in one range box. The hue density enters the generator in
 // two roles, the metric's warp and the starting draw's acceptance, and each condition sets the two apart:
 //
-//     node data/hue-marginals.js [--seeds 200] [--counts 7,10] [--box lMin lMax cMin cMax] [--names] [page.html] [metric/draw ...]
+//     node data/hue-marginals.js [--seeds 200] [--counts 7,10] [--box lMin lMax cMinPercentage cMaxPercentage] [--names] [page.html] [metric/draw ...]
 //
 // metric and draw are each one of shipped (HUE_DENSITY), authored (HUE_DENSITY_AUTHORED) or uniform; the
 // default condition is shipped/shipped, the page's own. The hue bins are in multiples of the uniform share
@@ -23,7 +23,7 @@ const cv = xs => Math.sqrt(mean(xs.map(x => (x - mean(xs)) ** 2))) / mean(xs);
 const fmt = (x, w = 6, d = 2) => x.toFixed(d).padStart(w);
 
 function main(args) {
-	let seeds = 200, counts = [7, 10], box = { lMin: 20, lMax: 60, cMin: 20, cMax: 100 }, names = false, pagePath = null;
+	let seeds = 200, counts = [7, 10], box = { lMin: 20, lMax: 60, cMinPercentage: 20, cMaxPercentage: 100 }, names = false, pagePath = null;
 	const conditions = [];
 	for (let i = 0; i < args.length; ++i) {
 		if (args[i] === "--seeds")
@@ -31,7 +31,7 @@ function main(args) {
 		else if (args[i] === "--counts")
 			counts = args[++i].split(",").map(Number);
 		else if (args[i] === "--box")
-			box = { lMin: +args[++i], lMax: +args[++i], cMin: +args[++i], cMax: +args[++i] };
+			box = { lMin: +args[++i], lMax: +args[++i], cMinPercentage: +args[++i], cMaxPercentage: +args[++i] };
 		else if (args[i] === "--names")
 			names = true;
 		else if (args[i].endsWith(".html"))
@@ -47,7 +47,7 @@ function main(args) {
 		conditions.push({ label: "shipped/shipped", metric: "shipped", draw: "shipped" });
 	pagePath = pagePath || path.join(__dirname, "..", "index.html");
 
-	console.log(path.basename(pagePath) + ", box L " + box.lMin + "-" + box.lMax + ", C " + box.cMin + "-" + box.cMax + "%, " + seeds + " seeds at " + counts.join(", ") + " colors");
+	console.log(path.basename(pagePath) + ", box L " + box.lMin + "-" + box.lMax + ", C " + box.cMinPercentage + "-" + box.cMaxPercentage + "%, " + seeds + " seeds at " + counts.join(", ") + " colors");
 	console.log("share per 30-degree bin, multiples of uniform");
 	console.log("metric/draw".padEnd(20) + Array.from({ length: 12 }, (_, b) => String(b * 30).padStart(6)).join("") + "   CV vs shipped  CV vs authored");
 	for (const [name, density] of [["shipped share", HUE_DENSITY], ["authored share", HUE_DENSITY_AUTHORED]])
