@@ -2284,8 +2284,11 @@ across a boundary, the grade model on the built metric (`tmp/boundary-fit.js`, `
   the closest pair on the built metric to 11.2, 9.0 and 6.9. A step of 100 picks near-twins across boundaries (closest
   4.1). With a margin of 3 deltaE on each side, coverage 7.9 and closest pair 8.7, red and yellow down: a family narrower
   than twice the margin never clears it and its neighbours close in over it.
-- Untested: pairs across a boundary, both colors far from it and under 12 apart. The logs hold almost none, and no round
-  was dealt for them.
+- A pair with both colors a margin from the boundary is at least about twice the margin apart: far from the boundary and
+  close together holds no pairs. On the strict rounds 21 to 34 and their metric (`tmp/boundary-margin-rounds.js`,
+  `tmp/boundary-fit-rounds.js`): across a boundary at a margin of 3 to 5, 1.01 (0.97 to 1.05, 214 pairs), at 5 to 8, 1.02
+  (0.94 to 1.13, 37 pairs); a step fits at 0.08 with no gain in loss. Hue pairs across none hold 11 over 12 apart: at mid
+  lightness and 80% of the reach or more, purple's reach 11.5, yellow's 12.7, cyan's 13.4, pink's 14.5.
 
 The pool against measured volume (`tmp/pool-volume.js`): a reference uniform in OKLab, weighted by sqrt(det G) of
 `apart2` for the metric's volume.
@@ -2333,6 +2336,8 @@ The throw does not keep the pool's shares. Share of colors over the family's sha
   every family's excess over its metric-volume share in proportion to the spacing, toward none at zero: the throw is
   uniform in the metric where the box is deep against the spacing. A family mostly within that layer stays high even at
   3.5: yellow to 67 at 2.4, against cyan and blue at 1.0 from 14.4 on.
+- All three boxes are that layer and little else: no point is more than 7.0 from a surface (a range's end, the gamut or an
+  excluded name), the median 1.1 to 2.8 by family (`tmp/surface-depth.js`).
 - Red fits inside one color's exclusion zone (deepest point 2.0 to 2.2): at most one a palette, had when a red point comes
   first in the order among the points near it. The throw gives red 1.08 to 1.27 of its volume share, as it gives orange and
   turquoise; the red x8 boost above raises it through the same order.
@@ -2380,7 +2385,13 @@ apart than the metric says):
 - The same form refitted on rounds 4 to 31 leaves the gaps. An exponent of its own toward white fits at -0.3 to -0.4 in
   every fit and takes the lights to 1.00; an exponent toward black per hue (8 and 12 knots) closes pink and blue only,
   uneven at 12 knots, and makes the 3D view's height differ by hue: not taken.
-- Orange is one group: dark orange pairs differing mainly in lightness, browns, at 0.84 (0.75 to 0.95, 28 pairs). Open.
+- Orange is one group: dark orange pairs differing mainly in lightness, browns, at 0.84 (0.75 to 0.95, 28 pairs). Round
+  35 dealt the clean case, one hue per pair, against the other hues in one sitting, on the fitted metric: orange 1.05
+  (0.98 to 1.13, 72 pairs) against the references' cuts, so no term for browns. The 28 were mostly pairs differing in hue
+  and chroma too, 0.86 on the fitted metric (22 strict pairs). In round 35 the lighter color sits above lightness 50 in 42
+  of the 72; with it at 40 to 50, 0.97 (0.85 to 1.10, 25 pairs).
+- Round 35's references, 24 pairs a range (`tmp/round35.js`): dark lightness and shade pairs read at 1.13 (1.01 to 1.29)
+  from yellow to green, 1.00 from turquoise to blue, 0.87 (0.77 to 0.99) from purple to red. Not acted on.
 - Purple is the judging, not the form. Pairs differing mainly in hue read at 1.00 in rounds 4 to 15, 0.96 in 16 to 20
   and 0.90 from 21 on, at every chroma; turquoise and cyan at 0.93 and 1.01, then 1.16 and 1.13. Round 32, hue pairs at
   mid lightness in one sitting: purple 0.86, pink 0.97, cyan to blue 1.17.

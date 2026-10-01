@@ -65,7 +65,7 @@ node data/make_boundary_deal.js [--boundaries red,yellow,green,cyan,blue,magenta
 node data/make_boundary_deal.js --sweep 10 [--turns 20,30,45,60,45] [--light 50] [--chroma 85] [--placement shared|own-chroma|own|own-reversed|low|high[,more]] [--ranges 230-340,120-190] # the same, swept around the circle or over hue ranges at even centres; a turn listed twice is dealt again at centres half a step over; several placements deal every pair under each
 node data/make_boundary_deal.js --axis lightness [--hues 30] [--centres 35,50,65] [--turns 10,20,30,45,60] [--chroma 85] # lightness pairs instead: one hue, a turn apart in cusp-relative lightness
 node data/make_boundary_deal.js --axis chroma [--hues 30] [--centres 30,50,70] [--turns 10,20,30,40,50] [--light 50] # chroma pairs: one hue and lightness, a turn apart in chroma share of the reach
-node data/make_boundary_deal.js --axis mixed [--ranges 0-360] [--windows 20-80] [--share 30-100] [--kinds mixed] [--by metric] [--distances 2-18] [--bands 6] [--each 30] [--seed 1] [--hue-offset 0-0] [--named a/b,c/d] [--repeat 1] # validation pairs in cells of hue range, lightness window, kind (hue alone, chroma alone, lightness alone, a shade at one hue and saturation, lightness and chroma at one hue, or hue, lightness and chroma at once) and distance band, the chroma within a share of the reach, the bands on the metric or on OKLab deltaE, shade and lightness pairs optionally turned a few degrees in hue, plus hand-picked pairs repeated blind; the defaults deal round 16
+node data/make_boundary_deal.js --axis mixed [--ranges 0-360] [--windows 20-80] [--share 30-100] [--kinds mixed] [--by metric] [--distances 2-18] [--bands 6] [--each 30] [--seed 1] [--hue-offset 0-0] [--margin 0] [--named a/b,c/d] [--repeat 1] # validation pairs in cells of hue range, lightness window, kind (hue alone, hue alone across one boundary of the author's hue families with each color a margin from it or across none, chroma alone, lightness alone, a shade at one hue and saturation, lightness and chroma at one hue, or hue, lightness and chroma at once) and distance band, the chroma within a share of the reach, the bands on the metric or on OKLab deltaE, shade and lightness pairs optionally turned a few degrees in hue, plus hand-picked pairs repeated blind; the defaults deal round 16
 node data/make_kind_deal.js [--hues 10] [--lights 25,50,75] [--shares 50,100] # deal calibrate-kinds.html's colors into the page: a grid over hue, cusp-relative lightness and chroma share of the reach
 node data/fit_boundaries.js log.json          # grades by turn and offset per boundary hue and the boundary's excess on the metric, from a calibrate-boundaries.html log; for a mixed deal, per kind the grades by distance band and by hue range and lightness window, and the ranking quality of the metric against OKLab deltaE
 node data/fit_hue_density.js [--p 0.75] [--ridge 2] [--knots 12] [--levels 30,58,85] [--level-ridge 10] [--weight-knots 16] [--weight-ridge 2] [--own-cuts] [--same-cuts 13-17] [--wl 0.9] [--wc 0.92] [--gain 0.17] [--gainlight -0.4] [--shade 0.52] [--samehue 0.46] [--huespan 16.5] [--free wl,wc,gain,gainlight,shade,samehue,huespan] [--placement own] [--skip-kinds named] [--table] log.json [more.json ...] # the metric fitted to calibrate-boundaries.html logs through identify.js's metricWith: the hue density, one or one per lightness level, the lightness and chroma weights as profiles over hue with --weight-knots, and whichever of the base weights, the gain's exponents toward black and toward white and the shape terms --free names, a start for each where free; --skip-kinds leaves out records of those kinds; ranking quality and loss per verdict of the built metric, flat, fitted and cross-validated, the fitted numbers and the grade cuts on the metric, per log with --own-cuts
@@ -90,6 +90,7 @@ boxes, and the ranges' text as `index.html` holds them.
 
 `tune-name-boundaries.html` sets those sectors, the author's hue families: per boundary its hue, its cusp color and the
 gamut's lightness/chroma slice at that hue, redrawn as the hue changes, and the `SECTORS` line to paste into `hue-boost.js`.
+`make_boundary_deal.js` reads them for its across and within pairs.
 
 Both run `index.html`'s own code, fetched from the server by `page-source.js` (`.claude/launch.json`, port 8734), so
 they do not work from disk. The server is `serve.py`, which marks every response no-store: a page never runs the fresh
@@ -128,7 +129,7 @@ The module also exports the metric itself for the fit scripts: the constants (`S
 `LIGHTNESS_FLOOR`, `CALIBRATED_PX`, `NAME_DECAY`, `HUE_DENSITY`, `HUE_LEVEL_DENSITIES`, `HUE_DENSITY_AUTHORED`), `weightAt`, `pairHue`, `lightnessGain`,
 `hueScaleAt`, `labOf`, `rgbOf`, `warpedLab`, `weightedDistance`, `recallDistance`, `metricWith`, `swapChance`,
 `confusionMatrix`, `summarize`, `score`, `nameCollision`, `gamutChroma`, `cuspLightness`,
-`relativePosition`. `metricWith({ density, wL, wC, power, gainExponent })` returns `recallDistance`'s form under
+`relativePosition`. `metricWith({ density or levels, wL, wC, power, gainDark, gainLight, shade, sameHueLightness, sameHueSpan })` returns `recallDistance`'s form under
 a candidate's numbers, each defaulting to the built one: a fit measures through it, never through a copy of the
 form. The metric here and in the page must agree; a constant changed in one is changed in
 the other, and a new density table is pasted into both.
@@ -381,10 +382,12 @@ to 50, no named pairs (144). Round 32, purple hue pairs against references: hue 
 330 to 30, window 35 to 65, metric distance 6 to 18, 48 per range in deal order (144). Round 33, hue pairs where rounds 21
 to 32 hold few: hues 40 to 140, 100 to 200, 160 to 260 and 215 to 300, windows 15 to 35 and 40 to 60, metric distance 6
 to 18 (144). Round 34, the light window, 65 to 85, around the circle: hue and mixed pairs in six overlapping hue ranges, 0
-to 90, 50 to 160, 105 to 225, 165 to 285, 240 to 330 and 300 to 30, metric distance 6 to 18 (144).
+to 90, 50 to 160, 105 to 225, 165 to 285, 240 to 330 and 300 to 30, metric distance 6 to 18 (144). Round 35, browns
+against the rest of the circle: lightness and shade pairs in window 12 to 45, metric distance 5 to 16, half in hues 30 to
+51, half in 51 to 150, 150 to 281 and 281 to 30 (144).
 
 The metric is fitted to rounds 21 to 34 alone: rounds 4 to 20 space the hues differently (`evolution.md`). A deal's
-metric distances are on the metric of its day; rounds through 34 were dealt before that fit.
+metric distances are on the metric of its day; rounds through 34 were dealt before that fit, round 35 after it.
 
 - `node data/fit_boundaries.js log.json` tables one deal's grades by turn and placement.
 - `node data/fit_hue_density.js data/boundary-1-log.json data/boundary-2-log.json data/boundary-3-log.json` pools every log into the memory-scale hue density; a

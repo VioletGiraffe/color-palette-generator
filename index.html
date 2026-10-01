@@ -1326,7 +1326,7 @@ function inAvoidCone(L, C, h, cfg) {
 
 const positionsOf = colors => colors.map(color => color.lab.map(v => v * 100));
 
-// The pool: points of the box drawn from the density, the candidates every attempt throws from. One per box.
+// The pool: points of the box drawn from the density, the candidates every attempt throws from.
 // Raw draws are kept with a chance of their weight over the largest seen in the first RAW_SURVEY usable ones,
 // until POOL_SIZE are kept or RAW_TRIES are spent: a box with little usable room gets a smaller pool.
 const POOL_SIZE = 2000, RAW_SURVEY = 10000, RAW_TRIES = 150000;

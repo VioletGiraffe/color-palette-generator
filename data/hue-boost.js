@@ -1,6 +1,6 @@
 // HUE_BOOST_RANGES' parts, shared by data/fit_hue_boost.js (require) and data/tune-hue-boost.html (script tag): the
 // author's hue sectors, the boxes the boost is judged in, and the ranges as index.html holds them.
-// data/tune-name-boundaries.html sets the sectors.
+// data/tune-name-boundaries.html sets the sectors; data/make_boundary_deal.js deals pairs across and within them.
 (function (root) {
 	"use strict";
 
