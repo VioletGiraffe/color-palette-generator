@@ -2284,6 +2284,8 @@ across a boundary, the grade model on the built metric (`tmp/boundary-fit.js`, `
   the closest pair on the built metric to 11.2, 9.0 and 6.9. A step of 100 picks near-twins across boundaries (closest
   4.1). With a margin of 3 deltaE on each side, coverage 7.9 and closest pair 8.7, red and yellow down: a family narrower
   than twice the margin never clears it and its neighbours close in over it.
+- Untested: pairs across a boundary, both colors far from it and under 12 apart. The logs hold almost none, and no round
+  was dealt for them.
 
 The pool against measured volume (`tmp/pool-volume.js`): a reference uniform in OKLab, weighted by sqrt(det G) of
 `apart2` for the metric's volume.
@@ -2346,6 +2348,77 @@ difference.
 - Under both, the relaxation moves colors out of pink, blue and purple (out 56, 47, 43 per 100 palettes, in 36, 26, 34)
   into orange, yellow and cyan (out 27, 7, 26, in 40, 28, 43).
 - The page steps on the metric, for consistency; the relaxation costs 0.8 ms more at the median.
+
+Measured and not built, on the metric before the strict rounds' fit, distances on its scale (Min distance 14.4):
+
+- A family-first throw: a candidate of a family already picked, or of none (chroma under 5), is skipped until every
+  family in the pool holds a pick, then a second pass takes the skipped (`tmp/family-first.js`). Families covered 6.79 to
+  8.07 in the default box, turquoise missing 47% to 15%, the closest pair and worst identified unmoved. It does not
+  reach 9: a throw covers all 9 in 27 to 57% of seeds, since red, narrower than one exclusion zone, is shut out by the
+  first orange or pink (missing 77% to 42%). In the author's box to 67 the relaxation takes it back, 8.24 thrown to 7.87:
+  it needs the family lock there. A cutoff at chroma 10 leaves a quarter of the pool without a family and costs turquoise.
+- The throw alone never keeps the spacing at 15 colors in the author's boxes: its closest pair is 11.5 to 67 and 13.3
+  uncapped, the best of 10 shuffles 12.2 and 14.0. Pool size and retries buy the same spacing for the same time: pool
+  1000, 2000, 5000 give 11.1, 11.5, 11.7 for one throw at 2.9, 5.4, 12.5 ms. The pool's 2000 had never been tested; it is
+  the smallest of the three that keeps the default box's throw at the spacing in 99% of seeds.
+- Where the time goes: the pool 20 ms a generation, most of it the survey of 10000 draws; a throw 5 ms where the count
+  does not fit, about eight passes of the bisection, 0.1 ms where it does; the relaxation 5 ms to 67 and under 1 ms
+  elsewhere. The bisection stops within 2% of the spacing, 0.25 at most.
+- Red along the gamut's surface is 2.85 wide at lightness 60, 1.8 at 20 and 2.0 at 70, less beyond, 1.65 at most at half
+  chroma (`tmp/red-width.js`): the relaxation's first step, 2, is wider than the family almost everywhere.
+
+## The strict rounds' metric
+
+Dark purple against dark pink pairs at 7 to 9.5 on the metric read to the judge as far apart as pairs flagged close at 10
+to 12.5. Rounds 30 to 34 and the logs behind them, a group's factor the factor on distance that fits its grades under
+the grade model with a pair of cuts per log (`tmp/dark-sectors.js`, `tmp/orange-purple.js`; above 1 is graded farther
+apart than the metric says):
+
+- Round 30, dark against mid in one sitting: purple to pink stops being close from 6.4 dark against 9.5 mid (mid less
+  dark 1.9 to 4.3, 95%). Over the 13 rounds with both in one sitting, dark over mid is 1.13 in pink, 1.16 in purple, 1.12
+  in blue, 0.91 in orange, about 1 from yellow to cyan; light pairs read at 0.94 over all sectors.
+- The same form refitted on rounds 4 to 31 leaves the gaps. An exponent of its own toward white fits at -0.3 to -0.4 in
+  every fit and takes the lights to 1.00; an exponent toward black per hue (8 and 12 knots) closes pink and blue only,
+  uneven at 12 knots, and makes the 3D view's height differ by hue: not taken.
+- Orange is one group: dark orange pairs differing mainly in lightness, browns, at 0.84 (0.75 to 0.95, 28 pairs). Open.
+- Purple is the judging, not the form. Pairs differing mainly in hue read at 1.00 in rounds 4 to 15, 0.96 in 16 to 20
+  and 0.90 from 21 on, at every chroma; turquoise and cyan at 0.93 and 1.01, then 1.16 and 1.13. Round 32, hue pairs at
+  mid lightness in one sitting: purple 0.86, pink 0.97, cyan to blue 1.17.
+- No metric fits both: with rounds 21 on weighted 2, 4 and 8 times the strict purple goes 0.93, 0.94, 0.95 and the loss
+  per held-out strict verdict 0.7309, 0.7260, 0.7253, the early rounds' 0.5548, 0.5722, 0.5948. Fitted on rounds 21 on
+  alone, purple 0.97, cyan 1.02, turquoise 1.06, and the early rounds read at 0.72 in turquoise, 1.18 in purple, 1.20 in
+  blue. The decision: the strict rounds rule, as they already set the Min distance.
+- Rounds 33 and 34 fill what rounds 21 to 32 held few of: hue pairs from yellow-green to blue, and the light window.
+  Still thin after them (`tmp/strict-coverage.js`): the light band, 0 to 17 hue pairs per 30 degrees of hue and none in
+  light yellow, and red, 18 hue pairs.
+- Dealing: hue pairs inside a 60 degree range reach only 6 to 12 on the metric from yellow to blue; a range of 85 to 100
+  degrees reaches 13 to 17, 120 in the light window.
+- 24 density knots for 12 change nothing (loss 0.6148 for 0.6145 on rounds 4 to 31): the residuals are not resolution.
+
+The fit, rounds 21 to 34, 2032 verdicts, named pairs left out, 6-fold cross-validated loss per verdict on them:
+
+| metric | loss |
+|---|---|
+| before (fitted on rounds 4 to 29, so in sample for 21 to 29) | 0.7313 |
+| rounds 4 to 34, with the exponent toward white | 0.7327 |
+| rounds 21 to 34, the form before | 0.7218 |
+| rounds 21 to 34, with the exponent toward white: applied | 0.7194 |
+| the same with an exponent toward black per hue | 0.7167 |
+
+- The gain: 0.125 toward black, -0.405 toward white, so 1.17 at lightness 20 and 0.89 at 90 where it was 1.24 and 1.05:
+  a pale pair is wanted at more distance than a mid one, not less.
+- Shade discount 0.18 for 0.52; a lightness step at one hue weighs 0.375 for 0.41, the chroma weight 0.94 at the mean.
+  A rerun from the applied constants lands at another split of that 0.375, 1.17 times 0.320 over a span of 16.8 for 1.07
+  times 0.352 over 15.4, at the same loss and the same other numbers: not a reason to paste again.
+- The hue density: a bump at red at every lightness (1.65 among darks) and at cyan (1.42 at mid lightness), a trough at
+  yellow and at violet (0.70 to 0.80), where violet was a bump and cyan a trough.
+- Hue pairs in the strict rounds after: purple 0.97, blue 0.98, cyan and turquoise 1.03, green 0.93, red 1.11 on 18 pairs.
+- The strict rounds' "fine" cuts have a median of 12.5 (21 to 29); rounds 30 to 34, judged less strictly, 9.7 to 11.5.
+  `FINE_DISTANCE` 12.5, the noise width 3.04. A distance on this metric is not one on the metric before: 14.4 there
+  was this line. State strings stay v5, their Min distance read on the new scale.
+- Palettes, 500 seeds a box at Vividness 0, each metric at its own default (`tmp/palettes-before-after.js`): purple 2.80
+  to 2.06 a palette and cyan 2.33 to 2.85 in the author's box to 67, turquoise 0.60 to 0.82, blue 1.92 to 1.66; families
+  covered 7.64 to 7.82, 7.66 to 7.74 uncapped, 6.81 to 6.73 in the default box; light colors 14% to 10% uncapped.
 
 ## Files
 

@@ -68,7 +68,7 @@ node data/make_boundary_deal.js --axis chroma [--hues 30] [--centres 30,50,70] [
 node data/make_boundary_deal.js --axis mixed [--ranges 0-360] [--windows 20-80] [--share 30-100] [--kinds mixed] [--by metric] [--distances 2-18] [--bands 6] [--each 30] [--seed 1] [--hue-offset 0-0] [--named a/b,c/d] [--repeat 1] # validation pairs in cells of hue range, lightness window, kind (hue alone, chroma alone, lightness alone, a shade at one hue and saturation, lightness and chroma at one hue, or hue, lightness and chroma at once) and distance band, the chroma within a share of the reach, the bands on the metric or on OKLab deltaE, shade and lightness pairs optionally turned a few degrees in hue, plus hand-picked pairs repeated blind; the defaults deal round 16
 node data/make_kind_deal.js [--hues 10] [--lights 25,50,75] [--shares 50,100] # deal calibrate-kinds.html's colors into the page: a grid over hue, cusp-relative lightness and chroma share of the reach
 node data/fit_boundaries.js log.json          # grades by turn and offset per boundary hue and the boundary's excess on the metric, from a calibrate-boundaries.html log; for a mixed deal, per kind the grades by distance band and by hue range and lightness window, and the ranking quality of the metric against OKLab deltaE
-node data/fit_hue_density.js [--p 0.75] [--ridge 2] [--knots 12] [--levels 30,58,85] [--level-ridge 10] [--weight-knots 16] [--weight-ridge 2] [--own-cuts] [--same-cuts 13-17] [--wl 0.9] [--wc 0.92] [--gain 0.17] [--shade 0.52] [--samehue 0.46] [--huespan 16.5] [--free wl,wc,gain,shade,samehue,huespan] [--placement own] [--skip-kinds named] [--table] log.json [more.json ...] # the metric fitted to calibrate-boundaries.html logs through identify.js's metricWith: the hue density, one or one per lightness level, the lightness and chroma weights as profiles over hue with --weight-knots, and whichever of the base weights, the gain's exponent and the shape terms --free names, a start for each where free; --skip-kinds leaves out records of those kinds; ranking quality and loss per verdict of the built metric, flat, fitted and cross-validated, the fitted numbers and the grade cuts on the metric, per log with --own-cuts
+node data/fit_hue_density.js [--p 0.75] [--ridge 2] [--knots 12] [--levels 30,58,85] [--level-ridge 10] [--weight-knots 16] [--weight-ridge 2] [--own-cuts] [--same-cuts 13-17] [--wl 0.9] [--wc 0.92] [--gain 0.17] [--gainlight -0.4] [--shade 0.52] [--samehue 0.46] [--huespan 16.5] [--free wl,wc,gain,gainlight,shade,samehue,huespan] [--placement own] [--skip-kinds named] [--table] log.json [more.json ...] # the metric fitted to calibrate-boundaries.html logs through identify.js's metricWith: the hue density, one or one per lightness level, the lightness and chroma weights as profiles over hue with --weight-knots, and whichever of the base weights, the gain's exponents toward black and toward white and the shape terms --free names, a start for each where free; --skip-kinds leaves out records of those kinds; ranking quality and loss per verdict of the built metric, flat, fitted and cross-validated, the fitted numbers and the grade cuts on the metric, per log with --own-cuts
 node data/make_member_deal.js [--palettes 120] [--count 8] [--box 20 60 20 100] [--shared 0.5] # deal calibrate-members.html's palettes into the page
 node data/fit_members.js log.json             # where the bad colors live and whether bad is the color or its company, from a calibrate-members.html log
 node data/fit_preference.js log.json          # the draw's preference density from a calibrate-members.html log, as the PREFERENCE constant
@@ -124,7 +124,7 @@ they do not work from disk. The server is `serve.py`, which marks every response
   the box sampler also read a strictness `scale`, which `hue-marginals.js` passes.
 
 The module also exports the metric itself for the fit scripts: the constants (`SIGMA`, `HUE_WEIGHT_L`, `HUE_WEIGHT_C`,
-`W_L` and `W_C` their means, `CHROMA_POWER`, `CHROMA_REFERENCE`, `CHROMA_FLOOR`, `LIGHTNESS_EXPONENT`, `LIGHTNESS_REFERENCE`,
+`W_L` and `W_C` their means, `CHROMA_POWER`, `CHROMA_REFERENCE`, `CHROMA_FLOOR`, `LIGHTNESS_EXPONENT_DARK`, `LIGHTNESS_EXPONENT_LIGHT`, `LIGHTNESS_REFERENCE`,
 `LIGHTNESS_FLOOR`, `CALIBRATED_PX`, `NAME_DECAY`, `HUE_DENSITY`, `HUE_LEVEL_DENSITIES`, `HUE_DENSITY_AUTHORED`), `weightAt`, `pairHue`, `lightnessGain`,
 `hueScaleAt`, `labOf`, `rgbOf`, `warpedLab`, `weightedDistance`, `recallDistance`, `metricWith`, `swapChance`,
 `confusionMatrix`, `summarize`, `score`, `nameCollision`, `gamutChroma`, `cuspLightness`,
@@ -155,12 +155,12 @@ palette recalls a color with Gaussian memory noise in OKLab and answers with the
 Noise is anisotropic - lightness and chroma differences count by a weight against hue, the hue
 difference is the ab chord less its radial part, taken after each hue moves to its place on the
 respaced circle of `HUE_DENSITY` and scaled by the pair's mean chroma at `CHROMA_POWER`, the whole
-distance by a lightness gain that is one at the cusps' lightness and rises toward black and toward white - and
+distance by a lightness gain that is one at the cusps' lightness, rises toward black and falls toward white - and
 a pair swaps with the chance the noise carries a recall past their midpoint. A color's error is the
 sum over its pairs, the same formula the page optimizes. The noise width comes from the
 recall calibration below, fitted on the step-round circle (the fit scripts' `--warped`); the
-circle by lightness, the lightness and chroma weights and the gain's exponent are one fit to the pair rounds under
-the preference question, the chroma power from the same rounds, see the boundary logs at the end. A
+circle by lightness, the lightness and chroma weights and the gain's exponents are one fit to the strict pair rounds, 21 on, under
+the preference question, the chroma power from the earlier ones, see the boundary logs at the end. A
 palette reports each color's accuracy, the worst of them (`worstIdentified`), and the pair confused most. A
 Monte Carlo (noise drawn per recall, nearest entry answered) was tried in
 four geometries and fitted the calibration verdicts worse than this formula in every one, by 5 to
@@ -227,7 +227,7 @@ the 71 marks were recorded on whichever ground came first.
 
 Five later rounds were judged on the light ground alone, which is the harder one at both ends of
 the range and makes every mark attributable to a ground known in advance. They are not poolable with
-the both-grounds log above, and they are what the `LIGHTNESS_EXPONENT` comes from.
+the both-grounds log above, and they are what the lightness gain first came from; its exponents are now the pair rounds' fit.
 
 `light-calibration-log.json`, 21 palettes: lightness and hue probes over three bands of relative
 lightness, two of them below the cusp. `chroma-log.json`, 24 palettes from `calibrate-chroma.html`:
@@ -373,7 +373,18 @@ Round 27, strict: round 26's deal with each shade and lightness pair's second co
 (`hueOffset` in the stamp): pairs near one hue (144). Round 28, strict, the dark end: hue, shade and mixed pairs in
 window 12 to 35, metric distance 8 to 20, hues in three ranges of 120 (144). Round 29, strict, muted yellow to cyan:
 hue, shade and mixed pairs in hues 60 to 240, chroma 10 to 60% of the reach, window 15 to 85, metric distance 8 to 20;
-the hue pairs reach 14.5 there (144).
+the hue pairs reach 14.5 there (144). Round 30, dark against mid purples, pinks and blues, judged less strictly than rounds 21 to 29 by the author's account and
+steadily within the round: hue and mixed pairs in hues
+300 to 350 and 250 to 300, windows 15 to 35 and 40 to 60, metric distance 4 to 16, plus seven pairs the author flagged,
+twice each (`kind` named) (158). Round 31, the same design over pink to red and red to orange, hues 340 to 375 and 15
+to 50, no named pairs (144). Round 32, purple hue pairs against references: hue pairs in hues 272 to 332, 190 to 280 and
+330 to 30, window 35 to 65, metric distance 6 to 18, 48 per range in deal order (144). Round 33, hue pairs where rounds 21
+to 32 hold few: hues 40 to 140, 100 to 200, 160 to 260 and 215 to 300, windows 15 to 35 and 40 to 60, metric distance 6
+to 18 (144). Round 34, the light window, 65 to 85, around the circle: hue and mixed pairs in six overlapping hue ranges, 0
+to 90, 50 to 160, 105 to 225, 165 to 285, 240 to 330 and 300 to 30, metric distance 6 to 18 (144).
+
+The metric is fitted to rounds 21 to 34 alone: rounds 4 to 20 space the hues differently (`evolution.md`). A deal's
+metric distances are on the metric of its day; rounds through 34 were dealt before that fit.
 
 - `node data/fit_boundaries.js log.json` tables one deal's grades by turn and placement.
 - `node data/fit_hue_density.js data/boundary-1-log.json data/boundary-2-log.json data/boundary-3-log.json` pools every log into the memory-scale hue density; a
