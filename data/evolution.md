@@ -2272,6 +2272,41 @@ families cannot hold go to the large ones. Colors a palette with the boost on th
   missing from 38%, 21% and 9% of the author's palettes, the closest pair at 14.4 throughout. Orange pays (missing
   18% to 40% at x4), and the lock alone leaves yellow missing from 23% against 3%: the drift was feeding yellow.
 
+The same on the metric fitted to rounds 21 to 38, Min distance 12.9 (`tmp/boost-fit.js`, `tmp/box-capacity.js`,
+`tmp/throws-best.js`). The author's box is full for a throw: a throw through the whole pool picks 11.2 colors at 12.9, so the
+15 are thrown at 11.2 and the relaxation spreads them to 12.9. The boost moves the throw and the relaxation takes it back.
+Colors a palette in the author's box under small families x4, pink and cyan x0.25:
+
+| | closest pair | red | turquoise | cyan | pink |
+|---|---|---|---|---|---|
+| no boost | 13.0 | 0.52 | 0.73 | 2.78 | 3.80 |
+| boosted, the throw | 10.6 | 1.39 | 1.39 | 1.47 | 2.09 |
+| boosted, relaxed | 13.0 | 0.84 | 0.88 | 2.47 | 3.21 |
+| boosted, relaxation kept in each color's family | 12.9 | 1.41 | 1.38 | 1.41 | 2.17 |
+
+- Fitted by `fit_hue_boost.js`'s rule, the boost alone reaches red 0.83, cyan 2.41, pink 3.36 at limits of x4 and less at
+  x8 and x32: a harder boost lowers the throw's spacing and the relaxation moves more.
+- The best of N throws with no relaxation, unboosted: closest pair 11.2, 11.7, 12.1 at N of 1, 5, 20 in the author's box
+  against 13.0 relaxed, worst identified 0.865, 0.886, 0.900 against 0.922. With lightness to 100, 5 throws keep 12.9 in
+  96% of palettes; in the default box every throw keeps it and the relaxation never runs.
+- The relaxation kept in each color's family, unboosted, Vividness 0, 500 seeds (`tmp/locked-relax.js`): every palette still
+  keeps 12.9 in all three boxes, worst identified 0.919 against 0.921 in the author's box and equal in the other two. The
+  author's box moves yellow from 1.00 to 0.87 a palette (missing from 18% against 8%) and pink from 3.87 to 3.97; with
+  lightness to 100 the counts move by 0.02 at most; the default box is identical, its throws never relaxed.
+- The most even of N attempts, unboosted (`tmp/even-attempts.js`, 300 seeds): every attempt run, and among those keeping the
+  Min distance the one with the lowest sum of squared family counts kept. Every palette still keeps 12.9. In the author's box,
+  as is, N of 5 and N of 20: red 0.48, 0.81, 1.00 a palette (missing from 57%, 29%, 13%), turquoise 0.70, 0.96, 1.04, cyan
+  2.86, 2.55, 2.42, pink 3.84, 3.25, 2.93, at 26, 52 and 149 ms a palette. The default box: red 0.26, 0.41, 0.51, pink 2.44,
+  1.84, 1.69, the time unchanged. Bare throws chosen the same way give the same counts and, in the author's box, a closest
+  pair of 11.3.
+- The same in the author's box with the relaxation kept in family: red 0.74 and 1.02 at N of 5 and 20, pink 3.30 and 2.91,
+  no gain over the free relaxation. The most even of N bare throws relaxed afterwards, once: kept in family the counts are the
+  throw's (red 0.76, 1.02, pink 3.28, 2.91) at 44 and 109 ms, and 5 to 7% of palettes end under 12.9; free, the relaxation
+  takes part back (red 0.62, 0.69, pink 3.48, 3.26) and 2% end under 12.9.
+- One set of ranges does not serve every box. The offset that keeps the total room goes negative where the boosted families
+  hold more of the box, and the floor at zero then empties the families with a boost under one: the set above leaves no cyan
+  and no pink in the throws of the author's box with lightness to 100 and of the default box.
+
 A distance bonus across a family boundary is not in the judge's grades. Rounds 4 to 29, 4128 verdicts, 2439 of them
 across a boundary, the grade model on the built metric (`tmp/boundary-fit.js`, `tmp/boundary-margin.js`):
 
