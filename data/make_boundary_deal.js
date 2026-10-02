@@ -8,7 +8,7 @@
 //     node data/make_boundary_deal.js --sweep 10 [--turns 20,30,45,60,45] [--light 50] [--chroma 85] [--placement shared] [--ranges 230-340,120-190] [page.html]
 //     node data/make_boundary_deal.js --axis lightness [--hues 30] [--centres 35,50,65] [--turns 10,20,30,45,60] [--chroma 85] [page.html]
 //     node data/make_boundary_deal.js --axis chroma [--hues 30] [--centres 30,50,70] [--turns 10,20,30,40,50] [--light 50] [page.html]
-//     node data/make_boundary_deal.js --axis mixed [--ranges 0-360] [--windows 20-80] [--share 30-100] [--kinds mixed] [--by metric] [--distances 2-18] [--bands 6] [--each 30] [--seed 1] [--hue-offset 0-0] [--margin 0] [--named a/b,c/d] [--repeat 1] [page.html]
+//     node data/make_boundary_deal.js --axis mixed [--ranges 0-360] [--windows 20-80] [--share 30-100] [--kinds mixed] [--by metric] [--distances 2-18] [--bands 6] [--each 30] [--seed 1] [--hue-offset 0-0] [--margin 0] [--named a/b,c/d] [--named-kind named] [--repeat 1] [page.html]
 //
 // A mixed deal validates the metric on pairs no round dealt. A cell is a hue range of --ranges, a window of
 // cusp-relative lightness of --windows, a kind and a distance band; every cell holds --each pairs, one number per hue range.
@@ -29,6 +29,7 @@
 // lowered to what its pairs reach (MIXED_REACH). --by is the distance between the two shown hexes the bands are in:
 // `metric`, or `oklab`, plain deltaE, which keeps the metric out of the deal.
 // --named adds hand-picked pairs as `kind` named, each --repeat times, a record per repeat: the repeatability of a verdict.
+// --named-kind gives them another kind: `repeat` for pairs of earlier rounds dealt again once, which a fit keeps.
 //
 // A lightness deal is the other kind of pair: one hue, the two colors a turn apart in cusp-relative lightness
 // around a centre, each at the chroma share of the reach at its own lightness; hues every --hues degrees. It tells
@@ -72,7 +73,7 @@ function main(args) {
 	let turns = [10, 15, 20, 30, 45, 60], offsets = [-1, -0.5, 0, 0.5, 1], light = 50, chroma = 85, sweep = 0, placements = ["shared"], pagePath = path.join(__dirname, "..", "index.html");
 	let names = ["red", "yellow", "green", "cyan", "blue", "magenta"], ranges = [[0, 360]];
 	let axis = "hue", hueStep = 30, centres = [35, 50, 65];
-	let windows = [[20, 80]], share = [30, 100], kinds = ["mixed"], by = "metric", distances = [[2, 18]], bands = 6, each = [30], seed = 1, named = [], repeat = 1, hueOffset = [0, 0], margin = 0;
+	let windows = [[20, 80]], share = [30, 100], kinds = ["mixed"], by = "metric", distances = [[2, 18]], bands = 6, each = [30], seed = 1, named = [], namedKind = "named", repeat = 1, hueOffset = [0, 0], margin = 0;
 	const rangesOf = text => text.split(",").map(range => range.split("-").map(Number));
 	for (let i = 0; i < args.length; ++i) {
 		if (args[i] === "--boundaries")
@@ -102,6 +103,8 @@ function main(args) {
 			seed = +args[++i];
 		else if (args[i] === "--named")
 			named = args[++i].split(",").map(pair => pair.split("/").map(hex => "#" + hex.replace("#", "").toLowerCase()));
+		else if (args[i] === "--named-kind")
+			namedKind = args[++i];
 		else if (args[i] === "--repeat")
 			repeat = +args[++i];
 		else if (args[i] === "--hue-offset")
@@ -231,7 +234,7 @@ function main(args) {
 		for (const hexes of named)
 			for (let n = 0; n < repeat; ++n) {
 				const lch = hexes.map(hex => page.colorFromHex(hex).lch);
-				dealt.push({ kind: "named", repeat: n, window: [0, 0], band: -1, top: 0, distance: +measure(...hexes.map(labOf)).toFixed(2), hues: lch.map(c => +c[2].toFixed(2)),
+				dealt.push({ kind: namedKind, repeat: n, window: [0, 0], band: -1, top: 0, distance: +measure(...hexes.map(labOf)).toFixed(2), hues: lch.map(c => +c[2].toFixed(2)),
 					L: lch.map(c => +c[0].toFixed(1)), C: lch.map(c => +c[1].toFixed(1)), hexes });
 			}
 		return dealt;
@@ -265,7 +268,7 @@ function main(args) {
 	if (named.length && axis !== "mixed")
 		throw new Error("--named takes a mixed deal");
 	const where = axis === "mixed" ? { axis, ranges, windows, share, kinds, by, distances, bands, each, seed, ...(hueOffset[1] > 0 ? { hueOffset } : {}),
-			...(kinds.some(kind => kind === "across" || kind === "within") ? { families: FAMILY_STARTS, ...(kinds.includes("across") ? { margin } : {}) } : {}), ...(named.length ? { named: named.map(hexes => hexes.join("/")), repeat } : {}) }
+			...(kinds.some(kind => kind === "across" || kind === "within") ? { families: FAMILY_STARTS, ...(kinds.includes("across") ? { margin } : {}) } : {}), ...(named.length ? { named: named.map(hexes => hexes.join("/")), repeat, ...(namedKind !== "named" ? { namedKind } : {}) } : {}) }
 		: { light, chroma, placement: placements.join(","), turns,
 			...(axis !== "hue" ? { axis, hueStep, centres } : sweep ? { sweep, ranges } : { offsets, boundaries: Object.fromEntries(Object.entries(boundaries).map(([k, v]) => [k, +v.toFixed(1)])) }) };
 	const data = { version: 2, page: path.basename(pagePath), ...where, pairs };

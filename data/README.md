@@ -47,23 +47,23 @@ the archived generator and the scripts.
 `apart2(p, q)` is the squared distance between two metric positions, in deltaE:
 
 - the lightness difference times the lightness weight at the pair's hue, `HUE_WEIGHT_L` read by `weightAt` at the hue of
-  the two colors' summed ab (a grey defers to its partner), times a share that is `SAME_HUE_LIGHTNESS` (0.352) at one
-  hue and returns to one as the hue term below grows, half of the way at `SAME_HUE_SPAN` (15.4): a lightness
+  the two colors' summed ab (a grey defers to its partner), times a share that is `SAME_HUE_LIGHTNESS` (0.31) at one
+  hue and returns to one as the hue term below grows, half of the way at `SAME_HUE_SPAN` (17.2): a lightness
   difference counts more when the hue differs too;
-- the radial chroma difference, less `SHADE_DISCOUNT` (0.18) of the change a lightness change at the pair's saturation
+- the radial chroma difference, less `SHADE_DISCOUNT` (0.24) of the change a lightness change at the pair's saturation
   (chroma over lightness) brings, times the chroma weight there, `HUE_WEIGHT_C`: a shade of a color reads close to it.
-  Over hue, blue through magenta weighs lightness up to a fifth above its mean and chroma up to 45% below, yellow-green
-  and cyan to blue weigh chroma up to half again;
+  Over hue, blue through magenta weighs lightness up to a sixth above its mean and chroma up to 45% below, yellow-green
+  weighs chroma a third above its mean and cyan up to 60% above;
 - the tangential part, the ab chord after both hues move to their warped angle at the pair's mean lightness, the
   mix of the two levels around it, less the radial part, times
   `hueScaleAt` of the pair's mean chroma, `(C / CHROMA_REFERENCE) ^ (CHROMA_POWER - 1)`, so a hue turn grows with
   chroma at the 0.75 power;
 - the sum times the square of `lightnessGain` of the pair's mean lightness, one at `LIGHTNESS_REFERENCE` (68): the ratio
-  to it at `LIGHTNESS_EXPONENT_DARK` (0.125) toward black (floored at 20), where the gain rises, and at
-  `LIGHTNESS_EXPONENT_LIGHT` (-0.405) toward white, where it falls.
+  to it at `LIGHTNESS_EXPONENT_DARK` (0.156) toward black (floored at 20), where the gain rises, and at
+  `LIGHTNESS_EXPONENT_LIGHT` (-0.341) toward white, where it falls.
 
-The noise width `SIGMA` (3.04) is fixed; a pair at distance `d` swaps with `swapChance(d, SIGMA)`, half the
-complementary error function of `d / (2 SIGMA)` in standard units, falling to 2% at `FINE_DISTANCE` (12.5), the median
+The noise width `SIGMA` (3.14) is fixed; a pair at distance `d` swaps with `swapChance(d, SIGMA)`, half the
+complementary error function of `d / (2 SIGMA)` in standard units, falling to 2% at `FINE_DISTANCE` (12.9), the median
 of the strict pair rounds' "fine" cuts (21 to 29), the recall calibration (`calibrate.html`, `fit.js`) having set the
 earliest one. `FINE_DISTANCE` is the Min distance control's default and a reroll's exclusion zone. The
 level densities, the weight tables, the shape terms and the gain's exponents are one fit to the strict pair rounds, 21 on,

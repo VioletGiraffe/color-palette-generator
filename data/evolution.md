@@ -2289,6 +2289,56 @@ across a boundary, the grade model on the built metric (`tmp/boundary-fit.js`, `
   `tmp/boundary-fit-rounds.js`): across a boundary at a margin of 3 to 5, 1.01 (0.97 to 1.05, 214 pairs), at 5 to 8, 1.02
   (0.94 to 1.13, 37 pairs); a step fits at 0.08 with no gain in loss. Hue pairs across none hold 11 over 12 apart: at mid
   lightness and 80% of the reach or more, purple's reach 11.5, yellow's 12.7, cyan's 13.4, pink's 14.5.
+- Rounds 36 and 37 are that comparison, each in one sitting (`tmp/round36.js`): hue pairs 10 to 14 apart at mid lightness
+  and 80 to 100% of the reach, 70 across one boundary with both colors 5 or more from it, 70 across none, a round's cuts
+  from its pairs across none. Across reads at 1.10 (1.03 to 1.16) and 1.07 (1.00 to 1.13), together 1.08 (1.04 to 1.13),
+  and 1.09 (1.05 to 1.13) with each hue range's pairs across none taken to 1; 1.10 on the metric before the strict rounds'
+  fit. By range: none from orange to yellow, 23% from yellow to turquoise, 8% at turquoise to cyan and blue to purple, 12%
+  at purple to pink. A pair across reading farther and a pair inside one family reading closer are the same finding
+  here. Not acted on: 9% is 1.1 at the Min distance, for pairs with both colors well inside their families.
+- The same pairs across none part from the fitted metric by family: purple 1.20 (1.11 to 1.30), yellow 0.94, cyan 0.92,
+  pink 0.97. On the metric before the strict rounds' fit they read 1.05, 0.97, 1.04 and 0.94, and its distances rank the
+  280 verdicts better: 0.758 of the pairs of verdicts with different grades in the right order against 0.680.
+- Both metrics over rounds 4 to 37 (`tmp/metric-compare.js`), loss per verdict earlier / fitted: rounds 4 to 15 0.491 /
+  0.580, 16 to 20 0.595 / 0.669, 21 to 29 0.723 / 0.685, 30 to 34 0.703 / 0.626, 35 0.616 / 0.576, 36 and 37 0.915 / 0.993.
+  The earlier metric has purple right at mid lightness and high chroma (early sweeps 0.98, strict rounds 0.95, rounds 36
+  and 37 inside purple 1.05) and too wide elsewhere (dark 0.87, mid lightness under 80% of the reach 0.83 to 0.90); the
+  fitted one has those right and purple at mid lightness and high chroma too narrow. A rise with chroma at mid lightness
+  (`tmp/purple-share.js`) is within each span's noise, and over all lightness the strict rounds show none.
+- The same fit over rounds 21 to 37, not pasted (`tmp/measure-out/s37.txt`): loss per verdict 0.563, 0.665, 0.685, 0.636,
+  0.555 and 0.899 over the same spans, rounds 36 and 37 ranked at 0.779. It keeps the strict rounds and takes purple
+  inside the family to 1.08 (1.00 to 1.17) there, with the strict rounds' purple hue pairs at 0.94 (0.91 to 0.98): the
+  form holds both only halfway. The pairs across a boundary read at 1.05 under it, part of the excess taken into the hue
+  density.
+- Chroma's power on a hue difference stays 0.75: fitted at 0.6, 0.75, 0.9, 1.05 and 1.2 on rounds 21 to 37 the loss per
+  verdict is 0.6935, 0.6855, 0.6869, 0.6959, 0.7100 (cross-validated 0.7422, 0.7345, 0.7359, 0.7445, 0.7579), and on rounds
+  4 to 37 0.6089 at 0.75 against 0.6180 at 1.05.
+- The form fitted on rounds 4 to 37 (loss 3210 over 5272 verdicts, against 3259 for the earlier metric, 3349 for the fit
+  on 21 to 37 and 3409 for the fitted one; on rounds 21 to 35 alone 1496, 1544, 1436 and 1432) has no hole by area
+  (`tmp/residual-map.js`): a factor of its own for every cell of family by lightness band by chroma share gains 26 over
+  what noise gains, family by what differs by lightness band 38. What is left over the 0.05 that noise gives: purple hue
+  pairs under chroma 12 at 0.89 to 0.94 and purple pairs differing in everything at 1.10, green hue pairs from 0.91 under
+  chroma 8 to 1.13 over 17, pink hue pairs under chroma 8 at 1.18, light blue at 1.16.
+- The larger part is by family between sets of rounds, 47 over noise: inside rounds 21 to 35 a factor per family alone
+  gains 32 (purple 0.91, blue 0.92, cyan and turquoise 1.10) and lightness, chroma and what differs add at most 20 to it.
+  The two sets ask for different hue densities at one place: at hue 180 the fit on all rounds has 0.70, 1.03 and 0.92 at
+  lightness 30, 58 and 85, the fit on 21 to 37 1.19, 1.44 and 1.30. Rounds 36 and 37, judged after the strict rounds,
+  side with rounds 4 to 20: not the judging's era, and not found in the pairs' lightness or chroma.
+- It is the sitting. Round 38 dealt 72 hue pairs of rounds 4 to 20 and 72 of rounds 21 to 34 again, verbatim, in one
+  sitting (`tmp/round38.js`). On the fit on all rounds, blue and purple pairs read at 1.04 in the early rounds and 0.88 in
+  the strict ones, turquoise and cyan at 0.98 and 1.09; graded together, blue and purple read at 0.95 from either origin,
+  turquoise and cyan at 1.03 and 1.07. A family's grades against another's move by 10 to 20% from one sitting to the
+  next, with what else the sitting holds; a pair of cuts per log does not take that out. 74 of the 144 kept their grade,
+  48 were graded closer and 22 farther.
+- Round 38's balance of blue and purple against turquoise and cyan sits between the two sets: 0.95 over 1.05 on the fit
+  on all rounds, 1.04 over 0.97 on the fitted metric, 1.01 over 0.99 on the fit on rounds 21 to 37, 0.92 over 1.08 on the
+  earlier metric.
+- A sitting term in the fit does nothing for it (`tmp/fit-sitting.js`, made by `tmp/patch-fit-sitting.js`): per log and
+  family an offset on log distance under a normal prior of sd 0.04, 0.08 or 0.15, fitted with the cuts, rounds 4 to 37.
+  The offsets take the swings (purple 0.80 to 0.92 in rounds 26, 28, 30 and 32, 1.08 to 1.17 in rounds 6, 7, 9 and 11) and
+  the loss with them falls to 0.584, 0.566 and 0.558, but the metric stays the plain fit's: round 38 reads 0.95 over 1.05
+  at every sd, its loss 0.768 to 0.776 against 0.766. Seventeen early sittings agreeing with each other outvote the rest
+  whether a sitting counts once or by its pairs.
 
 The pool against measured volume (`tmp/pool-volume.js`): a reference uniform in OKLab, weighted by sqrt(det G) of
 `apart2` for the metric's volume.
@@ -2394,7 +2444,8 @@ apart than the metric says):
   from yellow to green, 1.00 from turquoise to blue, 0.87 (0.77 to 0.99) from purple to red. Not acted on.
 - Purple is the judging, not the form. Pairs differing mainly in hue read at 1.00 in rounds 4 to 15, 0.96 in 16 to 20
   and 0.90 from 21 on, at every chroma; turquoise and cyan at 0.93 and 1.01, then 1.16 and 1.13. Round 32, hue pairs at
-  mid lightness in one sitting: purple 0.86, pink 0.97, cyan to blue 1.17.
+  mid lightness in one sitting: purple 0.86, pink 0.97, cyan to blue 1.17. Rounds 36 and 37 (Hue families) put this in
+  doubt: at mid lightness and high chroma purple reads as in the early rounds.
 - No metric fits both: with rounds 21 on weighted 2, 4 and 8 times the strict purple goes 0.93, 0.94, 0.95 and the loss
   per held-out strict verdict 0.7309, 0.7260, 0.7253, the early rounds' 0.5548, 0.5722, 0.5948. Fitted on rounds 21 on
   alone, purple 0.97, cyan 1.02, turquoise 1.06, and the early rounds read at 0.72 in turquoise, 1.18 in purple, 1.20 in
@@ -2430,6 +2481,43 @@ The fit, rounds 21 to 34, 2032 verdicts, named pairs left out, 6-fold cross-vali
 - Palettes, 500 seeds a box at Vividness 0, each metric at its own default (`tmp/palettes-before-after.js`): purple 2.80
   to 2.06 a palette and cyan 2.33 to 2.85 in the author's box to 67, turquoise 0.60 to 0.82, blue 1.92 to 1.66; families
   covered 7.64 to 7.82, 7.66 to 7.74 uncapped, 6.81 to 6.73 in the default box; light colors 14% to 10% uncapped.
+
+Applied after round 38: the same fit over rounds 21 to 38, round 38's pairs kept as `kind` repeat. A step, not an end:
+
+- Loss per verdict before and after, by rounds: 4 to 15 0.580 to 0.558, 16 to 20 0.669 to 0.660, 21 to 29 0.685 to 0.687,
+  30 to 34 0.626 to 0.632, 35 0.576 to 0.555, 36 and 37 0.993 to 0.902, 38 0.775 to 0.748; over all 5416 verdicts 3521 to
+  3442, the fit on all rounds 3321. Cross-validated on its own rounds 0.7368.
+- Gain 0.156 toward black and -0.341 toward white, shade discount 0.24, a lightness step at one hue 0.379 (1.22 times
+  0.31) over a span of 17.2. `FINE_DISTANCE` 12.9, the median "fine" cut of rounds 21 to 29 on it (rounds 35 to 38 at 13.0
+  to 13.4), the noise width 3.14.
+- Left as they were: purple inside the family at 1.09 in rounds 36 and 37 against 0.94 for the strict rounds' purple hue
+  pairs, pairs across a boundary at 1.06, round 38's balance 1.01 over 0.99 with round 38 in the fit.
+- Palettes barely move (`tmp/family-shares.js`, 500 seeds, the author's box to 67): purple 2.06 to 2.11 a palette, cyan
+  2.85 to 2.87, turquoise 0.82 to 0.71, blue 1.66 to 1.74; the fit on all rounds would put purple at 2.69 and cyan at 2.54.
+- A family's colors against its volume: cyan gets 2.4 times its share of the box's OKLab volume and purple 0.5. The
+  metric's volume is 2.06 and 0.64 of OKLab's there (`tmp/family-volume-factors.js`): the chroma weight 1.57 and 0.73 of the
+  box's mean, the hue density 1.19 and 0.93, the hue scale by chroma 1.16 and 0.96 (cyan's mean chroma is 7.9, purple's
+  16.8). Against the metric's own volume the throw gives purple 0.77, pink 0.87, orange and yellow 1.35 to 1.45, the same
+  with the relaxation off and under the fit on all rounds: the surface layer, not the metric.
+
+The regions of largest error, found by the data (`tmp/error-tree.js`): a tree over a pair's axes (an arc of hue, mean
+lightness, mean chroma, chroma share of the reach, the shares of the difference along hue, lightness and chroma, the OKLab
+distance, the hue turn), a factor per node, the split that gains most likelihood taken, grown on half the verdicts and
+read on the other half.
+
+- On the applied metric over rounds 4 to 38 the regions are the sittings again: green to cyan with a hue turn of 30 or more
+  and a lightness difference at 0.89 (0.86 in rounds 4 to 20, 0.95 in the strict ones), blue to purple at 1.09 (1.19 and
+  0.97), purple to pink differing mostly in lightness at 1.06 (1.20 and 1.03).
+- Inside one set of rounds, on the errors of a cross-validated fit to that set (`tmp/fit-sitting.js --held-out`, each
+  verdict under the fit of the folds without it), no split gains 4 with leaves of 70: no region of 300 pairs is off by
+  10%. The weaker candidates, 100 pairs each and at the edge of noise: red-pink under 73% of the reach, 1.14 below
+  lightness 62 and 0.94 above (rounds 21 to 38); pairs with a near-grey above the cusp's lightness, 1.11 (rounds 4 to 20).
+  The cross-validated fit to all rounds (0.6436 a verdict) leaves no split either: fitted to every sitting, the form
+  has no region off on the pairs' own axes, and the sittings are not one of them.
+- A pair's misfit does not repeat. Round 38's pairs against the same pairs in their own rounds (`tmp/round38.js`): the
+  grades correlate at 0.44, the residuals after the metric at 0.13 (0.28 for the early rounds' pairs, -0.03 for the strict
+  ones'), and the earlier grade added to the metric gains 1.4 of round 38's loss of 107.7. For hue pairs 7 to 14 apart
+  what the metric leaves is the verdict's own noise and the sitting, not a region to fit.
 
 ## Files
 

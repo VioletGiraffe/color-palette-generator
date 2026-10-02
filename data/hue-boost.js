@@ -7,7 +7,7 @@
 	// The author's hue families, red through pink, by where each starts in OKLCh hue, judged at the cusp; ascending
 	const SECTORS = [["red", 25.5], ["orange", 30], ["yellow", 51], ["green", 123], ["turquoise", 150], ["cyan", 179], ["blue", 254], ["purple", 281], ["pink", 323]];
 	// The author's box, capped and uncapped in lightness, and the page's default box; `names` is a state string's names field
-	const AUTHOR_BOX = { count: 15, minApart: 12.5, hMin: 0, hMax: 360, cMinPercentage: 20, cMaxPercentage: 100, lMin: 20, lMax: 67, lAbsolute: true, vividControl: 0.15, names: "vkhsvlj" };
+	const AUTHOR_BOX = { count: 15, minApart: 12.9, hMin: 0, hMax: 360, cMinPercentage: 20, cMaxPercentage: 100, lMin: 20, lMax: 67, lAbsolute: true, vividControl: 0.15, names: "vkhsvlj" };
 	const BOXES = [
 		{ name: "author's, lightness to 67", weight: 2, cfg: AUTHOR_BOX },
 		{ name: "author's, lightness to 100", weight: 1, cfg: { ...AUTHOR_BOX, lMax: 100 } },
