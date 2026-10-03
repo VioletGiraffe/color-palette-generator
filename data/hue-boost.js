@@ -11,8 +11,16 @@
 	const BOXES = [
 		{ name: "author's, lightness to 67", weight: 2, cfg: AUTHOR_BOX },
 		{ name: "author's, lightness to 100", weight: 1, cfg: { ...AUTHOR_BOX, lMax: 100 } },
-		{ name: "default, 10 colors", weight: 1, cfg: { count: 10, hMin: 0, hMax: 360, cMinPercentage: 20, cMaxPercentage: 100, lMin: 20, lMax: 80 } },
+		{ name: "default, 10 colors", weight: 1, cfg: { count: 10, minApart: 12.9, hMin: 0, hMax: 360, cMinPercentage: 20, cMaxPercentage: 100, lMin: 20, lMax: 60, vividControl: 0, sMin: 0.06 } },
 	];
+	// The box of a state string of index.html; its fixed, avoided and rerolled colors are not read
+	function boxOfState(state) {
+		const f = state.trim().split("|"), [count, minApart, hMin, hMax, c1, c2, l1, l2] = f.slice(1, 9).map(Number);
+		if (f[0] !== "v6" || f.length < 13 || [count, minApart, hMin, hMax, c1, c2, l1, l2].some(v => !Number.isFinite(v)))
+			throw new Error("not a v6 state string");
+		return { name: state.trim(), weight: 1, cfg: { count, minApart, hMin, hMax, cMinPercentage: Math.min(c1, c2), cMaxPercentage: Math.max(c1, c2), lMin: Math.min(l1, l2), lMax: Math.max(l1, l2),
+			lAbsolute: f[17] === "1", cAbsolute: f[21] === "1", ...(f[19] ? { vividControl: +f[19] } : {}), ...(f[20] ? { sMin: +f[20] } : {}), ...(f[15] ? { names: f[15] } : {}) } };
+	}
 
 	// Below the first start a hue is in the last sector, which wraps past 360
 	function sectorOf(h) {
@@ -32,7 +40,7 @@
 	const rangesText = ranges => "const HUE_BOOST_RANGES = [" + ranges.map(({ from, to, boost, ramp }) =>
 		"\n\t{ from: " + from + ", to: " + to + ", boost: " + +boost.toFixed(3) + ", ramp: " + ramp + " },").join("") + (ranges.length ? "\n" : "") + "];";
 
-	const api = { SECTORS, BOXES, sectorOf, configOf, rangesText };
+	const api = { SECTORS, BOXES, sectorOf, configOf, boxOfState, rangesText };
 	if (typeof module !== "undefined" && module.exports)
 		module.exports = api;
 	else

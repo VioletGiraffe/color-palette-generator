@@ -75,8 +75,9 @@ its own.
 
 ## The generator
 
-A palette is `count` colors that are, in this order of priority: distinct, every pair at least the minimum spacing apart
-on `apart2` (the Min distance control, `minApart`), or where the box cannot hold that the widest spacing it can; a sample of one stated density over the
+A palette is `count` colors that are, in this order of priority: distinct, every pair near the minimum spacing apart
+on `apart2` (the Min distance control, `minApart`) or over it, as far as the box and the relaxation's reach allow; spread evenly over the hue
+families (`FAMILY_STARTS`); a sample of one stated density over the
 usable part of the box; different for every seed. `identification` reports `worstIdentified`, the worst color's chance of being identified,
 and `closestApart`, the closest pair's distance; pairs of two fixed colors are skipped.
 
@@ -97,8 +98,8 @@ The density carries every preference about where colors sit:
   cone, `inAvoidCone`), zero elsewhere. The preferences act only through how often the pool draws a color: spacing is on
   `apart2` alone.
 
-`generate` runs up to `ATTEMPTS` attempts, stopping at the first whose closest pair keeps the minimum spacing, else keeping the one
-with the widest closest pair; an attempt is a throw and a relaxation:
+`generate` makes `THROWS` throws, keeps the one with the most even family counts (`unevenness`, the sum of the squared
+counts; among equals the widest closest pair) and relaxes it:
 
 1. **The pool** (`poolFor`, one per box and seed, cached): raw draws (`rawDraw`) cover the box without rejection by the gamut,
    hue evenly over the range, lightness evenly over the hue's interval, chroma by its square over the interval the
@@ -112,13 +113,16 @@ with the widest closest pair; an attempt is a throw and a relaxation:
    in a box full at the spacing, its family mix follows the box's shape more than the density (`evolution.md`, Hue families).
 3. **The relaxation** (`relax`), only while some pair is under the minimum spacing: the colors with such a pair, closest first,
    each try up to `PROPOSALS` positions a step away on the metric in a random direction; an unusable proposal is dropped, nothing is
-   clamped; a proposal is kept when it widens the color's closest pair. A sweep with nothing kept halves the step, from
+   clamped, and so is one out of the color's hue family or past `RELAX_REACH` from where the color started: the relaxation keeps
+   the throw's family counts and its sample of the density, and gives up the minimum spacing where that takes a longer move.
+   A proposal is kept when it widens the color's closest pair. A sweep with nothing kept halves the step, from
    `STEP_START`; the relaxation ends when no pair is under the minimum spacing, the step is under `STEP_MIN` or `SWEEPS_MAX`
    sweeps are spent. The state with the widest closest pair is kept.
 
-A reroll (`reroll`, for each slot in the config's `rerolls`, replayed after the attempts on the seeds after theirs): the
+A reroll (`reroll`, for each slot in the config's `rerolls`, replayed after the throws on the seeds after theirs): the
 slot's color and its `REROLL_VICINITY` nearest generated colors are thrown again among the rest, from the pool less the
-points within `FINE_DISTANCE` of the rejected color at any spacing, then relaxed; the other colors keep their slots. Removing the
+points within `FINE_DISTANCE` of the rejected color at any spacing, then relaxed, the reach counted from where the reroll
+found or threw each color; the other colors keep their slots. Removing the
 color alone would pick a near-twin: in a full box the room a color leaves behind is about one spacing wide
 (`evolution.md`). A slot past the count or of a fixed color is skipped.
 
@@ -139,7 +143,7 @@ random step never lands inside it.
 
 `stateString` writes, `parseState` reads and `configFromState` turns into a generator config:
 
-    v5|count|minApart|hMin|hMax|cMinPercentage|cMaxPercentage|lMin|lMax|seed|sort|backdrop|custom|format|fixed|names|avoid|lAbsolute|rerolls|vividControl|sMin|cAbsolute
+    v6|count|minApart|hMin|hMax|cMinPercentage|cMaxPercentage|lMin|lMax|seed|sort|backdrop|custom|format|fixed|names|avoid|lAbsolute|rerolls|vividControl|sMin|cAbsolute
 
 - `minApart` is the Min distance value in weighted deltaE; the ranges are in the control coordinates above (hue in
   degrees, not the ridge coordinate); `seed` is written unsigned.
@@ -151,7 +155,8 @@ random step never lands inside it.
   Vividness value, 0 to 1; `sMin` is the Saturation min value, chroma over lightness, 0 to 1; `cAbsolute` is 0 or 1, the chroma range's
   coordinate. These eight were added later in that order, so an older string ends earlier and the missing
   ones take their defaults.
-- `STATE_VERSION` changes only when a field's meaning changes; an added field goes at the end.
+- `STATE_VERSION` changes when a field's meaning changes or the generator would give a string another palette; an added
+  field goes at the end.
 
 ## After a change
 

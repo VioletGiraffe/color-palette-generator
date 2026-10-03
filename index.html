@@ -1331,7 +1331,7 @@ function inAvoidCone(L, C, h, cfg) {
 
 const positionsOf = colors => colors.map(color => color.lab.map(v => v * 100));
 
-// The pool: points of the box drawn from the density, the candidates every attempt throws from.
+// The pool: points of the box drawn from the density, the candidates every throw picks from.
 // Raw draws are kept with a chance of their weight over the largest seen in the first RAW_SURVEY usable ones,
 // until POOL_SIZE are kept or RAW_TRIES are spent: a box with little usable room gets a smaller pool.
 const POOL_SIZE = 2000, RAW_SURVEY = 10000, RAW_TRIES = 150000;
@@ -1381,7 +1381,7 @@ const boxKey = cfg => [cfg.hMin, cfg.hMax, cfg.lMin, cfg.lMax, cfg.lAbsolute ? "
 	(cfg.avoid ?? []).map(color => color.hex).join()].join("|");
 const poolKey = cfg => [boxKey(cfg), cfg.vividControl, cfg.usePreference, cfg.included.map(Number).join(""), cfg.seed].join("|");
 let poolCache = { key: null, pool: null };
-// A palette's random streams, SEED_STREAM apart: the pool's at seed - SEED_STREAM, attempt n's at seed + n * SEED_STREAM,
+// A palette's random streams, SEED_STREAM apart: the pool's at seed - SEED_STREAM, throw n's at seed + n * SEED_STREAM,
 // then the rerolls'.
 const SEED_STREAM = 7919;
 // The pool of a box and seed: its points. Each palette draws from its own sample of the box.
@@ -1451,8 +1451,26 @@ function spacedThrow(order, fixed, count, cfg) {
 	return widest;
 }
 
+// The hue families generate evens a palette over and relax keeps a color in, each from its OKLab hue to the next one's:
+// red, orange, yellow, green, blue-green, blue, purple, pink, the last past 360 to the first.
+// Coarser than the nine of data/hue-boost.js, which hold turquoise and cyan apart.
+const FAMILY_STARTS = [25.5, 30, 51, 123, 150, 254, 281, 323];
+function familyOf(h) {
+	const at = FAMILY_STARTS.findLastIndex(from => h >= from);
+	return at < 0 ? FAMILY_STARTS.length - 1 : at;
+}
+// How uneven the colors' families are: the sum of the squared family counts
+function unevenness(colors) {
+	const counts = FAMILY_STARTS.map(() => 0);
+	for (const color of colors)
+		++counts[familyOf(color.lch[2])];
+	return counts.reduce((sum, count) => sum + count * count, 0);
+}
+
 // The relaxation's first step in weighted deltaE, and the step under which it ends.
 const STEP_START = 2, STEP_MIN = 0.25;
+// The farthest the relaxation takes a color from where it started, in weighted deltaE
+const RELAX_REACH = 3;
 // Directions a color tries per sweep, the first that helps taken: with one, a sweep that keeps nothing is bad
 // luck, not a step too long, and the step halves for nothing.
 const PROPOSALS = 8;
@@ -1462,8 +1480,8 @@ const SWEEPS_MAX = 400;
 // color's chance of being identified. The pair is the one likeliest swapped, `closestApart` its weighted
 // deltaE and `confusionProbability` that chance. Null pair below two colors, where no pair exists.
 // The swap chance falls with distance, so `closestApart` is also the closest pair's distance, which ranks
-// attempts against each other. Pairs of two fixed colors are skipped: generation cannot move
-// either, so such a pair must neither rank an attempt nor be pointed at as the offender.
+// equally even throws against each other. Pairs of two fixed colors are skipped: generation cannot move
+// either, so such a pair must neither rank a throw nor be pointed at as the offender.
 // A caller stepping the colors passes the points it already keeps for them.
 function identification(colors, cfg, points = positionsOf(colors).map(warpedPoint)) {
 	const error = colors.map(() => 0);
@@ -1502,11 +1520,13 @@ function insideBox([L, C, h], cfg) {
 }
 
 // The relaxation, for the colors with a pair under the minimum spacing, closest first: each proposes one position `step`
-// away in a random direction of OKLab. A proposal outside the box or not allowed is dropped, never clamped; one that widens
-// the color's closest pair is kept. A sweep that keeps nothing halves the step. Returns the state with the widest closest
-// pair seen: a box that cannot hold the minimum spacing keeps the nearest it came.
+// away in a random direction of OKLab. A proposal outside the box, not allowed, out of the color's hue family or past
+// RELAX_REACH from where the color started is dropped, never clamped; one that widens the color's closest pair is kept. A
+// sweep that keeps nothing halves the step. Returns the state with the widest closest pair seen, under the minimum spacing
+// where the box or the reach does not let it through.
 function relax(rnd, colors, points, cfg) {
 	colors = colors.slice();
+	const starts = points;
 	points = points.slice();
 	// A color's closest pair, squared, with the color at `at`
 	const nearest2 = (i, at = points[i]) => Math.min(...points.map((point, j) => j === i ? Infinity : apartWarped2(at, point)));
@@ -1526,10 +1546,10 @@ function relax(rnd, colors, points, cfg) {
 				const lchAt = length => lchOf(from.map((v, k) => (v + length * direction[k]) / 100));
 				// The proposal is `step` long on the metric, to first order: an OKLab probe of that length rescaled by its metric length
 				const lch = lchAt(step * step / Math.sqrt(apartWarped2(points[i], pointAt(lchAt(step)))));
-				if (!insideBox(lch, cfg) || !allowedLch(...lch, cfg))
+				if (!insideBox(lch, cfg) || !allowedLch(...lch, cfg) || familyOf(lch[2]) !== familyOf(starts[i].lch[2]))
 					continue;
 				const at = pointAt(lch);
-				if (nearest2(i, at) <= apart2)
+				if (nearest2(i, at) <= apart2 || apartWarped2(at, starts[i]) > RELAX_REACH ** 2)
 					continue;
 				points[i] = at;
 				colors[i] = colorAt(...lch);
@@ -1562,13 +1582,12 @@ function shuffled(list, rnd) {
 // A result: the colors with their scores and the count of distinct names among them.
 const scored = (colors, cfg) => ({ colors, ...identification(colors, cfg), distinctNames: new Set(colors.map(color => color.cell)).size });
 
-// One throw, relaxed, with its scores.
-function attempt(rnd, cfg, pool) {
+// One throw, unrelaxed, with its scores: the fixed colors then the picked ones, and their points.
+function scoredThrow(rnd, cfg, pool) {
 	const order = shuffled(pool.points, rnd);
 	const fixed = cfg.fixed.map(color => pointAt(color.lch));
-	const picked = spacedThrow(order, fixed, cfg.count, cfg);
-	const thrown = [...cfg.fixed, ...picked.slice(fixed.length).map(point => colorAt(...point.lch))];
-	return scored(relax(rnd, thrown, picked, cfg), cfg);
+	const points = spacedThrow(order, fixed, cfg.count, cfg);
+	return { ...scored([...cfg.fixed, ...points.slice(fixed.length).map(point => colorAt(...point.lch))], cfg), points };
 }
 
 // A reroll of the color at `slot` of a result: it and its REROLL_VICINITY nearest generated colors are thrown again
@@ -1590,11 +1609,11 @@ function reroll(result, cfg, slot, rnd, pool) {
 	return scored(relax(rnd, next, nextPoints, cfg), cfg);
 }
 
-// The first of up to ATTEMPTS attempts whose closest pair keeps the minimum spacing, or else the one with the widest closest pair;
-// no attempt is kept for a wider spacing, so each seed keeps its own palette. Then the config's rerolls, each of a slot of the result so far, on the seeds
-// after the attempts'. Null when the box holds no usable color. A slot past the count or of a fixed color is skipped:
-// the string it came from was written by hand.
-const ATTEMPTS = 4;
+// Of THROWS throws the one with the most even hue families, among equals the widest closest pair, then relaxed on that
+// throw's stream. Then the config's rerolls, each of a slot of the result so far, on the seeds after the throws'. Null when
+// the box holds no usable color. A slot past the count or of a fixed color is skipped: the string it came from was written
+// by hand.
+const THROWS = 5;
 // The minimum spacing, in weighted deltaE, for a config without `minApart` (the Min distance control)
 const MIN_APART_DEFAULT = FINE_DISTANCE;
 function generate(cfg) {
@@ -1604,17 +1623,18 @@ function generate(cfg) {
 	const pool = poolFor(settings);
 	if (!pool.points.length)
 		return null;
-	let best = null;
-	for (let n = 0; n < ATTEMPTS && !(best && best.closestApart >= settings.minApart); ++n) {
-		const made = attempt(mulberry32(settings.seed + n * SEED_STREAM), settings, pool);
-		if (!best || made.closestApart > best.closestApart)
-			best = made;
-	}
-	(cfg.rerolls ?? []).forEach((slot, n) => {
-		if (slot < best.colors.length && !best.colors[slot].fixed)
-			best = reroll(best, settings, slot, mulberry32(settings.seed + (ATTEMPTS + n) * SEED_STREAM), pool);
+	const throws = Array.from({ length: THROWS }, (_, n) => {
+		const rnd = mulberry32(settings.seed + n * SEED_STREAM), thrown = scoredThrow(rnd, settings, pool);
+		return { ...thrown, rnd, uneven: unevenness(thrown.colors) };
 	});
-	return best;
+	const chosen = throws.reduce((best, thrown) =>
+		(thrown.uneven !== best.uneven ? thrown.uneven < best.uneven : thrown.closestApart > best.closestApart) ? thrown : best);
+	let result = scored(relax(chosen.rnd, chosen.colors, chosen.points, settings), settings);
+	(cfg.rerolls ?? []).forEach((slot, n) => {
+		if (slot < result.colors.length && !result.colors[slot].fixed)
+			result = reroll(result, settings, slot, mulberry32(settings.seed + (THROWS + n) * SEED_STREAM), pool);
+	});
+	return result;
 }
 
 // ---------- ui ----------
@@ -2191,7 +2211,7 @@ function applyNameTable(table) {
 
 // The string is the version tag, these fields in order, then the sort flag, the backdrop, the
 // custom backdrop color, the export format and the comma-joined fixed colors.
-const STATE_VERSION = "v5";
+const STATE_VERSION = "v6";
 const STATE_SEPARATOR = "|";
 const STATE_IDS = ["count", "min-apart", "h-min", "h-max", "c-min", "c-max", "l-min", "l-max", "seed"];
 

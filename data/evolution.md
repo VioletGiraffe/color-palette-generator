@@ -2303,6 +2303,75 @@ Colors a palette in the author's box under small families x4, pink and cyan x0.2
   no gain over the free relaxation. The most even of N bare throws relaxed afterwards, once: kept in family the counts are the
   throw's (red 0.76, 1.02, pink 3.28, 2.91) at 44 and 109 ms, and 5 to 7% of palettes end under 12.9; free, the relaxation
   takes part back (red 0.62, 0.69, pink 3.48, 3.26) and 2% end under 12.9.
+- In a tighter box (relative chroma 51 to 100%, absolute lightness 0 to 67, 300 seeds) the throws reach 10.4 and one
+  relaxation kept in family keeps 12.9 in 58% of palettes. Each color held within 3 (metric) of its throw: 25% kept in
+  family, 34% free, and the free one gives the counts back (red 0.52 against 0.49 as is, 0.81 kept in family): red is 2.6
+  wide. Unheld, the relaxation moves a color 2.3 at the median and up to 10.2.
+- Sameness in that box (`tmp/variety.js`, 100 seeds): 6.4 shared of 15 as is and with the most even of 5 relaxed in
+  family, 6.3 under either hold of 3, 6.2 for the bare throw, 4.6 for random picks from the pool. Choosing the most even
+  throw does not make palettes more alike.
+- Shared colors count only near-identical matches and have no upper reference. The mean matched distance between two
+  palettes (`tmp/palette-distance.js`, 300 seeds, 44,850 pairs a variant) reads in the metric: 5.5 as is, 5.6 to 5.8 for
+  the four variants, 8.9 for random picks, and 8.3 for the farthest pair of palettes that both keep 12.9. Of 15 colors a
+  typical pair has 2 with a counterpart within 2, 5 within 4, 12 within 8. The variants do not differ on this either.
+  Matched inside hue families only, each distance capped at 12.9 and a color with no counterpart in its family at the cap
+  (1 identical, 0 nothing within 12.9): 0.49 to 0.50 for every variant, 0.39 for random picks; 2.2 to 2.3 of 15 colors have
+  no counterpart in their family, 5.2 for random picks.
+- The scores against a known contrast: the page of commit 667c7fc (colors pushed to the widest spacing) and the working page
+  in one box (relative chroma 51 to 100%, relative lightness 0 to 67, 15 colors, 300 seeds each), the gap between their
+  means in standard deviations of a pair's score. Colors with a counterpart within 2 or 3: 0.80 (0.9 against 1.9, 2.1
+  against 3.4 of 15); shared colors 0.72 (5.4 against 6.1); within 5: 0.64; the mean matched distance 0.50 (6.6 against
+  6.2); capped inside families 0.51; unmatched in family 0.32; within 8: 0.20. The fine grain tells the two apart, the
+  coarse layout and the family mix do not.
+- Adopted as the sameness score: of a palette's colors, those with a counterpart within 3 on the metric in another palette,
+  the two matched one to one at the least total distance, averaged over the pairs of seeds (`tmp/palette-distance.js`).
+  In the box of relative chroma 51 to 100% and absolute lightness 0 to 67: 3.6 as is, 3.2 for the most even of 5 relaxed in
+  family within 3, 3.3 and 3.7 for the boosted unrelaxed and relaxed throws, 2.0 for random picks.
+- That box without the names brown, beige, tan, olive, grey and grey blue (300 seeds): as is red 0.50 a palette (missing
+  from 55%), cyan 2.69, pink 3.36; the most even of 5 throws 0.87 (27%), 2.44, 3.07; boosted 1.29 (4%), 2.16, 2.52, every
+  family then in 96% of palettes or more. Every attempt relaxed freely and the most even of 5 kept: 0.75 (30%), 2.56, 2.97,
+  every palette at 12.9.
+- The boost refitted for that box lands on the same limits (x4 red through turquoise, x0.25 cyan through pink) and the same
+  counts. At limits of x0.125 to x8 the fit diverges: the offset empties cyan, blue and purple and pink takes 6.5 a palette.
+- The six names allowed but counted for nothing, in the counts, the choice of the most even throw and the boost's target:
+  1.1 to 1.5 colors a palette go uncounted and yellow holds 0.5 (missing from half the palettes), most of the yellow family
+  under lightness 67 being olive. Boosted at the same limits: red 1.08 (missing from 16%), yellow 0.58 (42%), cyan 1.97, pink
+  2.57, and 1.48 uncounted against 1.25 unboosted: the boost on orange and yellow also brings browns and olives.
+- Magenta apart from pink at hue 346, ten families, the six names excluded (300 seeds): as is magenta 1.01 (missing from
+  19%), pink 2.35, red 0.50. The most even of 5 throws, relaxed in family within 3: red 0.82 (31%), magenta 1.37, pink 2.11;
+  boosted (magenta fitted at x0.73, the others at the limits) red 1.23 (8%), every family between 1.0 and 2.0. The most even
+  of 10 throws: red 0.84 (26%) unboosted, 1.30 (2%) boosted, every family in 98% of palettes or more.
+- Low-chroma colors in that box are nearly all turquoise and cyan: of 1.98 a palette under absolute chroma 10, 1.96; under
+  12, 3.40 a palette as is. At lightness up to 100 the blue-green of chroma 15 or more is still 2% of the pool.
+- A palette follows the box's area, not its volume (`tmp/why-blue-green.js`): across chroma the box is 0.8 to 6.6 thick on
+  the metric, under the spacing everywhere, so colors spread over hue by lightness. Turquoise and cyan hold 17% of the pool,
+  24% of the area and 24% of a palette, from 5 colors up; the first three picks of a throw hold 18%. Cyan is 20 wide across
+  hue and 14 along lightness, as much area as purple or pink. Small families exceed their area: yellow 2% of it, 7% of a
+  palette.
+- The metric is no more generous there (`tmp/blue-green-rounds.js`): of the 2683 pairs of rounds 21 to 38, 266 have both
+  colors at hues 150 to 254 under chroma 12, 117 of them hue pairs. Graded fine at metric distance 10 to 12, 12 to 14 and
+  14 to 16: 31%, 51% and 91% of them, against 28%, 50% and 78% of the rest; the hue pairs at 12 to 14, 45% against 52%.
+- More room for low-chroma colors (`tmp/roomy.js`): a color's spacing takes a factor, full at chroma 10 and under, none from
+  14, a pair keeping the Min distance times the mean of its two. At x1.15 and x1.3 the colors at hues 150 to 254 go from 3.58
+  a palette to 3.34 and 3.06, those under chroma 12 from 3.40 to 2.81 and 2.50; 97% and 91% of palettes keep 12.9 on the
+  metric. Sameness on 50 palettes rises as under the quota: 3.71, 4.07, 4.51.
+- Turquoise and cyan counted as one family in the most even of 5 throws, relaxed in family within 3 (300 seeds): their
+  colors go from 3.58 a palette as is and 3.44 counted apart to 3.08, 2.96 of 10 throws; red stays at 0.79 to 0.85, 23 to
+  24% of palettes keep 12.9. Sameness on 50 palettes stays at 3.3 to 3.5, under the 3.71 as is.
+- Adopted in the page: the most even of 5 throws over eight families (turquoise with cyan, magenta with pink), relaxed
+  once, in family and within 3 of the thrown point. The minimum spacing is no longer always reached: it was the price of
+  every variant that kept the throw's family counts. State strings went to v6: a v5 string would give another palette.
+- Counted as a family of their own in the most even of 10 throws, with the relaxation kept from crossing the line
+  (300 seeds): under 10, 1.88 to 1.75; with the family's count doubled 1.19, red 0.84 to 0.65. Under 12, 3.40 to 2.59, doubled
+  2.22. The colors removed land just above the line. A pool thinned to a fifth there adds little: 0.96 and 1.80.
+- A quota in the throw (`tmp/quota.js`): a candidate under chroma 12 is skipped once the palette holds the quota, the
+  relaxation refuses a step to under the line, the rest as is. Quota 3: 2.51 under 12, 95% of palettes keep 12.9. Quota 2:
+  1.76, 92%, red 0.50 to 0.62; sameness on 50 palettes 3.71 as is, 3.89 and 4.44.
+- With a boost fitted in that box on top of the most even of 5 throws (`tmp/boost-fit.js`, limits x0.25 to x4, 150 seeds),
+  the boost runs to its limits: x4 on red through turquoise, x0.25 on cyan, purple and pink, blue 0.29. Red 0.80 to 1.29
+  a palette (missing from 29% to 3%), turquoise 0.98 to 1.33, cyan 2.46 to 2.06, pink 2.99 to 2.43. Unrelaxed, the closest
+  pair goes from 10.39 to 10.07; relaxed in family within 3, from 12.62 to 12.42, palettes keeping 12.9 from 25% to 17%, the
+  counts unchanged by the relaxation.
 - One set of ranges does not serve every box. The offset that keeps the total room goes negative where the boosted families
   hold more of the box, and the floor at zero then empties the families with a boost under one: the set above leaves no cyan
   and no pink in the throws of the author's box with lightness to 100 and of the default box.

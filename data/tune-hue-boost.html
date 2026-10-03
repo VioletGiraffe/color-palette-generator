@@ -67,7 +67,7 @@ offset alike so the total stays.</p>
 <div class="row">
 	<select id="box"></select>
 	<span class="hint">or a state string:</span>
-	<input type="text" id="state" placeholder="v5|15|14|0|360|20|100|20|67|1|1|panel|3c6ea5|hex||vkhsvlj||1||0.15">
+	<input type="text" id="state" placeholder="v6|15|14|0|360|20|100|20|67|1|1|panel|3c6ea5|hex||vkhsvlj||1||0.15">
 	<button id="reroll">Reroll palettes</button>
 </div>
 
@@ -89,7 +89,7 @@ offset alike so the total stays.</p>
 <script src="page-source.js"></script>
 <script>
 "use strict";
-const { SECTORS, BOXES, sectorOf, configOf, rangesText } = HueBoost;
+const { SECTORS, BOXES, sectorOf, configOf, boxOfState, rangesText } = HueBoost;
 const STORE_KEY = "hue-boost-tuner-ranges";
 // Seeds generated and shown; the first FIRST_SHOWN are shown before the rest are generated
 const STATS_SEEDS = 30, FIRST_SHOWN = 10;
@@ -125,13 +125,7 @@ function generatorWith(boostRanges) {
 // The chosen box as a generator config: a pasted state string, or a preset
 function currentConfig(generator) {
 	const text = $("state").value.trim();
-	if (!text)
-		return configOf(BOXES[+$("box").value], generator.CELL_NAMES.length);
-	const f = text.split("|"), [count, minApart, hMin, hMax, c1, c2, l1, l2] = f.slice(1, 9).map(Number);
-	if (f[0] !== "v5" || f.length < 13 || [count, minApart, hMin, hMax, c1, c2, l1, l2].some(v => !Number.isFinite(v)))
-		throw new Error("not a v5 state string");
-	return configOf({ cfg: { count, minApart, hMin, hMax, cMinPercentage: Math.min(c1, c2), cMaxPercentage: Math.max(c1, c2), lMin: Math.min(l1, l2), lMax: Math.max(l1, l2),
-		lAbsolute: f[17] === "1", ...(f[19] ? { vividControl: +f[19] } : {}), ...(f[20] ? { sMin: +f[20] } : {}), ...(f[15] ? { names: f[15] } : {}) } }, generator.CELL_NAMES.length);
+	return configOf(text ? boxOfState(text) : BOXES[+$("box").value], generator.CELL_NAMES.length);
 }
 
 // Generated results per ranges and box, one per seed from seedBase + 1: a run resumes where a cancelled one stopped
