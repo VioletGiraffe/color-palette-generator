@@ -131,6 +131,12 @@ throw), the spacing (the throw's minimum spacing and a proposal's acceptance), `
 reach, `RIDGE` (the hue control's coordinate), and the 3D module's metric view. The preference model
 (`PREFERENCE`, from the palette member rounds) enters only as the preference floor.
 
+A config with `metric` false (the Calibrated metric box off) takes the first four in plain OKLab (`usesMetric`,
+`distance2For`): a density of one per OKLab volume, Euclidean deltaE for the spacing and for `identification`, whose
+chances still read `SIGMA` and are uncalibrated there, and cones turning on OKLab's hue circle with one noise width by
+chroma alone. The Min distance value keeps its number and changes its unit. `RIDGE` and the 3D metric view do not
+follow the box; the 3D halos do.
+
 Not in the generator, and why (measured in `evolution.md`): descent toward the best spacing puts every seed on the
 same corners of the box; cells and their split geometry did not stop the pushes emptying the middle and cost worst
 identified at 40 colors; push direction rules, stall counts, clamping and phases never moved worst identified by a point, and clamping is
@@ -143,9 +149,9 @@ random step never lands inside it.
 
 `stateString` writes, `parseState` reads and `configFromState` turns into a generator config:
 
-    v6|count|minApart|hMin|hMax|cMinPercentage|cMaxPercentage|lMin|lMax|seed|sort|backdrop|custom|format|fixed|names|avoid|lAbsolute|rerolls|vividControl|unused|cAbsolute|rMin|rCusp|rMax
+    v6|count|minApart|hMin|hMax|cMinPercentage|cMaxPercentage|lMin|lMax|seed|sort|backdrop|custom|format|fixed|names|avoid|lAbsolute|rerolls|vividControl|unused|cAbsolute|rMin|rCusp|rMax|metric
 
-- `minApart` is the Min distance value in weighted deltaE; the ranges are in the control coordinates above (hue in
+- `minApart` is the Min distance value in weighted deltaE, plain OKLab deltaE with `metric` 0; the ranges are in the control coordinates above (hue in
   degrees, not the ridge coordinate); `seed` is written unsigned.
 - `sort` is 0 or 1; `backdrop` and `format` are option values matched by value, not position; `custom` is the
   custom backdrop's hex without `#`.
@@ -153,7 +159,7 @@ random step never lands inside it.
   per cell, as a base-36 number (`stateNameField`, `nameTableFrom`); `lAbsolute` is 0 or 1, the lightness range's
   coordinate; `rerolls` is the comma-joined slots rerolled, in order, indexes into the result; `vividControl` is the
   Vividness value, 0 to 1; `unused` held the removed saturation floor, is written 0 and not read; `cAbsolute` is 0 or 1,
-  the chroma range's coordinate; `rMin` and `rMax` are the Relative saturation range, 0 to 1 (`rMax` last in the string); `rCusp` is 0 or 1, the floor's cusp form. These eleven were
+  the chroma range's coordinate; `rMin` and `rMax` are the Relative saturation range, 0 to 1 (`rMax` last in the string); `rCusp` is 0 or 1, the floor's cusp form; `metric` is 0 or 1, the Calibrated metric box, 1 by default. These twelve were
   added later in that order, so an older string ends earlier and the missing ones take their defaults.
 - `STATE_VERSION` changes when a field's meaning changes or the generator would give a string another palette; an added
   field goes at the end.

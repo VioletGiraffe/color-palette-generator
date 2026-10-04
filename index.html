@@ -277,6 +277,7 @@
 			<input type="range" id="min-apart" min="3" max="40" step="0.1" value="12.9">
 		</div>
 		<div class="hint">How different any two colors must be, in ΔE. Higher: harder to confuse. Lower: room for more colors.</div>
+		<label class="row" style="margin: 10px 0 0"><span>Calibrated metric</span><input type="checkbox" id="metric" checked></label>
 		<label for="vivid" class="row" style="margin: 10px 0 0"><span>Vividness</span><span class="value" id="vivid-value"></span></label>
 		<input type="range" id="vivid" min="0" max="1" step="0.05" value="0">
 		<div class="hint">Favors saturated colors. 0 draws evenly from the range.</div>
@@ -1178,6 +1179,11 @@ function apartWarped2(p, q) {
 	const lightness = dL * wL * (SAME_HUE_LIGHTNESS + (1 - SAME_HUE_LIGHTNESS) * hue2 / (hue2 + SAME_HUE_SPAN * SAME_HUE_SPAN));
 	return (lightness * lightness + chroma * chroma + hue2) * gain * gain;
 }
+// The squared distance of the same points in plain OKLab x100.
+const apartPlain2 = (p, q) => (p.L - q.L) ** 2 + (p.a - q.a) ** 2 + (p.b - q.b) ** 2;
+// `cfg.metric` false puts the spacing, the draw's density and the avoid cones' hue reach in plain OKLab; on when absent.
+const usesMetric = cfg => cfg.metric ?? true;
+const distance2For = cfg => usesMetric(cfg) ? apartWarped2 : apartPlain2;
 
 // Where colors are drawn from is one density over the box: the metric's volume times the cube of a color's vividness
 // to the config's power, times its hue's boost (data/README.md, "The generator"). Colors are spaced on the metric alone.
@@ -1312,27 +1318,32 @@ const wantedLch = (C, h, cfg) => !cfg.usePreference || preferenceOf(C, h) >= PRE
 // least as far from the cusp as it is, within AVOID_CONE degrees of the color's direction, so a dull color bans duller
 // ones, a dark one darker ones, and nothing toward the cusp. The cone reaches across hues by the turn that is one
 // noise width at the tested color's own chroma and lightness, capped at a half circle: the duller the color, the
-// less its hue is defined, and a grey has none.
+// less its hue is defined, and a grey has none. Without the metric the turn is OKLab's and one noise width is by chroma alone.
 // A cone is a gate like an excluded name, not a repulsion: a push toward the cusp always leaves it.
 const AVOID_CONE = 20;
 const COS_AVOID_CONE = Math.cos(AVOID_CONE * Math.PI / 180);
 const warpOfHue = (h, level) => warpedHue(Math.cos(h * Math.PI / 180), Math.sin(h * Math.PI / 180), level);
+// A hue's angle on the circle the cones turn on: the warped circle at `level` with the metric, OKLab's without.
+const coneHue = (h, level, metric) => metric ? warpOfHue(h, level) : h * Math.PI / 180;
 function avoidConesFor(cfg) {
-	return (cfg.avoid ?? []).map(color => {
+	const metric = usesMetric(cfg);
+	const cones = (cfg.avoid ?? []).map(color => {
 		const [L, C, h] = color.lch;
 		const away = [relativeL(L, h) - CUSP_ANCHOR, relativeC(C, h) - 100], length = Math.hypot(...away);
 		const level = hueLevelAt(L);
-		return { level, hue: warpOfHue(h, level), away: away.map(v => v / length), length };
+		return { level, hue: coneHue(h, level, metric), away: away.map(v => v / length), length };
 	}).filter(cone => cone.length > 1e-6);
+	return { metric, cones };
 }
 function inAvoidCone(L, C, h, cfg) {
-	if (!cfg.avoidCones.length)
+	const { metric, cones } = cfg.avoidCones;
+	if (!cones.length)
 		return false;
 	const away = [relativeL(L, h) - CUSP_ANCHOR, relativeC(C, h) - 100], length = Math.hypot(...away);
-	const reach = Math.min(Math.PI, SIGMA / Math.max(C * hueScaleAt(C) * lightnessGain(L), 1e-6));
+	const reach = Math.min(Math.PI, SIGMA / Math.max(metric ? C * hueScaleAt(C) * lightnessGain(L) : C, 1e-6));
 	// The turn is measured on the hue circle of the avoided color's lightness
-	return cfg.avoidCones.some(cone => {
-		const turn = Math.abs(warpOfHue(h, cone.level) - cone.hue);
+	return cones.some(cone => {
+		const turn = Math.abs(coneHue(h, cone.level, metric) - cone.hue);
 		return Math.min(turn, 2 * Math.PI - turn) <= reach && length >= cone.length
 			&& away[0] * cone.away[0] + away[1] * cone.away[1] >= length * COS_AVOID_CONE;
 	});
@@ -1388,7 +1399,7 @@ const pointAt = lch => ({ ...warpedPoint(positionOf(lch)), lch });
 
 // The box's geometry: everything the pool and the box's views (the charts' fields, the 3D region) are drawn from.
 const boxKey = cfg => [cfg.hMin, cfg.hMax, cfg.lMin, cfg.lMax, cfg.lAbsolute ? "abs" : "rel", cfg.cMinPercentage, cfg.cMaxPercentage, cfg.cAbsolute ? "abs" : "rel", cfg.rMin, cfg.rCusp ? "cusp" : "reach", cfg.rMax,
-	(cfg.avoid ?? []).map(color => color.hex).join()].join("|");
+	(cfg.avoid ?? []).map(color => color.hex).join(), usesMetric(cfg) ? "metric" : "plain"].join("|");
 const poolKey = cfg => [boxKey(cfg), cfg.vividControl, cfg.usePreference, cfg.included.map(Number).join(""), cfg.seed].join("|");
 let poolCache = { key: null, pool: null };
 // A palette's random streams, SEED_STREAM apart: the pool's at seed - SEED_STREAM, throw n's at seed + n * SEED_STREAM,
@@ -1401,8 +1412,8 @@ function poolFor(cfg) {
 		return poolCache.pool;
 
 	const rnd = mulberry32(cfg.seed - SEED_STREAM);
-	// A draw's density before its hue's boost
-	const volumeOf = draw => metricVolume(...draw.lch) * vividness(draw.lch[1], draw.lch[2]) ** (3 * cfg.vividControl) * draw.coverVolume;
+	// A draw's density before its hue's boost; without the metric the volume is OKLab's own
+	const volumeOf = draw => (cfg.metric ? metricVolume(...draw.lch) : 1) * vividness(draw.lch[1], draw.lch[2]) ** (3 * cfg.vividControl) * draw.coverVolume;
 	// The survey: the box's volume per hue for the boost's offset, the density's peak, the rejection's ceiling
 	const survey = [];
 	let tries = 0;
@@ -1429,14 +1440,14 @@ function poolFor(cfg) {
 	return poolCache.pool;
 }
 
-// The throw: the pool's points in the given order, a point picked when its distance on the metric to every fixed point and
+// The throw: the pool's points in the given order, a point picked when its distance (`distance2`, squared) to every fixed point and
 // every point picked before it is at least `spacing`. Returns the fixed points, then the `count` picked; null when fewer are picked.
-function throwAt(order, fixed, count, spacing) {
+function throwAt(order, fixed, count, spacing, distance2) {
 	const picked = fixed.slice(), spacing2 = spacing * spacing;
 	for (const point of order) {
 		if (picked.length - fixed.length === count)
 			break;
-		if (picked.every(other => apartWarped2(point, other) >= spacing2))
+		if (picked.every(other => distance2(point, other) >= spacing2))
 			picked.push(point);
 	}
 	return picked.length - fixed.length === count ? picked : null;
@@ -1447,12 +1458,13 @@ function throwAt(order, fixed, count, spacing) {
 // it can, by bisection to THROW_PRECISION. Fewer points than `count` are all picked.
 const THROW_PRECISION = 0.02;
 function spacedThrow(order, fixed, count, cfg) {
-	const wanted = Math.min(count, order.length), spacing = cfg.minApart, picked = throwAt(order, fixed, wanted, spacing);
+	const wanted = Math.min(count, order.length), spacing = cfg.minApart, distance2 = distance2For(cfg);
+	const picked = throwAt(order, fixed, wanted, spacing, distance2);
 	if (picked)
 		return picked;
-	let low = 0, high = spacing, widest = throwAt(order, fixed, wanted, 0);
+	let low = 0, high = spacing, widest = throwAt(order, fixed, wanted, 0, distance2);
 	while (high - low > THROW_PRECISION * high) {
-		const mid = (low + high) / 2, made = throwAt(order, fixed, wanted, mid);
+		const mid = (low + high) / 2, made = throwAt(order, fixed, wanted, mid, distance2);
 		if (made)
 			[widest, low] = [made, mid];
 		else
@@ -1494,14 +1506,14 @@ const SWEEPS_MAX = 400;
 // either, so such a pair must neither rank a throw nor be pointed at as the offender.
 // A caller stepping the colors passes the points it already keeps for them.
 function identification(colors, cfg, points = positionsOf(colors).map(warpedPoint)) {
-	const error = colors.map(() => 0);
+	const error = colors.map(() => 0), distance2 = distance2For(cfg);
 	let pair = null, closestApart = Infinity, confusionProbability = -1;
 	for (let i = 0; i < colors.length; ++i)
 		for (let j = i + 1; j < colors.length; ++j) {
 			if (colors[i].fixed && colors[j].fixed)
 				continue;
 
-			const d = Math.sqrt(apartWarped2(points[i], points[j]));
+			const d = Math.sqrt(distance2(points[i], points[j]));
 			const chance = swapChance(d, SIGMA);
 			error[i] += chance;
 			error[j] += chance;
@@ -1538,8 +1550,9 @@ function relax(rnd, colors, points, cfg) {
 	colors = colors.slice();
 	const starts = points;
 	points = points.slice();
+	const distance2 = distance2For(cfg);
 	// A color's closest pair, squared, with the color at `at`
-	const nearest2 = (i, at = points[i]) => Math.min(...points.map((point, j) => j === i ? Infinity : apartWarped2(at, point)));
+	const nearest2 = (i, at = points[i]) => Math.min(...points.map((point, j) => j === i ? Infinity : distance2(at, point)));
 	const spacing2 = cfg.minApart ** 2;
 	let best = colors.slice(), bestApart = identification(colors, cfg, points).closestApart;
 	for (let sweep = 0, step = STEP_START; sweep < SWEEPS_MAX && step >= STEP_MIN; ++sweep) {
@@ -1554,12 +1567,12 @@ function relax(rnd, colors, points, cfg) {
 			for (let n = 0; n < PROPOSALS; ++n) {
 				const z = 2 * rnd() - 1, turn = 2 * Math.PI * rnd(), flat = Math.sqrt(1 - z * z), direction = [z, flat * Math.cos(turn), flat * Math.sin(turn)];
 				const lchAt = length => lchOf(from.map((v, k) => (v + length * direction[k]) / 100));
-				// The proposal is `step` long on the metric, to first order: an OKLab probe of that length rescaled by its metric length
-				const lch = lchAt(step * step / Math.sqrt(apartWarped2(points[i], pointAt(lchAt(step)))));
+				// The proposal is `step` long on the config's distance, to first order: an OKLab probe of that length rescaled by its length there
+				const lch = lchAt(step * step / Math.sqrt(distance2(points[i], pointAt(lchAt(step)))));
 				if (!insideBox(lch, cfg) || !allowedLch(...lch, cfg) || familyOf(lch[2]) !== familyOf(starts[i].lch[2]))
 					continue;
 				const at = pointAt(lch);
-				if (nearest2(i, at) <= apart2 || apartWarped2(at, starts[i]) > RELAX_REACH ** 2)
+				if (nearest2(i, at) <= apart2 || distance2(at, starts[i]) > RELAX_REACH ** 2)
 					continue;
 				points[i] = at;
 				colors[i] = colorAt(...lch);
@@ -1607,11 +1620,11 @@ function scoredThrow(rnd, cfg, pool) {
 const REROLL_VICINITY = 2;
 function reroll(result, cfg, slot, rnd, pool) {
 	const colors = result.colors, points = colors.map(color => pointAt(color.lch));
-	const rejected = points[slot];
+	const rejected = points[slot], distance2 = distance2For(cfg);
 	const nearest = colors.map((color, i) => i).filter(i => i !== slot && !colors[i].fixed)
-		.sort((a, b) => apartWarped2(rejected, points[a]) - apartWarped2(rejected, points[b])).slice(0, REROLL_VICINITY);
+		.sort((a, b) => distance2(rejected, points[a]) - distance2(rejected, points[b])).slice(0, REROLL_VICINITY);
 	const removed = [slot, ...nearest], kept = points.filter((point, i) => !removed.includes(i));
-	const order = shuffled(pool.points.filter(point => apartWarped2(point, rejected) >= FINE_DISTANCE ** 2), rnd);
+	const order = shuffled(pool.points.filter(point => distance2(point, rejected) >= FINE_DISTANCE ** 2), rnd);
 	const fresh = spacedThrow(order, kept, removed.length, cfg).slice(kept.length);
 	// A pool with fewer points outside the zone than slots picks fewer: the slots left over keep their color.
 	const next = colors.slice(), nextPoints = points.slice();
@@ -1627,7 +1640,7 @@ const THROWS = 5;
 // The minimum spacing, in weighted deltaE, for a config without `minApart` (the Min distance control)
 const MIN_APART_DEFAULT = FINE_DISTANCE;
 function generate(cfg) {
-	const settings = { ...cfg, included: cfg.included ?? ALL_INCLUDED, usePreference: cfg.usePreference ?? true,
+	const settings = { ...cfg, included: cfg.included ?? ALL_INCLUDED, usePreference: cfg.usePreference ?? true, metric: usesMetric(cfg),
 		vividControl: cfg.vividControl ?? VIVIDNESS_DEFAULT, minApart: cfg.minApart ?? MIN_APART_DEFAULT, rMin: cfg.rMin ?? 0, rMax: cfg.rMax ?? 1 };
 	settings.avoidCones = avoidConesFor(cfg);
 	const pool = poolFor(settings);
@@ -1674,6 +1687,7 @@ function readConfig() {
 	return {
 		count: bounded("count"),
 		minApart: +$("min-apart").value,
+		metric: $("metric").checked,
 		vividControl: +$("vivid").value,
 		// The hue sliders run in the ridge coordinate; the config, the labels and the state are in degrees.
 		hMin: Math.round(ridgeUnwarp(+$("h-min").value)), hMax: Math.round(ridgeUnwarp(+$("h-max").value)),
@@ -2302,7 +2316,7 @@ function stateString(cfg) {
 		cfg.lMin, cfg.lMax, cfg.seed >>> 0, $("sort").checked ? 1 : 0,
 		stripHash($("backdrop").value), stripHash($("backdrop-color").value), $("format").value,
 		cfg.fixed.map(color => stripHash(color.hex)).join(","), stateNameField(), cfg.avoid.map(color => stripHash(color.hex)).join(","),
-		cfg.lAbsolute ? 1 : 0, cfg.rerolls.join(","), cfg.vividControl, 0, cfg.cAbsolute ? 1 : 0, cfg.rMin, cfg.rCusp ? 1 : 0, cfg.rMax
+		cfg.lAbsolute ? 1 : 0, cfg.rerolls.join(","), cfg.vividControl, 0, cfg.cAbsolute ? 1 : 0, cfg.rMin, cfg.rCusp ? 1 : 0, cfg.rMax, cfg.metric ? 1 : 0
 	].join(STATE_SEPARATOR);
 }
 
@@ -2318,15 +2332,15 @@ function parseState(text) {
 	const [tag, ...fields] = text.trim().split(STATE_SEPARATOR);
 	// The sort flag, backdrop, custom color and export format always follow the nine control values.
 	// Fixed colors, the included names, the avoided colors, the absolute-lightness flag, the rerolls, the Vividness control, a
-	// field no longer read, the absolute-chroma flag, then the reach floor, its cusp flag and the reach cap were each added later: a string written before one of them ends where it
+	// field no longer read, the absolute-chroma flag, the reach floor, its cusp flag, the reach cap, then the metric flag were each added later: a string written before one of them ends where it
 	// was added, and the rest take their defaults.
 	const required = STATE_IDS.length + 4;
-	if (tag !== STATE_VERSION || fields.length < required || fields.length > required + 11)
+	if (tag !== STATE_VERSION || fields.length < required || fields.length > required + 12)
 		return null;
 
 	const numbers = fields.slice(0, STATE_IDS.length + 1).map(f => f.trim() === "" ? NaN : Number(f));
 	const [backdrop, custom, format, fixed = "", included = "", avoid = "", lAbsolute = "0", rerolls = "", vividControl = String(VIVIDNESS_DEFAULT),
-		, cAbsolute = "0", rMin = "0", rCusp = "0", rMax = "1"] = fields.slice(STATE_IDS.length + 1);
+		, cAbsolute = "0", rMin = "0", rCusp = "0", rMax = "1", metric = "1"] = fields.slice(STATE_IDS.length + 1);
 	const backdropOption = findOption("backdrop", backdrop);
 	const formatOption = findOption("format", format);
 	const hexList = /^[0-9a-f]{6}(,[0-9a-f]{6})*$/i;
@@ -2335,11 +2349,11 @@ function parseState(text) {
 		|| !(fixed === "" || hexList.test(fixed)) || !(avoid === "" || hexList.test(avoid))
 		|| !(included === "" || /^[0-9a-z]{1,8}$/.test(included)) || !/^[01]$/.test(lAbsolute) || !(rerolls === "" || /^\d+(,\d+)*$/.test(rerolls))
 		|| !(vividControl.trim() !== "" && +vividControl >= 0 && +vividControl <= 1) || !(rMin.trim() !== "" && +rMin >= 0 && +rMin <= 1) || !/^[01]$/.test(rCusp) || !(rMax.trim() !== "" && +rMax >= 0 && +rMax <= 1)
-		|| !/^[01]$/.test(cAbsolute))
+		|| !/^[01]$/.test(cAbsolute) || !/^[01]$/.test(metric))
 		return null;
 
 	return { numbers, backdrop: backdropOption.value, custom, format: formatOption.value, fixed, included, avoid, lAbsolute: lAbsolute === "1",
-		rerolls: rerolls === "" ? [] : rerolls.split(",").map(Number), vividControl: +vividControl, cAbsolute: cAbsolute === "1", rMin: +rMin, rCusp: rCusp === "1", rMax: +rMax };
+		rerolls: rerolls === "" ? [] : rerolls.split(",").map(Number), vividControl: +vividControl, cAbsolute: cAbsolute === "1", rMin: +rMin, rCusp: rCusp === "1", rMax: +rMax, metric: metric === "1" };
 }
 
 const hexesFromField = field => field.split(",").filter(Boolean).map(hex => "#" + hex.toLowerCase());
@@ -2353,7 +2367,7 @@ function configFromState(parsed) {
 	const [rMin, rMax] = ordered(parsed.rMin, parsed.rMax);
 	return { count, minApart, hMin, hMax, cMinPercentage, cMaxPercentage, cAbsolute: parsed.cAbsolute, rMin, rMax, rCusp: parsed.rCusp, lMin, lMax, lAbsolute: parsed.lAbsolute, seed: seed | 0,
 		fixed: hexesFromField(parsed.fixed).map(colorFromHex), avoid: hexesFromField(parsed.avoid).map(colorFromHex), ...nameTableFrom(parsed),
-		rerolls: parsed.rerolls, vividControl: parsed.vividControl };
+		rerolls: parsed.rerolls, vividControl: parsed.vividControl, metric: parsed.metric };
 }
 
 // Out-of-range numbers are left to the inputs, which clamp to their own min and max.
@@ -2367,6 +2381,7 @@ function applyStateString(text) {
 	$("l-absolute").checked = parsed.lAbsolute;
 	$("c-absolute").checked = parsed.cAbsolute;
 	$("vivid").value = parsed.vividControl;
+	$("metric").checked = parsed.metric;
 	$("r-min").value = parsed.rMin;
 	$("r-max").value = parsed.rMax;
 	$("r-cusp").checked = parsed.rCusp;
@@ -2498,7 +2513,7 @@ for (const [low, high] of [["c-min", "c-max"], ["l-min", "l-max"], ["r-min", "r-
 }
 
 // Controls listen to "input", checkboxes and selects too: Firefox restores a reopened tab's controls firing only "input".
-for (const id of [...STATE_IDS, "vivid", "r-min", "r-max", "r-cusp", "fixed-colors", "avoid-colors", "l-absolute", "c-absolute"])
+for (const id of [...STATE_IDS, "vivid", "metric", "r-min", "r-max", "r-cusp", "fixed-colors", "avoid-colors", "l-absolute", "c-absolute"])
 	$(id).addEventListener("input", () => { refreshLabels(); scheduleRun(); });
 
 for (const id of Object.keys(PRESS_AXIS))
@@ -3085,21 +3100,21 @@ function pairMesh(pair) {
 	return mesh;
 }
 
-// The recall metric's reach around a color, centred on the origin: a unit sphere's vertices walked
-// out along their OKLab directions until `apart2` reads `radius` deltaE, each then placed by the
-// scene mapping. The metric grows monotonically along a ray, so each crossing is bracketed, then
+// The reach of a config's distance (`distance2`, squared) around a color, centred on the origin: a unit sphere's vertices
+// walked out along their OKLab directions until the distance reads `radius` deltaE, each then placed by the
+// scene mapping. The distance grows monotonically along a ray, so each crossing is bracketed, then
 // found by false position.
 // False position steps, the Illinois way: 4 put a vertex within 0.2 deltaE of its crossing, 99.9% of
 // them within 0.0003; the worst are greyish colors' rays toward the grey axis, where the metric bends.
 const HALO_STEPS = 4;
-function haloGeometry(color, radius) {
+function haloGeometry(color, radius, distance2) {
 	const geometry = new THREE.SphereGeometry(1, 24, 16);
 	const p = color.lab.map(v => v * 100), centre = toScene(color.lab), warpedCentre = warpedPoint(p);
 	const vertices = geometry.attributes.position;
 	for (let i = 0; i < vertices.count; ++i) {
 		const dir = [vertices.getY(i), vertices.getX(i), vertices.getZ(i)]; // sphere axes as L, a, b
 		// The distance past the radius at t along the ray: negative inside
-		const excess = t => Math.sqrt(apartWarped2(warpedCentre, warpedPoint(p.map((x, k) => x + t * dir[k])))) - radius;
+		const excess = t => Math.sqrt(distance2(warpedCentre, warpedPoint(p.map((x, k) => x + t * dir[k])))) - radius;
 		let below = 0, above = radius, fBelow = -radius, fAbove = excess(above);
 		while (fAbove < 0) {
 			[below, fBelow] = [above, fAbove];
@@ -3132,9 +3147,9 @@ function haloGeometry(color, radius) {
 
 // Half the generator's spacing around every color, the Min distance control, so two zones meet where the pair sits at it.
 // Annotations like the pair line: depth testing off, drawn between the shell and the marker ghosts.
-function zoneMeshes(colors, radius) {
+function zoneMeshes(colors, radius, distance2) {
 	return colors.map(color => {
-		const zone = new THREE.Mesh(haloGeometry(color, radius),
+		const zone = new THREE.Mesh(haloGeometry(color, radius, distance2),
 			new THREE.MeshBasicMaterial({
 				color: color.hex, transparent: true, opacity: 0.3, depthTest: false, depthWrite: false }));
 		zone.position.set(...toScene(color.lab));
@@ -3161,7 +3176,7 @@ window.update3D = (cfg, colors, pair) => {
 	clearGroup(zoneGroup);
 	const radius = cfg.minApart / 2;
 	if (radius > 0 && colors.length)
-		zoneGroup.add(...zoneMeshes(colors, radius));
+		zoneGroup.add(...zoneMeshes(colors, radius, distance2For(cfg)));
 	requestRender();
 };
 

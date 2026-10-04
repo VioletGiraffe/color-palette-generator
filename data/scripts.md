@@ -123,7 +123,7 @@ they do not work from disk. The server is `serve.py`, which marks every response
   `fixed` and `avoid` as arrays of `colorFromHex` results, plus the optional `included` (name mask, all
   by default), `usePreference` (true), `lAbsolute` (false: the lightness range in absolute OKLab L), `cAbsolute` (false: the chroma range as a share of
   chroma 32.5), `rerolls` (none: slots of
-  the result rerolled, in order), `vividControl` (the page's default: the density's vividness power). It returns `{ colors, worstIdentified, pair,
+  the result rerolled, in order), `vividControl` (the page's default: the density's vividness power), `metric` (true; false generates in plain OKLab). It returns `{ colors, worstIdentified, pair,
   closestApart, confusionProbability, distinctNames }` or null for an empty box; a color is `{ lch, lab, rgb, hex, cell, confident }`.
   The ranges are the page's cusp-relative ones, see `README.md`.
 - A page from before those names (`cMin`, `cMax`, `vividness`, `preference`; `floor`, `apart`, `confused`, `named`) gets the

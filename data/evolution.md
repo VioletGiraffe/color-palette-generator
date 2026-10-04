@@ -2662,6 +2662,18 @@ half circle as before. Warped degrees each side at L 30: 21 at C 6, 28 at C 4, 4
 - Share of the sRGB gamut banned by `#08404d` alone (grid of 1 L, 0.25 C, 1 degree): 2.57% before, 7.79% after. The gain
   is all at or below the avoided color's chroma, the loss 12 grid points just above it.
 
+## The metric as an option
+
+The Calibrated metric box (`cfg.metric`, the state string's last field) turns the metric off for a palette: plain OKLab
+for the density, the spacing, `identification` and the avoid cones, listed in `data/README.md`. For comparing the two
+by eye at one box and seed.
+
+- On or absent, twelve palettes (8 and 14 colors, six seeds, an avoided color, a reroll on half) equal the ones before
+  the option, hex for hex.
+- Off at Min distance 12.9, the closest pair of the same twelve is 12.9 to 19.1 plain deltaE; on, the closest pair read
+  in plain deltaE is 10.3 to 14.9. The same number is a different tightness in each mode, and the slider is not converted.
+- `SIGMA` was fitted on the metric: the confusion and identification chances shown with the box off are uncalibrated.
+
 ## Files
 
 - `index.html`: the generator rebuilt from the end state on the preference metric by lightness, with the
