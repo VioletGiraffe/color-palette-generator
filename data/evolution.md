@@ -2647,6 +2647,21 @@ order, and the keeps lost at the floor that cuts every remove:
   holds, so a hue with a dark cusp loses its light colors (at 0.63, blue past L 60, red past L 75).
 - `rMax` caps chroma at a share of the same reach, in either form. No judged palette covers it.
 
+## The avoid cone's hue reach per tested color
+
+Avoiding `#08404d` (L 34, C 5.8, h 218) left `#183040` (L 30, C 4.2, h 239) allowed: 4.5 apart on the metric, 4 degrees
+off the cone's axis and further from the cusp, but 25.5 warped degrees away against a reach of 22.0. The reach was one
+noise width of turn at the avoided color's chroma and lightness, one angle for the whole cone, while the cone holds
+duller colors, whose same turn is a shorter distance.
+
+The reach is now one noise width of turn at the tested color's own chroma and lightness (`inAvoidCone`), capped at a
+half circle as before. Warped degrees each side at L 30: 21 at C 6, 28 at C 4, 48 at C 2, 81 at C 1, 161 at C 0.5.
+
+- `#183040` is banned: its reach is 27.5.
+- A near grey in the cone is banned at every hue; before, only within the avoided color's reach of its hue.
+- Share of the sRGB gamut banned by `#08404d` alone (grid of 1 L, 0.25 C, 1 degree): 2.57% before, 7.79% after. The gain
+  is all at or below the avoided color's chroma, the loss 12 grid points just above it.
+
 ## Files
 
 - `index.html`: the generator rebuilt from the end state on the preference metric by lightness, with the

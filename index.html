@@ -1310,31 +1310,30 @@ const wantedLch = (C, h, cfg) => !cfg.usePreference || preferenceOf(C, h) >= PRE
 // An avoided color bans what it lacks. In the cusp-relative plane of a hue (lightness relative to the cusp, chroma
 // as a share of the cusp's, the cusp at (CUSP_ANCHOR, 100)) it bans a cone pointing away from the cusp: the points at
 // least as far from the cusp as it is, within AVOID_CONE degrees of the color's direction, so a dull color bans duller
-// ones, a dark one darker ones, and nothing toward the cusp. The cone reaches across hues as far as the color's
-// own chroma turns one noise width, the turn within which a recalled color is the avoided one, capped at a half
-// circle: a dull color's hue is barely defined.
+// ones, a dark one darker ones, and nothing toward the cusp. The cone reaches across hues by the turn that is one
+// noise width at the tested color's own chroma and lightness, capped at a half circle: the duller the color, the
+// less its hue is defined, and a grey has none.
 // A cone is a gate like an excluded name, not a repulsion: a push toward the cusp always leaves it.
 const AVOID_CONE = 20;
 const COS_AVOID_CONE = Math.cos(AVOID_CONE * Math.PI / 180);
 const warpOfHue = (h, level) => warpedHue(Math.cos(h * Math.PI / 180), Math.sin(h * Math.PI / 180), level);
-function avoidConesOf(colors, sigma) {
-	return colors.map(color => {
+function avoidConesFor(cfg) {
+	return (cfg.avoid ?? []).map(color => {
 		const [L, C, h] = color.lch;
 		const away = [relativeL(L, h) - CUSP_ANCHOR, relativeC(C, h) - 100], length = Math.hypot(...away);
-		const perRadian = C * hueScaleAt(C) * lightnessGain(L);
 		const level = hueLevelAt(L);
-		return { level, hue: warpOfHue(h, level), reach: Math.min(Math.PI, sigma / Math.max(perRadian, 1e-6)), away: away.map(v => v / length), length };
+		return { level, hue: warpOfHue(h, level), away: away.map(v => v / length), length };
 	}).filter(cone => cone.length > 1e-6);
 }
-const avoidConesFor = cfg => avoidConesOf(cfg.avoid ?? [], SIGMA);
 function inAvoidCone(L, C, h, cfg) {
 	if (!cfg.avoidCones.length)
 		return false;
 	const away = [relativeL(L, h) - CUSP_ANCHOR, relativeC(C, h) - 100], length = Math.hypot(...away);
+	const reach = Math.min(Math.PI, SIGMA / Math.max(C * hueScaleAt(C) * lightnessGain(L), 1e-6));
 	// The turn is measured on the hue circle of the avoided color's lightness
 	return cfg.avoidCones.some(cone => {
 		const turn = Math.abs(warpOfHue(h, cone.level) - cone.hue);
-		return Math.min(turn, 2 * Math.PI - turn) <= cone.reach && length >= cone.length
+		return Math.min(turn, 2 * Math.PI - turn) <= reach && length >= cone.length
 			&& away[0] * cone.away[0] + away[1] * cone.away[1] >= length * COS_AVOID_CONE;
 	});
 }
