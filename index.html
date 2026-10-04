@@ -2656,6 +2656,20 @@ function applyPastedState() {
 
 $("state-apply").addEventListener("click", applyPastedState);
 $("state").addEventListener("keydown", e => { if (e.key === "Enter") applyPastedState(); });
+// A paste that leaves a valid string applies at once; any other is left for editing, unreported.
+$("state").addEventListener("input", e => {
+	if (e.inputType === "insertFromPaste" && applyStateString(e.currentTarget.value))
+		flashLabel($("state-apply"), "Applied");
+});
+// The click that focuses the field selects it all; a click in the focused field places the caret.
+$("state").addEventListener("mousedown", e => {
+	const field = e.currentTarget;
+	if (document.activeElement === field)
+		return;
+	e.preventDefault();
+	field.focus();
+	field.select();
+});
 
 // ---------- pinned palettes ----------
 
