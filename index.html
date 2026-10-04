@@ -2091,7 +2091,7 @@ function render(result, cfg) {
 			+ '<div class="chip" style="background:' + c.hex + '">' + (c.fixed ? "" : REROLL_GLYPH) + "</div>"
 			+ '<div class="meta"><div class="hex">' + c.hex.toUpperCase() + '</div>'
 			+ '<div class="name"' + (c.confident ? "" : UNSURE_TITLE) + '>' + cellLabel(c) + '</div>'
-			+ '<div class="coords">' + (c.fixed ? "fixed · " : "") + "lch " + Math.round(c.lch[0]) + ", " + c.lch[1].toFixed(1) + ", " + Math.round(c.lch[2]) + "°</div></div>"
+			+ '<div class="coords">' + (c.fixed ? "fixed · " : "") + "L " + Math.round(c.lch[0]) + " Ch " + c.lch[1].toFixed(1) + " H " + Math.round(c.lch[2]) + "°</div></div>"
 		+ "</button>").join("");
 
 	// Columns from the square root, so the block's bounding box is the nearest thing to a square.
