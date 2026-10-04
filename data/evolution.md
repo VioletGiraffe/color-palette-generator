@@ -2623,6 +2623,29 @@ read on the other half.
   ones'), and the earlier grade added to the metric gains 1.4 of round 38's loss of 107.7. For hue pairs 7 to 14 apart
   what the metric leaves is the verdict's own noise and the sitting, not a region to fit.
 
+## A reach floor
+
+The saturation floor could not remove the colors the author read as muted without taking saturated teals: it keeps every
+dark color, and above 0.17 it empties teal. Six palettes of 15 (chroma 0 to 100% absolute, lightness 0 to 50, no floor)
+were judged color by color: 10 to remove, 6 borderline, 74 to keep. Each measure's share of remove/keep pairs in the right
+order, and the keeps lost at the floor that cuts every remove:
+
+| measure | pairs in order | floor | keeps lost |
+|---|---|---|---|
+| chroma over the gamut's reach at the color's lightness | 99.9% | 0.632 | 1 |
+| chroma over lightness (the saturation floor) | 99.3% | 0.166 | 5 |
+| chroma under the reach | 97.2% | -3.9 | 12 |
+| chroma | 95.4% | 11.1 | 18 |
+| chroma over the cusp's (the relative chroma floor) | 87.6% | 0.622 | 32 |
+
+- At 0.632 the share of reach cuts the four borderline colors at 0.29 to 0.57 and keeps the two at 0.66 and 0.73; the
+  kept teals are at 0.89 to 0.97, the kept dark purples at 0.72 to 0.79. Under the saturation floor the kept teals
+  (0.144 to 0.167) overlap a salmon to remove (0.166).
+- `rMin` ships as that share and replaces `sMin`. Below the cusp it equals chroma over lightness as a share of the
+  cusp's, the measure the saturation floor's table found uneven across hues above the cusp; every judged color was below
+  it, so the two forms are not told apart. `rCusp` selects the cusp form: above the cusp it asks more than the gamut
+  holds, so a hue with a dark cusp loses its light colors (at 0.63, blue past L 60, red past L 75).
+
 ## Files
 
 - `index.html`: the generator rebuilt from the end state on the preference metric by lightness, with the
