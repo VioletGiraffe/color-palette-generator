@@ -276,10 +276,10 @@
 			<input type="number" id="count" min="1" max="40" step="1" value="8">
 			<input type="range" id="min-apart" min="3" max="40" step="0.1" value="12.9">
 		</div>
-		<div class="hint">The closest any two colors may come, in ΔE. At the default 12.9 a lone pair is mixed up in memory 2% of the time; raise it for palettes that survive a longer gap between seeing a color and naming it, lower it to fit more colors at the cost of pairs easier to confuse.</div>
+		<div class="hint">How different any two colors must be, in ΔE. Higher: harder to confuse. Lower: room for more colors.</div>
 		<label for="vivid" class="row" style="margin: 10px 0 0"><span>Vividness</span><span class="value" id="vivid-value"></span></label>
 		<input type="range" id="vivid" min="0" max="1" step="0.05" value="0">
-		<div class="hint">How much more often saturated colors are drawn than an even spread of the range gives them. 0 draws evenly.</div>
+		<div class="hint">Favors saturated colors. 0 draws evenly from the range.</div>
 	</div>
 
 	<hr>
@@ -306,7 +306,7 @@
 		</div>
 
 		<div class="plane" id="range-plane"><canvas id="range-canvas"></canvas></div>
-		<div class="hint" style="margin: 0 0 12px">Hue across, lightness up, each point at the most vivid chroma the ranges allow: the same chart as under the palette.</div>
+		<div class="hint" style="margin: 0 0 12px">The selected range: hue across, lightness up. Hatched: excluded.</div>
 
 		<div class="range-pair">
 			<div class="caption"><span>Chroma <label style="font-weight: normal"><input type="checkbox" id="c-absolute"> absolute</label></span><span class="value" id="c-value"></span></div>
@@ -316,14 +316,14 @@
 
 		<div class="row" style="margin: 0"><span><label for="r-min">Reach min</label> <label style="font-weight: normal"><input type="checkbox" id="r-cusp"> stricter when light</label></span><span class="value" id="r-value"></span></div>
 		<input type="range" id="r-min" min="0" max="1" step="0.01" value="0">
-		<div class="hint" style="margin: 0 0 12px">Removes muted colors. A color needs this share of the most chroma sRGB shows at its own hue and lightness. Ticked, colors lighter than their hue's most vivid one need more, so light blues, purples and reds go first.</div>
+		<div class="hint" style="margin: 0 0 12px">Removes muted colors; higher removes more. Stricter when light: pale blues, purples and reds go first.</div>
 
 		<div class="range-pair" style="margin-bottom: 0">
 			<div class="caption"><span>Lightness <label style="font-weight: normal"><input type="checkbox" id="l-absolute"> absolute</label></span><span class="value" id="l-value"></span></div>
 			<label class="end"><span class="edge">min</span><input type="range" id="l-min" min="0" max="100" value="20"></label>
 			<label class="end"><input type="range" id="l-max" min="0" max="100" value="60"><span class="edge">max</span></label>
 		</div>
-		<div class="hint" style="margin: 8px 0 0">Both are relative to each hue's own peak. Lightness: 50 is the most vivid sRGB reaches at that hue, 0 black and 100 white; ticked, plain OKLab lightness instead, the same at every hue. Yellow peaks near absolute L 97 and blue near 45, so an absolute range would clip the one and wash out the other. Chroma: 100 is all the hue has, so one setting asks the same vividness everywhere - teal peaks at absolute 14.5 and magenta at 32.2, and an absolute range would drop teal while barely touching magenta; ticked, a percentage of chroma 32.5 instead, the same chroma at every hue.</div>
+		<div class="hint" style="margin: 8px 0 0">Both are relative to each hue's most vivid color, which sits at lightness 50 and chroma 100, so one range suits every hue. Absolute: the same raw lightness or chroma at every hue.</div>
 	</div>
 
 	<hr>
@@ -339,7 +339,7 @@
 		<h2>Avoid colors</h2>
 		<textarea id="avoid-colors" spellcheck="false" placeholder="#8b6b4a&#10;#7f7f7f"></textarea>
 		<div id="avoid-preview"></div>
-		<div class="hint">Six-digit hex, any separator. Each bans what it lacks: at its hue, every color at least as far from the most vivid one in the same direction, so a dull color bans duller ones and a dark one darker ones, never the pure version. Hatched on the charts. Right-click a color in the palette to add it.</div>
+		<div class="hint">Six-digit hex, any separator. Each bans itself and more of the same: a dull color bans duller ones, a dark one darker ones. Hatched on the charts. Right-click a palette color to add it.</div>
 	</div>
 
 </div>
@@ -372,10 +372,10 @@
 	</div>
 
 	<div class="plane" id="hl-plane"><canvas id="hl-canvas"></canvas></div>
-	<div class="hint">Hue across, lightness up, each point at the most vivid chroma the ranges allow: the outside of the selected region. Lightness here is plain black to white, so the band the range allows rises and falls with each hue's peak. Hatching is outside the hue or lightness range, where the chroma minimum leaves nothing, or in an avoided color's cone. Dots are the generated colors, triangles the fixed ones.</div>
+	<div class="hint">Hue across, lightness up, at the most vivid chroma allowed. Hatched: excluded. Dots: generated colors. Triangles: fixed colors.</div>
 
 	<div class="plane" id="hc-plane"><canvas id="hc-canvas"></canvas></div>
-	<div class="hint">Hue across, chroma up. Each hue is drawn at the lightness within the range that makes it most vivid, so the top edge is the most chroma the ranges allow at that hue. Blank above it: no lightness in the range reaches that far. The solid line is the chroma reached at the top of the lightness range, the dashed line at the bottom; between them and the top edge lies what the range gives up. Hatching is outside the hue or chroma range, or in an avoided color's cone; chroma here is absolute, so the band the range allows rises and falls with each hue's peak. Dots are the generated colors, triangles the fixed ones.</div>
+	<div class="hint">Hue across, chroma up. Lines: the most chroma at the lightest (solid) and darkest (dashed) allowed lightness. Hatched: excluded.</div>
 
 	<hr>
 
@@ -386,7 +386,7 @@
 	</div>
 	<div id="names-body">
 		<div id="name-chips"></div>
-		<div class="hint" id="names-hint">Every name the generator can reach, each drawn at the lightness where it covers the most ground - eleven of them, white and black among them, cover nothing at all at mid lightness. Click a name to exclude it: generated colors keep out of it, fixed colors are exempt. A color that lands in it regardless is outlined.</div>
+		<div class="hint">Click a name to exclude it from generated colors; fixed colors are exempt. A color that lands in it anyway is outlined. L: the lightness where the name covers the most colors, the one shown.</div>
 	</div>
 
 	<hr>
@@ -412,7 +412,7 @@
 		<label class="row" style="margin:0"><span>In the metric</span><input type="checkbox" id="metric-3d"></label>
 	</div>
 	<div class="plane" id="gamut-3d"></div>
-	<div class="hint">The sRGB gamut in OKLab, lightness up. Solid body: what the selected ranges allow. Cones: fixed colors. Amber line: hardest pair. Halos reach half the Min distance, the distance the generator keeps colors apart, so two meeting mark a pair right at it; they stand tall since lightness counts for less, and grow toward black. In the metric: the same body as the generator measures it, each hue turned to its calibrated angle, chroma and height scaled by the lightness gain and height by the lightness weight too; only distances straight in or out from the grey axis stay at OKLab scale, so a halo still stretches that way. Drag to rotate, double-click to reset.</div>
+	<div class="hint">All displayable colors, lightness up. Solid body: the selected ranges. Cones: fixed colors. Amber line: hardest pair. Halos: half the Min distance, so two touching halos are a pair right at the limit. In the metric: reshaped so that distances look the way the generator measures them. Drag to rotate, double-click to reset.</div>
 </div>
 
 <div class="panel" id="side">
@@ -2045,7 +2045,7 @@ const displayName = cell => cellName(cell).replace(/^./, first => first.toUpperC
 // a fault in the color: those colors are as usable as any other, and some cells hold little else.
 const cellLabel = color => (color.confident ? "" : "~ ") + displayName(color.cell);
 
-const UNSURE_TITLE = ' title="people gave this color no one name"';
+const UNSURE_TITLE = ' title="People don\'t agree on a name for this color"';
 
 // Ordered from the range start, so a wrapped hue range stays contiguous.
 function sortedByHue(colors, hMin) {
@@ -2066,11 +2066,11 @@ function render(result, cfg) {
 	const status = $("status");
 	// A null pair means no measurable one at all: one color and nothing fixed to place it against.
 	const repeated = result ? result.colors.length - result.distinctNames : 0;
-	status.textContent = !result ? "sRGB has no color within these ranges" + (cfg.included.every(Boolean) ? "." : " with a name in use.")
-		: (result.pair ? "Hardest pair to tell apart (outlined): weighted ΔE " + result.closestApart.toFixed(1)
+	status.textContent = !result ? "No color fits these ranges" + (cfg.included.every(Boolean) ? "." : " with a name in use.")
+		: (result.pair ? "Hardest pair (outlined): ΔE " + result.closestApart.toFixed(1)
 			+ ", confused " + (result.confusionProbability * 100).toFixed(1) + "% · worst color identified " + (result.worstIdentified * 100).toFixed(0) + "%" + " · " : "")
-		+ result.distinctNames + " distinct color name" + (result.distinctNames === 1 ? "" : "s")
-		+ (repeated ? ", " + repeated + " repeating one of them" : "");
+		+ result.distinctNames + " distinct name" + (result.distinctNames === 1 ? "" : "s")
+		+ (repeated ? ", " + repeated + " repeated" : "");
 
 	const clashing = new Set(worstPair || []);
 	const marks = c => (c.fixed ? " fixed" : "") + (!c.fixed && !cfg.included[c.cell] ? " off-name" : "")
