@@ -1347,20 +1347,22 @@ const positionsOf = colors => colors.map(color => color.lab.map(v => v * 100));
 const POOL_SIZE = 2000, RAW_SURVEY = 10000, RAW_TRIES = 150000;
 // The thickness given to a range that has none, a lightness range of one value or a chroma range beyond the gamut.
 const SHELL = 1;
+// Whether the box holds a color at a lightness and hue, `reach` the gamut's chroma there: the chroma range starts no more
+// than SHELL beyond the reach cap, and the reach floor is not above the chroma the range and the cap allow.
+// The reach floor has no shell.
+const boxHoldsColorAt = (L, h, reach, cfg) => rangeC(cfg.cMinPercentage, h, cfg) <= reachCap(reach, cfg) + SHELL && reachFloor(L, h, reach, cfg) <= highestC(h, reach, cfg);
 
 // A raw draw, always inside the ranges and the gamut: hue evenly, lightness evenly over the hue's interval, chroma
 // by its square over what the range and the gamut leave at that lightness. `coverVolume` is the OKLab volume the draw
 // stands for, up to a constant: multiplying a weight by it undoes the uneven cover of the raw draws.
-// Null where the chroma range starts more than SHELL beyond the reach cap, or the reach floor above the chroma the range
-// and the cap allow: the box holds no color at that lightness and hue. The reach floor has no shell.
+// Null where the box holds no color at that lightness and hue.
 function rawDraw(rnd, cfg) {
 	const h = (cfg.hMin + rnd() * hueSpan(cfg.hMin, cfg.hMax)) % 360;
 	const low = rangeL(cfg.lMin, h, cfg), high = rangeL(cfg.lMax, h, cfg), L = low + rnd() * (high - low);
-	const reach = gamutChroma(L, h), chromaFloor = rangeC(cfg.cMinPercentage, h, cfg), reachLow = reachFloor(L, h, reach, cfg);
-	const cHigh = highestC(h, reach, cfg);
-	if (chromaFloor > reachCap(reach, cfg) + SHELL || reachLow > cHigh)
+	const reach = gamutChroma(L, h);
+	if (!boxHoldsColorAt(L, h, reach, cfg))
 		return null;
-	const cLow = Math.min(Math.max(chromaFloor, reachLow), cHigh);
+	const cHigh = highestC(h, reach, cfg), cLow = Math.min(lowestC(L, h, reach, cfg), cHigh);
 	const span2 = cHigh * cHigh - cLow * cLow;
 	return { lch: [L, Math.sqrt(cLow * cLow + rnd() * span2), h], coverVolume: Math.max(high - low, SHELL) * Math.max(span2, 2 * cHigh * SHELL) };
 }
@@ -2912,18 +2914,22 @@ renderer.domElement.addEventListener("dblclick", () => {
 
 // An indexed (nu x nv) sheet over the unit square: `at` gives the sRGB color, kept as both the
 // OKLab position and the vertex color. Colors are stored linear, the working space of the shaders.
-function sheet(nu, nv, at) {
-	const positions = [], colors = [], index = [];
+// `inside` cuts the sheet: a triangle with no vertex inside is left out.
+function sheet(nu, nv, at, inside = () => true) {
+	const positions = [], colors = [], kept = [], index = [];
 	for (let i = 0; i <= nu; ++i)
 		for (let j = 0; j <= nv; ++j) {
 			const rgb = at(i / nu, j / nv);
 			positions.push(...toScene(rgbToOklab(rgb)));
 			colors.push(srgbToLinear(rgb[0]), srgbToLinear(rgb[1]), srgbToLinear(rgb[2]));
+			kept.push(inside(i / nu, j / nv));
 		}
 	for (let i = 0; i < nu; ++i)
 		for (let j = 0; j < nv; ++j) {
 			const k = i * (nv + 1) + j;
-			index.push(k, k + 1, k + nv + 1, k + 1, k + nv + 2, k + nv + 1);
+			for (const triangle of [[k, k + 1, k + nv + 1], [k + 1, k + nv + 2, k + nv + 1]])
+				if (triangle.some(vertex => kept[vertex]))
+					index.push(...triangle);
 		}
 	const geometry = new THREE.BufferGeometry();
 	geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
@@ -2980,16 +2986,22 @@ function regionMeshes(cfg) {
 	const hue = t => (cfg.hMin + t * span) % 360;
 	// A relative bound follows each hue's cusp, so its lightness or chroma face is curved, not flat. The lower chroma bound
 	// follows the gamut under a reach floor.
-	const chroma = (t, L, h) => { const reach = gamutChroma(L, h), high = highestC(h, reach, cfg), low = Math.min(lowestC(L, h, reach, cfg), high); return low + t * (high - low); };
 	const light = (t, h) => rangeL(cfg.lMin + t * (cfg.lMax - cfg.lMin), h, cfg);
-	const shown = (L, C, h) => colorAt(L, Math.min(C, gamutChroma(L, h)), h).rgb;
+	// A face's point is [share of the chroma range, lightness, hue].
+	const shown = (t, L, h) => {
+		const reach = gamutChroma(L, h), high = highestC(h, reach, cfg), low = Math.min(lowestC(L, h, reach, cfg), high);
+		return colorAt(L, Math.min(low + t * (high - low), reach), h).rgb;
+	};
+	const holds = (t, L, h) => boxHoldsColorAt(L, h, gamutChroma(L, h), cfg);
+	// The two chroma faces meet where the box holds no color, so the cut leaves the body closed.
+	const face = (nu, nv, at) => sheet(nu, nv, (u, v) => shown(...at(u, v)), (u, v) => holds(...at(u, v)));
 
 	const sheets = [];
 	for (const t of [0, 1]) {
 		if (span < 360)
-			sheets.push(sheet(16, 16, (u, v) => shown(light(v, hue(t)), chroma(u, light(v, hue(t)), hue(t)), hue(t))));
-		sheets.push(sheet(64, 16, (u, v) => shown(light(v, hue(u)), chroma(t, light(v, hue(u)), hue(u)), hue(u))));
-		sheets.push(sheet(64, 16, (u, v) => shown(light(t, hue(u)), chroma(v, light(t, hue(u)), hue(u)), hue(u))));
+			sheets.push(face(16, 16, (u, v) => [u, light(v, hue(t)), hue(t)]));
+		sheets.push(face(64, 16, (u, v) => [t, light(v, hue(u)), hue(u)]));
+		sheets.push(face(64, 16, (u, v) => [v, light(t, hue(u)), hue(u)]));
 	}
 	return sheets.map(geometry => new THREE.Mesh(geometry, material));
 }
