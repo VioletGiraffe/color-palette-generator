@@ -2645,6 +2645,7 @@ order, and the keeps lost at the floor that cuts every remove:
   cusp's, the measure the saturation floor's table found uneven across hues above the cusp; every judged color was below
   it, so the two forms are not told apart. `rCusp` selects the cusp form: above the cusp it asks more than the gamut
   holds, so a hue with a dark cusp loses its light colors (at 0.63, blue past L 60, red past L 75).
+- `rMax` caps chroma at a share of the same reach, in either form. No judged palette covers it.
 
 ## Files
 
