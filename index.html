@@ -416,7 +416,7 @@
 		<label class="row" style="margin:0"><span>In the metric</span><input type="checkbox" id="metric-3d"></label>
 	</div>
 	<div class="plane" id="gamut-3d"></div>
-	<div class="hint">All displayable colors, lightness up. Solid body: the selected ranges. Cones: fixed colors. Amber line: hardest pair. Halos: half the Min distance, so two touching halos are a pair right at the limit. In the metric: reshaped so that distances look the way the generator measures them. Drag to rotate, double-click to reset.</div>
+	<div class="hint">All displayable colors, lightness up. Solid body: the selected ranges. Cones: fixed colors. Amber line: hardest pair. Halos: half the Min distance, so two touching halos are a pair right at the limit. In the metric: reshaped so that distances look the way the generator measures them. Drag to rotate, double-click to reset and spin.</div>
 </div>
 
 <div class="panel" id="side">
@@ -2863,8 +2863,8 @@ run();
 <script type="importmap">
 {
 	"imports": {
-		"three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-		"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+		"three": "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js",
+		"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/"
 	}
 }
 </script>
@@ -2910,12 +2910,27 @@ controls.enableDamping = true;
 controls.enablePan = false;
 controls.minZoom = 0.6;
 controls.maxZoom = 6;
-controls.autoRotate = true;
 controls.autoRotateSpeed = 1.6;
 renderer.domElement.addEventListener("pointerdown", () => { controls.autoRotate = false; });
 
-// Double-click: back to the home view, spinning again. Fires after its own pointerdown, so the
-// resume wins over the stop above.
+// Frames are drawn on request: a still view costs no GPU work. Every change to the scene or the camera must request one.
+// A frame that moves the camera (a drag's glide, the spin) requests the next through the controls' "change".
+// Requests while the panel is off screen are dropped: the observer at the module's end requests one on its return.
+let onScreen = false, frameRequested = false;
+function requestRender() {
+	if (frameRequested || !onScreen)
+		return;
+	frameRequested = true;
+	requestAnimationFrame(() => {
+		frameRequested = false;
+		controls.update();
+		renderer.render(scene, camera);
+	});
+}
+controls.addEventListener("change", requestRender);
+
+// Double-click: back to the home view, spinning. Fires after its own pointerdown, so the
+// start wins over the stop above.
 const HOME = camera.position.clone();
 renderer.domElement.addEventListener("dblclick", () => {
 	camera.position.copy(HOME);
@@ -2923,6 +2938,7 @@ renderer.domElement.addEventListener("dblclick", () => {
 	camera.updateProjectionMatrix();
 	controls.target.set(0, 0, 0);
 	controls.autoRotate = true;
+	requestRender();
 });
 
 // An indexed (nu x nv) sheet over the unit square: `at` gives the sRGB color, kept as both the
@@ -3146,11 +3162,13 @@ window.update3D = (cfg, colors, pair) => {
 	const radius = cfg.minApart / 2;
 	if (radius > 0 && colors.length)
 		zoneGroup.add(...zoneMeshes(colors, radius));
+	requestRender();
 };
 
 window.highlight3D = color => {
 	for (const marker of markerGroup.children)
 		marker.scale.setScalar(marker.userData.color === color ? 1.7 : 1);
+	requestRender();
 };
 
 // Marker hover: the shared highlight, plus a pointer cursor and a hex-and-name tooltip.
@@ -3190,6 +3208,7 @@ function resize() {
 	camera.top = half;
 	camera.bottom = -half;
 	camera.updateProjectionMatrix();
+	requestRender();
 }
 window.addEventListener("resize", resize);
 resize();
@@ -3203,11 +3222,11 @@ $("metric-3d").addEventListener("input", e => {
 	showPageState();
 });
 
-// The loop runs only while the panel is on screen. A hidden tab needs no handling of its own:
-// the loop is requestAnimationFrame-driven and the browser stalls it there.
-const animate = () => { controls.update(); renderer.render(scene, camera); };
-new IntersectionObserver(entries => renderer.setAnimationLoop(entries.at(-1).isIntersecting ? animate : null))
-	.observe(container);
+// A hidden tab needs no handling of its own: the browser stalls requestAnimationFrame there.
+new IntersectionObserver(entries => {
+	onScreen = entries.at(-1).isIntersecting;
+	requestRender();
+}).observe(container);
 </script>
 
 </body>
