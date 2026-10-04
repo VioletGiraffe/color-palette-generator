@@ -1737,50 +1737,70 @@ function drawMarker(ctx, x, y, color) {
 // its own absolute lightness; pixels sRGB cannot show are left transparent.
 // The lightness bound is not hatched: the caller picks a lightness the range allows, so every pixel
 // is already inside it. The avoided colors' cones are hatched.
+function hcField(w, h, cfg) {
+	return fieldImage(w, h, cfg, hue => {
+		const lightness = mostVividL(hue, cfg);
+		const cLow = lowestC(lightness, hue, cfg), cHigh = rangeC(cfg.cMaxPercentage, hue, cfg);
+		return y => {
+			const C = CHROMA_MAX * (1 - y / (h - 1));
+			return showsLch(lightness, C, hue) ? [lightness, C, C < cLow || C > cHigh] : null;
+		};
+	});
+}
+
+// A chart's field, hue across in the ridge coordinate. `column(hue, x)` returns the column's `y => [L, C, outside]`,
+// the pixel's color and whether the ranges reject it, or null for a pixel left transparent.
+// Hatched where `outside`, outside the hue range and in an avoided color's cone.
 // The mask is per-pixel because a wrapped hue range is two segments, which overlay bands would
 // have to cross, doubling the hatch where they met.
-function hcField(w, h, cfg) {
+function fieldImage(w, h, cfg, column) {
 	const image = new ImageData(w, h);
-	const data = image.data;
 	const shade = { avoidCones: avoidConesFor(cfg) };
 
 	for (let x = 0; x < w; ++x) {
 		const hue = ridgeUnwarp(x / w * 360);
 		const inHue = hueInRange(hue, cfg.hMin, cfg.hMax);
-		const lightness = mostVividL(hue, cfg);
-		const cLow = lowestC(lightness, hue, cfg), cHigh = rangeC(cfg.cMaxPercentage, hue, cfg);
+		const pixelAt = column(hue, x);
 
 		for (let y = 0; y < h; ++y) {
-			const C = CHROMA_MAX * (1 - y / (h - 1));
-			const rgb = oklabToRgb(...labOfLch(lightness, C, hue));
-			if (!inGamut(rgb))
+			const pixel = pixelAt(y);
+			if (!pixel)
 				continue;
-			let r = rgb[0] * 255, g = rgb[1] * 255, b = rgb[2] * 255;
-
-			// Same hatch as the CSS masks: 5px of black at 70%, then 5px of white at 32%.
-			if (!inHue || C < cLow || C > cHigh || inAvoidCone(lightness, C, hue, shade)) {
-				if ((x + y) % 10 < 5) {
-					r *= .3; g *= .3; b *= .3;
-				} else {
-					r = r * .68 + 81.6; g = g * .68 + 81.6; b = b * .68 + 81.6;
-				}
-			}
-
-			const at = (y * w + x) * 4;
-			data[at] = r;
-			data[at + 1] = g;
-			data[at + 2] = b;
-			data[at + 3] = 255;
+			const [L, C, outside] = pixel;
+			paintPixel(image, x, y, oklabToRgb(...labOfLch(L, C, hue)), !inHue || outside || inAvoidCone(L, C, hue, shade));
 		}
 	}
 
 	return image;
 }
 
+// Writes one opaque pixel, hatched where `rejected`.
+function paintPixel(image, x, y, rgb, rejected) {
+	// Clamped: a color on the gamut's surface lands a rounding error outside it.
+	let r = Math.min(1, Math.max(0, rgb[0])) * 255, g = Math.min(1, Math.max(0, rgb[1])) * 255, b = Math.min(1, Math.max(0, rgb[2])) * 255;
+
+	// Same hatch as the CSS masks: 5px of black at 70%, then 5px of white at 32%.
+	if (rejected) {
+		if ((x + y) % 10 < 5) {
+			r *= .3; g *= .3; b *= .3;
+		} else {
+			r = r * .68 + 81.6; g = g * .68 + 81.6; b = b * .68 + 81.6;
+		}
+	}
+
+	const at = (y * image.width + x) * 4, data = image.data;
+	data[at] = r;
+	data[at + 1] = g;
+	data[at + 2] = b;
+	data[at + 3] = 255;
+}
+
 // The gamut's chroma per pixel of the palette chart: a bisection each, so built once per chart size.
 // The range plane, a third of the width, reads the same table by bilinear interpolation.
+// Before the palette chart's first layout the caller's own size serves.
 let gamutReachTable = null;
-function gamutTable(w, h) {
+function gamutTable(ownW, ownH) {
+	const main = $("hl-canvas"), w = main.clientWidth || ownW, h = main.clientHeight || ownH;
 	if (!gamutReachTable || gamutReachTable.w !== w || gamutReachTable.h !== h) {
 		const reach = new Float32Array(w * h);
 		for (let y = 0; y < h; ++y)
@@ -1791,10 +1811,9 @@ function gamutTable(w, h) {
 	return gamutReachTable;
 }
 
-// The reach a canvas of another size reads at its pixel (x, y): the table's neighbours interpolated,
-// pixel centres aligned across, rows by lightness.
-function reachAt(table, x, y, w, h) {
-	const u = Math.min(table.w - 1, Math.max(0, (x + 0.5) / w * table.w - 0.5)), v = y / (h - 1) * (table.h - 1);
+// The reach at a lightness and at `across`, a pixel centre's share of the chart's width: the table's neighbours interpolated.
+function reachAt(table, across, L) {
+	const u = Math.min(table.w - 1, Math.max(0, across * table.w - 0.5)), v = (1 - L / 100) * (table.h - 1);
 	const x0 = Math.floor(u), y0 = Math.floor(v), x1 = Math.min(table.w - 1, x0 + 1), y1 = Math.min(table.h - 1, y0 + 1);
 	const fx = u - x0, fy = v - y0, r = table.reach, tw = table.w;
 	return (r[y0 * tw + x0] * (1 - fx) + r[y0 * tw + x1] * fx) * (1 - fy) + (r[y1 * tw + x0] * (1 - fx) + r[y1 * tw + x1] * fx) * fy;
@@ -1805,36 +1824,80 @@ function reachAt(table, x, y, w, h) {
 // the hue and lightness ranges, where the gamut stays below the chroma or saturation minimum, and in an avoided
 // color's cone.
 function hlField(canvas, cfg) {
-	const w = canvas.width, h = canvas.height;
-	const shade = { avoidCones: avoidConesFor(cfg) };
-	// The table is the palette chart's; before its first layout the caller's own size serves.
-	const main = $("hl-canvas"), table = gamutTable(main.clientWidth || w, main.clientHeight || h);
+	const w = canvas.width, h = canvas.height, table = gamutTable(w, h);
+	// The palette chart reads its own pixel: interpolation's rounding turns a zero reach into a nonzero one.
 	const exact = table.w === w && table.h === h;
-	const image = new ImageData(w, h);
-	const data = image.data;
-	for (let x = 0; x < w; ++x) {
-		const hue = ridgeUnwarp(x / w * 360);
-		const inHue = hueInRange(hue, cfg.hMin, cfg.hMax);
+	return fieldImage(w, h, cfg, (hue, x) => {
 		const cHigh = rangeC(cfg.cMaxPercentage, hue, cfg);
-		for (let y = 0; y < h; ++y) {
-			const L = 100 * (1 - y / (h - 1)), reach = exact ? table.reach[y * w + x] : reachAt(table, x, y, w, h);
-			if (reach === 0)
-				continue;
-			const C = Math.min(reach, cHigh);
-			const rgb = oklabToRgb(...labOfLch(L, C, hue)).map(v => Math.min(1, Math.max(0, v)));
-			let r = rgb[0] * 255, g = rgb[1] * 255, b = rgb[2] * 255;
-			if (!inHue || !withinLightness(L, hue, cfg) || reach < lowestC(L, hue, cfg) || inAvoidCone(L, C, hue, shade)) {
-				if ((x + y) % 10 < 5) {
-					r *= .3; g *= .3; b *= .3;
-				} else {
-					r = r * .68 + 81.6; g = g * .68 + 81.6; b = b * .68 + 81.6;
-				}
-			}
-			const at = (y * w + x) * 4;
-			data[at] = r;
-			data[at + 1] = g;
-			data[at + 2] = b;
-			data[at + 3] = 255;
+		return y => {
+			const L = 100 * (1 - y / (h - 1)), reach = exact ? table.reach[y * w + x] : reachAt(table, (x + 0.5) / w, L);
+			return reach === 0 ? null : [L, Math.min(reach, cHigh), !withinLightness(L, hue, cfg) || reach < lowestC(L, hue, cfg)];
+		};
+	});
+}
+
+// The sliders that swap the range plane for swatches along their own axis while pressed, and the step between
+// two swatches in the slider's units.
+const PRESS_AXIS = { "l-min": "lightness", "l-max": "lightness", "c-min": "chroma", "c-max": "chroma", "s-min": "saturation" };
+const PRESS_STEP = { lightness: 5, chroma: 5, saturation: 0.01 };
+// Swatches on each side of the slider's value.
+const PRESS_STEPS = 3;
+let pressedSlider = null;
+
+// The color a pressed slider's axis shows at one of its values and a hue, as [L, C, outside], where the box
+// reaches furthest: a value shows rejected only when the box holds nothing of the hue there.
+//  lightness - at the most chroma the range and the gamut allow
+//  chroma, saturation - at the lightness nearest the range's most vivid one, of PRESS_SCAN steps over the range,
+//   where the box holds the value; at the most vivid one where it holds it nowhere
+// Null past the axis's end and beyond the gamut; a chroma within SHELL beyond it is cut to it, as insideBox takes it.
+const PRESS_SCAN = 16;
+function pressedPoint(axis, value, hue, cfg) {
+	const cHigh = rangeC(cfg.cMaxPercentage, hue, cfg);
+	if (axis === "lightness") {
+		if (value < 0 || value > 100)
+			return null;
+		const L = rangeL(value, hue, cfg), reach = gamutChroma(L, hue);
+		return reach === 0 ? null : [L, Math.min(reach, cHigh), value < cfg.lMin || value > cfg.lMax || reach < lowestC(L, hue, cfg)];
+	}
+
+	const pointAt = L => {
+		const reach = gamutChroma(L, hue), asked = axis === "chroma" ? rangeC(value, hue, cfg) : value * L;
+		if (value < 0 || asked > reach + (axis === "chroma" ? SHELL : 0))
+			return null;
+		return [L, Math.min(asked, reach), asked < lowestC(L, hue, cfg) || asked > cHigh];
+	};
+	const vivid = mostVividL(hue, cfg), low = rangeL(cfg.lMin, hue, cfg), high = rangeL(cfg.lMax, hue, cfg);
+	const scanned = Array.from({ length: PRESS_SCAN + 1 }, (_, n) => low + (high - low) * n / PRESS_SCAN)
+		.sort((a, b) => Math.abs(a - vivid) - Math.abs(b - vivid));
+	for (const L of [vivid, ...scanned]) {
+		const point = pointAt(L);
+		if (point && !point[2])
+			return point;
+	}
+	return pointAt(vivid);
+}
+
+// A column per hue family boundary, the pressed slider's value on the middle row, higher values above it.
+function pressedSwatches(canvas, cfg) {
+	const w = canvas.width, h = canvas.height, axis = PRESS_AXIS[pressedSlider], centre = +$(pressedSlider).value;
+	const shade = { avoidCones: avoidConesFor(cfg) }, columns = FAMILY_STARTS.length, rows = 2 * PRESS_STEPS + 1;
+	const swatches = FAMILY_STARTS.map(hue => Array.from({ length: rows }, (_, row) => {
+		const point = pressedPoint(axis, centre + (PRESS_STEPS - row) * PRESS_STEP[axis], hue, cfg);
+		if (!point)
+			return null;
+		const [L, C, outside] = point;
+		return { rgb: oklabToRgb(...labOfLch(L, C, hue)), rejected: outside || !hueInRange(hue, cfg.hMin, cfg.hMax) || inAvoidCone(L, C, hue, shade) };
+	}));
+
+	const image = new ImageData(w, h);
+	// A swatch's last pixel column and row are left transparent, as the gap to the next.
+	const swatchIndex = (at, size, count) => Math.floor((at + 1) * count / size) === Math.floor(at * count / size) ? Math.floor(at * count / size) : -1;
+	for (let x = 0; x < w; ++x) {
+		const column = swatchIndex(x, w, columns);
+		for (let y = 0; column >= 0 && y < h; ++y) {
+			const swatch = swatches[column][swatchIndex(y, h, rows)];
+			if (swatch)
+				paintPixel(image, x, y, swatch.rgb, swatch.rejected);
 		}
 	}
 	return image;
@@ -1948,7 +2011,8 @@ function drawRangePlane(cfg) {
 	const canvas = sizedCanvas("range-canvas");
 	if (canvas.width === 0)
 		return;
-	canvas.getContext("2d").putImageData(cachedField(canvas, cfg, () => hlField(canvas, cfg)), 0, 0);
+	// Not cached while pressed: the swatches change with every value.
+	canvas.getContext("2d").putImageData(pressedSlider ? pressedSwatches(canvas, cfg) :cachedField(canvas, cfg, () => hlField(canvas, cfg)), 0, 0);
 }
 
 function refreshBars(cfg) {
@@ -2421,6 +2485,17 @@ for (const [low, high] of [["c-min", "c-max"], ["l-min", "l-max"]]) {
 // Controls listen to "input", checkboxes and selects too: Firefox restores a reopened tab's controls firing only "input".
 for (const id of [...STATE_IDS, "vivid", "s-min", "fixed-colors", "avoid-colors", "l-absolute", "c-absolute"])
 	$(id).addEventListener("input", () => { refreshLabels(); scheduleRun(); });
+
+for (const id of Object.keys(PRESS_AXIS))
+	$(id).addEventListener("pointerdown", () => { pressedSlider = id; refreshLabels(); });
+// On the window: the release can land off the slider.
+for (const type of ["pointerup", "pointercancel"])
+	window.addEventListener(type, () => {
+		if (!pressedSlider)
+			return;
+		pressedSlider = null;
+		refreshLabels();
+	});
 
 // Sorting is settled in render, so the palette itself is unchanged.
 $("sort").addEventListener("input", scheduleRedraw);
