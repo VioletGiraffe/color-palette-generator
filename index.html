@@ -193,6 +193,7 @@
 	.swatch { align-self: start; }
 	.swatch .edit label { display: flex; align-items: center; gap: 4px; margin-top: 2px; color: var(--ink-dim); cursor: default; }
 	.swatch .edit input { flex: 1; width: 0; min-width: 0; padding: 1px 3px; font-size: 11px; }
+	.swatch .edit .hue-slide { display: block; width: 100%; margin-top: 4px; padding: 0; }
 	.swatch .meta { padding: 5px 7px; font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1.35; color: var(--ink); }
 	.swatch .meta .hex { font-weight: 600; letter-spacing: .02em; }
 	.swatch .meta .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2121,14 +2122,21 @@ function render(result, cfg) {
 	const marks = c => (c.fixed ? " fixed" : "") + (!c.fixed && !cfg.included[c.cell] ? " off-name" : "")
 		+ (clashing.has(c) ? " clash" : "");
 
+	// While a hue slider is dragged the swatches stay, each moved to its color's place: a rebuild would end the drag
+	if (hueDrag)
+		hueDrag.swatches.forEach((el, k) => {
+			el.dataset.index = el.style.order = palette.indexOf(hueDrag.colors[k]);
+			el.classList.toggle("clash", clashing.has(hueDrag.colors[k]));
+		});
 	// A fixed color's swatch holds its editor, which a button cannot: it is a div
-	$("swatches").innerHTML = palette.map((c, i) =>
+	else $("swatches").innerHTML = palette.map((c, i) =>
 		"<" + (c.fixed ? "div" : "button") + ' class="swatch' + marks(c) + '" data-hex="' + c.hex + '" data-index="' + i + '">'
 			+ '<div class="chip" style="background:' + c.hex + '">' + (c.fixed ? UNPIN_GLYPH : PIN_GLYPH + REROLL_GLYPH) + "</div>"
 			+ '<div class="meta"><div class="hex">' + c.hex.toUpperCase() + '</div>'
 			+ '<div class="name"' + (c.confident ? "" : UNSURE_TITLE) + '>' + cellLabel(c) + '</div>'
 			+ (c.fixed ? '<div class="edit">' + EDIT_AXES.map(({ label, max }, axis) => "<label>" + label + ' <input autocomplete="off" type="number" data-axis="' + axis
-					+ '" min="0" max="' + max + '" step="any" value="' + c.lch[axis].toFixed(1) + '"></label>').join("") + "</div>"
+					+ '" min="0" max="' + max + '" step="any" value="' + c.lch[axis].toFixed(1) + '"></label>').join("")
+					+ '<input autocomplete="off" type="range" class="hue-slide" title="Hue" min="0" max="360" step="any" value="' + ridgeWarp(c.lch[2]) + '"></div>'
 				: '<div class="coords">L ' + Math.round(c.lch[0]) + " Ch " + c.lch[1].toFixed(1) + " H " + Math.round(c.lch[2]) + "°</div>") + "</div>"
 		+ "</" + (c.fixed ? "div" : "button") + ">").join("");
 
@@ -2638,11 +2646,15 @@ $("swatches").addEventListener("click", e => {
 		copy(swatch.dataset.hex.toUpperCase(), swatch.querySelector(".hex"), "copied");
 });
 
-// Rewrites the Fixed colors field and regenerates: `from` replaced by `to`, dropped where `to` is null; `to` added where `from` is null.
-function changeFixedList(from, to) {
+// Rewrites the Fixed colors field: `from` replaced by `to`, dropped where `to` is null; `to` added where `from` is null.
+function rewriteFixedList(from, to) {
 	const hexes = parseHexColors($("fixed-colors").value).map(color => color.hex);
 	const next = from === null ? [...hexes, to] : hexes.flatMap(hex => hex !== from ? [hex] : to ? [to] : []);
 	$("fixed-colors").value = [...new Set(next)].join("\n");
+}
+// The same, and regenerates.
+function changeFixedList(from, to) {
+	rewriteFixedList(from, to);
 	rerolls = [];
 	run();
 }
@@ -2664,6 +2676,8 @@ function editedColor(color, axis, value) {
 const EDIT_NUDGE = 0.1, EDIT_REACH = 10;
 $("swatches").addEventListener("change", e => {
 	const input = e.target.closest(".edit input");
+	if (input?.classList.contains("hue-slide"))
+		return endHueDrag();
 	if (!input || input.value.trim() === "" || !isFinite(+input.value))
 		return;
 	const color = palette[+input.closest(".swatch").dataset.index], axis = +input.dataset.axis, way = Math.sign(+input.value - +input.defaultValue);
@@ -2674,6 +2688,44 @@ $("swatches").addEventListener("change", e => {
 	// The swatches were rebuilt: the edited field takes the focus back
 	document.querySelector('#swatches .swatch[data-hex="' + edited.hex + '"] input[data-axis="' + axis + '"]')?.focus();
 });
+
+// A pinned color's hue slider, in the hue control's coordinate. While it is dragged the color follows it, the hue edited
+// as editedColor edits it from where the drag began, and nothing is generated: the result is rescored with the other
+// colors as they are, and render moves the swatches in place. The release regenerates.
+// The drag: the swatches and the color of each, the dragged one's index among them, the color it began at.
+let hueDrag = null;
+$("swatches").addEventListener("input", e => {
+	const slider = e.target.closest(".hue-slide");
+	if (!slider)
+		return;
+	const swatch = slider.closest(".swatch");
+	if (!hueDrag) {
+		const swatches = [...$("swatches").children];
+		hueDrag = { swatches, colors: swatches.map(el => palette[+el.dataset.index]), at: swatches.indexOf(swatch), from: palette[+swatch.dataset.index] };
+	}
+	const current = hueDrag.colors[hueDrag.at], edited = colorFromHex(editedColor(hueDrag.from, 2, ridgeUnwarp(+slider.value)).hex);
+	if (edited.hex === current.hex)
+		return;
+	hueDrag.colors[hueDrag.at] = edited;
+	rewriteFixedList(current.hex, edited.hex);
+	lastCfg = { ...lastCfg, fixed: lastCfg.fixed.map(color => color === current ? edited : color) };
+	lastResult = scored(lastResult.colors.map(color => color === current ? edited : color), lastCfg);
+	swatch.dataset.hex = edited.hex;
+	swatch.querySelector(".chip").style.background = edited.hex;
+	swatch.querySelector(".hex").textContent = edited.hex.toUpperCase();
+	swatch.querySelector(".name").textContent = cellLabel(edited);
+	for (const box of swatch.querySelectorAll("input[data-axis]"))
+		box.value = box.defaultValue = edited.lch[box.dataset.axis].toFixed(1);
+	render(lastResult, lastCfg);
+});
+function endHueDrag() {
+	const hex = hueDrag?.colors[hueDrag.at].hex;
+	hueDrag = null;
+	rerolls = [];
+	run();
+	// The swatches were rebuilt: the slider takes the focus back
+	document.querySelector('#swatches .swatch[data-hex="' + hex + '"] .hue-slide')?.focus();
+}
 // A right-click on a color adds it to the avoided list, unless listed; the list's input event regenerates.
 for (const id of ["swatches", "tiles"])
 	$(id).addEventListener("contextmenu", e => {
