@@ -184,6 +184,15 @@
 	   box-shadow: 0 0 0 1px rgba(0, 0, 0, .35); color: #111; font-size: 15px; line-height: 22px; text-align: center; opacity: 0; transition: opacity .1s; }
 	.swatch:hover .reroll { opacity: 1; }
 	.swatch .reroll:hover { background: #fff; }
+	/* The pin, as the reroll glyph at the other corner; always shown on a fixed color. */
+	.swatch .pin { position: absolute; top: 5px; left: 5px; width: 22px; height: 22px; border-radius: 50%; background: rgba(255, 255, 255, .85);
+	   box-shadow: 0 0 0 1px rgba(0, 0, 0, .35); font-size: 12px; line-height: 22px; text-align: center; opacity: 0; transition: opacity .1s; }
+	.swatch:hover .pin, .swatch.fixed .pin { opacity: 1; }
+	.swatch .pin:hover { background: #fff; }
+	/* A fixed swatch is taller than the rest of its row */
+	.swatch { align-self: start; }
+	.swatch .edit label { display: flex; align-items: center; gap: 4px; margin-top: 2px; color: var(--ink-dim); cursor: default; }
+	.swatch .edit input { flex: 1; width: 0; min-width: 0; padding: 1px 3px; font-size: 11px; }
 	.swatch .meta { padding: 5px 7px; font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1.35; color: var(--ink); }
 	.swatch .meta .hex { font-weight: 600; letter-spacing: .02em; }
 	.swatch .meta .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -243,16 +252,16 @@
 	/* Wide enough for the ten digits a load-time seed always has, spinner included. */
 	#seed { width: 120px; }
 
-	#pin-paste { width: 100%; height: 64px; resize: vertical; font: 11px/1.5 ui-monospace, Consolas, monospace; }
-	#pin-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
-	#pin-list:empty { display: none; }
-	.pin { display: flex; flex-wrap: wrap; gap: 4px; }
-	.pin-name { flex: 1; min-width: 0; }
-	.pin-drop { padding: 2px 8px; line-height: 1; }
-	#pin-clear.armed { color: var(--danger); border-color: var(--danger); }
+	#stored-paste { width: 100%; height: 64px; resize: vertical; font: 11px/1.5 ui-monospace, Consolas, monospace; }
+	#stored-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+	#stored-list:empty { display: none; }
+	.stored { display: flex; flex-wrap: wrap; gap: 4px; }
+	.stored-name { flex: 1; min-width: 0; }
+	.stored-drop { padding: 2px 8px; line-height: 1; }
+	#stored-clear.armed { color: var(--danger); border-color: var(--danger); }
 	/* The strip is the restore control: the largest target in the row, and it shows what it restores. */
-	.pin-strip { flex: 0 0 100%; display: flex; height: 18px; padding: 0; overflow: hidden; }
-	.pin-strip span { flex: 1; }
+	.stored-strip { flex: 0 0 100%; display: flex; height: 18px; padding: 0; overflow: hidden; }
+	.stored-strip span { flex: 1; }
 
 	.hint { font-size: 12px; color: var(--ink-dim); margin-top: 6px; }
 
@@ -337,7 +346,7 @@
 		<h2>Fixed colors</h2>
 		<textarea autocomplete="off" id="fixed-colors" spellcheck="false" placeholder="#1a73e8&#10;#e8710a"></textarea>
 		<div id="fixed-preview"></div>
-		<div class="hint">Six-digit hex, any separator. New colors are kept distinct from these. They do not count towards Colors and are not exported.</div>
+		<div class="hint">Six-digit hex, any separator. The colors pinned in the palette, or pasted here. New colors are kept distinct from these. They count towards Colors and are not exported.</div>
 	</div>
 
 	<div class="group">
@@ -435,15 +444,15 @@
 	<hr>
 
 	<div class="group">
-		<h2>Pinned</h2>
+		<h2>Stored</h2>
 		<div class="bar">
-			<button id="pin-add">Pin</button>
-			<button id="pin-copy" hidden>Copy all</button>
-			<button id="pin-load">Load</button>
-			<button id="pin-clear" hidden>Clear all</button>
+			<button id="stored-add">Store</button>
+			<button id="stored-copy" hidden>Copy all</button>
+			<button id="stored-load">Load</button>
+			<button id="stored-clear" hidden>Clear all</button>
 		</div>
-		<textarea autocomplete="off" id="pin-paste" spellcheck="false" hidden placeholder="Paste copied lines, then press Load again"></textarea>
-		<div id="pin-list"></div>
+		<textarea autocomplete="off" id="stored-paste" spellcheck="false" hidden placeholder="Paste copied lines, then press Load again"></textarea>
+		<div id="stored-list"></div>
 		<div class="hint">Kept in this browser. Copy the list out to take it elsewhere, and paste it back with Load.</div>
 	</div>
 
@@ -1313,39 +1322,47 @@ function preferenceOf(C, h) {
 const PREFERENCE_FLOOR = 0.5;
 const wantedLch = (C, h, cfg) => !cfg.usePreference || preferenceOf(C, h) >= PREFERENCE_FLOOR;
 
-// An avoided color bans what it lacks. In the cusp-relative plane of a hue (lightness relative to the cusp, chroma
-// as a share of the cusp's, the cusp at (CUSP_ANCHOR, 100)) it bans a cone pointing away from the cusp: the points at
-// least as far from the cusp as it is, within AVOID_CONE degrees of the color's direction, so a dull color bans duller
-// ones, a dark one darker ones, and nothing toward the cusp. The cone reaches across hues by the turn that is one
-// noise width at the tested color's own chroma and lightness, capped at a half circle: the duller the color, the
-// less its hue is defined, and a grey has none. Without the metric the turn is OKLab's and one noise width is by chroma alone.
+// An avoided color bans what it lacks, and its own surroundings. In the cusp-relative plane of a hue (lightness relative to
+// the cusp, chroma as a share of the cusp's, the cusp at (CUSP_ANCHOR, 100)) it bans a truncated cone on the line from the
+// cusp through the color: outward from AVOID_RADIUS short of the color, AVOID_RADIUS either side of the line at least, and
+// within AVOID_CONE degrees of the line as the cusp sees it where that is wider. So a dull color bans duller ones, a dark
+// one darker ones, and toward the cusp its surroundings alone.
+// AVOID_RADIUS is on the config's distance, taken at the avoided color along the line and across it.
+// A color at the cusp lacks nothing: it bans its surroundings alone.
+// The cone reaches across hues by the turn that is one noise width at the tested color's own chroma and lightness, capped
+// at a half circle: the duller the color, the less its hue is defined, and a grey has none. Without the metric the turn is
+// OKLab's and one noise width is by chroma alone.
 // A cone is a gate like an excluded name, not a repulsion: a push toward the cusp always leaves it.
-const AVOID_CONE = 20;
-const COS_AVOID_CONE = Math.cos(AVOID_CONE * Math.PI / 180);
+const AVOID_CONE = 20, AVOID_RADIUS = 1;
+const TAN_AVOID_CONE = Math.tan(AVOID_CONE * Math.PI / 180);
 const warpOfHue = (h, level) => warpedHue(Math.cos(h * Math.PI / 180), Math.sin(h * Math.PI / 180), level);
 // A hue's angle on the circle the cones turn on: the warped circle at `level` with the metric, OKLab's without.
 const coneHue = (h, level, metric) => metric ? warpOfHue(h, level) : h * Math.PI / 180;
 function avoidConesFor(cfg) {
-	const metric = usesMetric(cfg);
+	const metric = usesMetric(cfg), distance2 = distance2For(cfg);
 	const cones = (cfg.avoid ?? []).map(color => {
-		const [L, C, h] = color.lch;
-		const away = [relativeL(L, h) - CUSP_ANCHOR, relativeC(C, h) - 100], length = Math.hypot(...away);
-		const level = hueLevelAt(L);
-		return { level, hue: coneHue(h, level, metric), away: away.map(v => v / length), length };
-	}).filter(cone => cone.length > 1e-6);
+		const [L, C, h] = color.lch, at = [relativeL(L, h) - CUSP_ANCHOR, relativeC(C, h) - 100], length = Math.hypot(...at);
+		// At the cusp the line has no direction: any serves, the cone ending where it starts
+		const atCusp = length <= 1e-6, away = atCusp ? [0, -1] : at.map(v => v / length), level = hueLevelAt(L), here = pointAt(color.lch);
+		// AVOID_RADIUS in the plane's units along a direction, by the distance one unit of it is from the color
+		const radiusAlong = ([dl, dc]) => AVOID_RADIUS
+			/ Math.max(1e-6, Math.sqrt(distance2(here, pointAt([absoluteL(at[0] + dl + CUSP_ANCHOR, h), absoluteC(at[1] + dc + 100, h), h]))));
+		const before = radiusAlong(away.map(v => -v));
+		return { level, hue: coneHue(h, level, metric), away, from: length - before, to: atCusp ? before : Infinity, width: radiusAlong([away[1], -away[0]]) };
+	});
 	return { metric, cones };
 }
 function inAvoidCone(L, C, h, cfg) {
 	const { metric, cones } = cfg.avoidCones;
 	if (!cones.length)
 		return false;
-	const away = [relativeL(L, h) - CUSP_ANCHOR, relativeC(C, h) - 100], length = Math.hypot(...away);
+	const at = [relativeL(L, h) - CUSP_ANCHOR, relativeC(C, h) - 100];
 	const reach = Math.min(Math.PI, SIGMA / Math.max(metric ? C * hueScaleAt(C) * lightnessGain(L) : C, 1e-6));
 	// The turn is measured on the hue circle of the avoided color's lightness
 	return cones.some(cone => {
 		const turn = Math.abs(coneHue(h, cone.level, metric) - cone.hue);
-		return Math.min(turn, 2 * Math.PI - turn) <= reach && length >= cone.length
-			&& away[0] * cone.away[0] + away[1] * cone.away[1] >= length * COS_AVOID_CONE;
+		const along = at[0] * cone.away[0] + at[1] * cone.away[1], across = Math.abs(at[0] * cone.away[1] - at[1] * cone.away[0]);
+		return Math.min(turn, 2 * Math.PI - turn) <= reach && along >= cone.from && along <= cone.to && across <= Math.max(cone.width, along * TAN_AVOID_CONE);
 	});
 }
 
@@ -1609,7 +1626,7 @@ const scored = (colors, cfg) => ({ colors, ...identification(colors, cfg), disti
 function scoredThrow(rnd, cfg, pool) {
 	const order = shuffled(pool.points, rnd);
 	const fixed = cfg.fixed.map(color => pointAt(color.lch));
-	const points = spacedThrow(order, fixed, cfg.count, cfg);
+	const points = spacedThrow(order, fixed, Math.max(0, cfg.count - fixed.length), cfg);
 	return { ...scored([...cfg.fixed, ...points.slice(fixed.length).map(point => colorAt(...point.lch))], cfg), points };
 }
 
@@ -2077,6 +2094,10 @@ function sortedByHue(colors, hMin) {
 	return colors.slice().sort((a, b) => offset(a) - offset(b));
 }
 
+// A pinned color's editor: its lightness, chroma and hue, as a color's `lch` holds them
+const EDIT_AXES = [{ label: "L", max: 100 }, { label: "C", max: 40 }, { label: "H", max: 360 }];
+const PIN_GLYPH = '<span class="pin" title="Pin this color: it joins the fixed colors">📌</span>';
+const UNPIN_GLYPH = '<span class="pin" title="Unpin this color">📌</span>';
 const REROLL_GLYPH = '<span class="reroll" title="Reroll this color; its two nearest may move too">↻</span>';
 
 // A null result is an empty box: the views show the ranges and nothing in them.
@@ -2100,13 +2121,16 @@ function render(result, cfg) {
 	const marks = c => (c.fixed ? " fixed" : "") + (!c.fixed && !cfg.included[c.cell] ? " off-name" : "")
 		+ (clashing.has(c) ? " clash" : "");
 
+	// A fixed color's swatch holds its editor, which a button cannot: it is a div
 	$("swatches").innerHTML = palette.map((c, i) =>
-		'<button class="swatch' + marks(c) + '" data-hex="' + c.hex + '" data-index="' + i + '">'
-			+ '<div class="chip" style="background:' + c.hex + '">' + (c.fixed ? "" : REROLL_GLYPH) + "</div>"
+		"<" + (c.fixed ? "div" : "button") + ' class="swatch' + marks(c) + '" data-hex="' + c.hex + '" data-index="' + i + '">'
+			+ '<div class="chip" style="background:' + c.hex + '">' + (c.fixed ? UNPIN_GLYPH : PIN_GLYPH + REROLL_GLYPH) + "</div>"
 			+ '<div class="meta"><div class="hex">' + c.hex.toUpperCase() + '</div>'
 			+ '<div class="name"' + (c.confident ? "" : UNSURE_TITLE) + '>' + cellLabel(c) + '</div>'
-			+ '<div class="coords">' + (c.fixed ? "fixed · " : "") + "L " + Math.round(c.lch[0]) + " Ch " + c.lch[1].toFixed(1) + " H " + Math.round(c.lch[2]) + "°</div></div>"
-		+ "</button>").join("");
+			+ (c.fixed ? '<div class="edit">' + EDIT_AXES.map(({ label, max }, axis) => "<label>" + label + ' <input autocomplete="off" type="number" data-axis="' + axis
+					+ '" min="0" max="' + max + '" step="any" value="' + c.lch[axis].toFixed(1) + '"></label>').join("") + "</div>"
+				: '<div class="coords">L ' + Math.round(c.lch[0]) + " Ch " + c.lch[1].toFixed(1) + " H " + Math.round(c.lch[2]) + "°</div>") + "</div>"
+		+ "</" + (c.fixed ? "div" : "button") + ">").join("");
 
 	// Columns from the square root, so the block's bounding box is the nearest thing to a square.
 	$("tiles").style.setProperty("--cols", Math.max(1, Math.ceil(Math.sqrt(palette.length))));
@@ -2301,7 +2325,7 @@ function applyNameTable(table) {
 
 // The string is the version tag, these fields in order, then the sort flag, the backdrop, the
 // custom backdrop color, the export format and the comma-joined fixed colors.
-const STATE_VERSION = "v6";
+const STATE_VERSION = "v7";
 const STATE_SEPARATOR = "|";
 const STATE_IDS = ["count", "min-apart", "h-min", "h-max", "c-min", "c-max", "l-min", "l-max", "seed"];
 
@@ -2604,13 +2628,53 @@ $("swatches").addEventListener("click", e => {
 	const swatch = e.target.closest(".swatch");
 	if (!swatch)
 		return;
+	const color = palette[+swatch.dataset.index];
 	if (e.target.closest(".reroll")) {
-		rerolls.push(lastResult.colors.indexOf(palette[+swatch.dataset.index]));
+		rerolls.push(lastResult.colors.indexOf(color));
 		run();
-	} else
+	} else if (e.target.closest(".pin"))
+		changeFixedList(color.fixed ? color.hex : null, color.fixed ? null : color.hex);
+	else if (!e.target.closest(".edit"))
 		copy(swatch.dataset.hex.toUpperCase(), swatch.querySelector(".hex"), "copied");
 });
-// A right-click on a color adds it to the avoided list; the list's input event regenerates.
+
+// Rewrites the Fixed colors field and regenerates: `from` replaced by `to`, dropped where `to` is null; `to` added where `from` is null.
+function changeFixedList(from, to) {
+	const hexes = parseHexColors($("fixed-colors").value).map(color => color.hex);
+	const next = from === null ? [...hexes, to] : hexes.flatMap(hex => hex !== from ? [hex] : to ? [to] : []);
+	$("fixed-colors").value = [...new Set(next)].join("\n");
+	rerolls = [];
+	run();
+}
+
+// A fixed color with its lightness, chroma or hue (`axis` 0 to 2) set to `value`. The box's ranges do not bind a fixed color.
+//  lightness, chroma - the other two stay as the color has them, the chroma cut to what sRGB shows there
+//  hue - the color keeps its lightness relative to the cusp and its share of the gamut's chroma there: one on the gamut's surface stays on it
+function editedColor(color, axis, value) {
+	const lch = color.lch.slice();
+	lch[axis] = value;
+	const h = ((lch[2] % 360) + 360) % 360, turned = axis === 2, reach = gamutChroma(color.lch[0], color.lch[2]);
+	const L = turned ? absoluteL(relativeL(color.lch[0], color.lch[2]), h) : Math.min(100, Math.max(0, lch[0]));
+	const C = turned ? (reach > 0 ? Math.min(1, color.lch[1] / reach) : 0) * gamutChroma(L, h) : Math.min(Math.max(0, lch[1]), gamutChroma(L, h));
+	return colorAt(L, C, h);
+}
+
+// An edit of a pinned color, on commit. The fixed list holds hexes, so an edit that rounds to the color's own hex would read
+// back unchanged: it moves on the way it went, EDIT_NUDGE at a time up to EDIT_REACH, until the hex changes.
+const EDIT_NUDGE = 0.1, EDIT_REACH = 10;
+$("swatches").addEventListener("change", e => {
+	const input = e.target.closest(".edit input");
+	if (!input || input.value.trim() === "" || !isFinite(+input.value))
+		return;
+	const color = palette[+input.closest(".swatch").dataset.index], axis = +input.dataset.axis, way = Math.sign(+input.value - +input.defaultValue);
+	let edited = editedColor(color, axis, +input.value);
+	for (let past = EDIT_NUDGE; edited.hex === color.hex && way && past <= EDIT_REACH; past += EDIT_NUDGE)
+		edited = editedColor(color, axis, +input.value + way * past);
+	changeFixedList(color.hex, edited.hex);
+	// The swatches were rebuilt: the edited field takes the focus back
+	document.querySelector('#swatches .swatch[data-hex="' + edited.hex + '"] input[data-axis="' + axis + '"]')?.focus();
+});
+// A right-click on a color adds it to the avoided list, unless listed; the list's input event regenerates.
 for (const id of ["swatches", "tiles"])
 	$(id).addEventListener("contextmenu", e => {
 		const el = e.target.closest("[data-index]");
@@ -2618,6 +2682,8 @@ for (const id of ["swatches", "tiles"])
 			return;
 		e.preventDefault();
 		const field = $("avoid-colors"), hex = palette[+el.dataset.index].hex;
+		if (parseHexColors(field.value).some(color => color.hex === hex))
+			return;
 		field.value = (field.value.trim() ? field.value.trimEnd() + "\n" : "") + hex;
 		field.dispatchEvent(new Event("input"));
 	});
@@ -2701,78 +2767,78 @@ $("state").addEventListener("mousedown", e => {
 	field.select();
 });
 
-// ---------- pinned palettes ----------
+// ---------- stored palettes ----------
 
 // Kept in localStorage. Each entry keeps the state string that reproduces it; the hexes are the strip
 // drawn in the list and are never read back.
 // The key is namespaced: project sites on GitHub Pages share one origin.
-const PINS_KEY = "color-palette-generator.pins";
-const pins = [];
-let pinCount = 0;
-// The clear button's pending confirmation: renderPins disarms it, so it is initialised before the first render.
+const STORED_KEY = "color-palette-generator.stored";
+const storedPalettes = [];
+let storedCount = 0;
+// The clear button's pending confirmation: renderStored disarms it, so it is initialised before the first render.
 let clearArmed = null;
 
 // The hexes are written into a style attribute, so an entry carrying anything else in them is not usable.
-const isWellFormedPin = entry => typeof entry?.name === "string" && typeof entry.state === "string"
+const isWellFormedEntry = entry => typeof entry?.name === "string" && typeof entry.state === "string"
 	&& Array.isArray(entry.hexes) && entry.hexes.every(hex => /^#[0-9a-f]{6}$/i.test(hex));
 
 // Replaces the list in place: the handlers below close over the array.
 // A value that is not a list of well-formed entries is ignored as a whole: the next save replaces it.
 // The count starts past the highest number a stored default name carries, so a restored name is not handed out again.
-function takeStoredPins(json) {
+function takeStoredJson(json) {
 	let stored;
 	try { stored = JSON.parse(json ?? "[]"); } catch { stored = []; }
-	if (!Array.isArray(stored) || !stored.every(isWellFormedPin))
+	if (!Array.isArray(stored) || !stored.every(isWellFormedEntry))
 		stored = [];
-	pins.length = 0;
-	pins.push(...stored);
-	pinCount = Math.max(0, ...pins.map(entry => +(/^Palette (\d+)$/.exec(entry.name)?.[1] ?? 0)));
+	storedPalettes.length = 0;
+	storedPalettes.push(...stored);
+	storedCount = Math.max(0, ...storedPalettes.map(entry => +(/^Palette (\d+)$/.exec(entry.name)?.[1] ?? 0)));
 }
 // Storage access throws where site data is blocked. Nothing below depends on it, so the list starts empty.
-try { takeStoredPins(localStorage.getItem(PINS_KEY)); } catch {}
+try { takeStoredJson(localStorage.getItem(STORED_KEY)); } catch {}
 
 // Same on write, where the store can also be full: the list is then kept for the session only.
-const savePins = () => { try { localStorage.setItem(PINS_KEY, JSON.stringify(pins)); } catch {} };
+const saveStored = () => { try { localStorage.setItem(STORED_KEY, JSON.stringify(storedPalettes)); } catch {} };
 
 // The name is user text going into an attribute, so it must not be able to close it.
 const escapeAttribute = text => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
-const rowIndex = el => +el.closest(".pin").dataset.index;
+const rowIndex = el => +el.closest(".stored").dataset.index;
 
-function renderPins() {
+function renderStored() {
 	disarmClear();
-	$("pin-copy").hidden = pins.length === 0;
-	$("pin-clear").hidden = pins.length === 0;
-	$("pin-list").innerHTML = pins.map((entry, i) =>
-		'<div class="pin" data-index="' + i + '">'
-			+ '<input autocomplete="off" type="text" class="pin-name" spellcheck="false" value="' + escapeAttribute(entry.name) + '">'
-			+ '<button class="pin-drop" title="Unpin">×</button>'
-			+ '<button class="pin-strip" title="Restore this palette">'
+	$("stored-copy").hidden = storedPalettes.length === 0;
+	$("stored-clear").hidden = storedPalettes.length === 0;
+	$("stored-list").innerHTML = storedPalettes.map((entry, i) =>
+		'<div class="stored" data-index="' + i + '">'
+			+ '<input autocomplete="off" type="text" class="stored-name" spellcheck="false" value="' + escapeAttribute(entry.name) + '">'
+			+ '<button class="stored-drop" title="Remove">×</button>'
+			+ '<button class="stored-strip" title="Restore this palette">'
 				+ entry.hexes.map(hex => '<span style="background:' + hex + '"></span>').join("")
 			+ "</button>"
 		+ "</div>").join("");
 }
 
 // Taken from the config rather than from the state field, which is not refreshed while it has focus.
-$("pin-add").addEventListener("click", () => {
-	pins.push({
-		name: "Palette " + (++pinCount),
+$("stored-add").addEventListener("click", () => {
+	storedPalettes.push({
+		name: "Palette " + (++storedCount),
 		state: stateString(readConfig()),
 		hexes: palette.map(c => c.hex)
 	});
-	renderPins();
-	savePins();
+	renderStored();
+	saveStored();
 });
 
 // Tab-separated: a name may contain spaces, and the lines paste into a sheet as two columns.
-$("pin-copy").addEventListener("click", e =>
-	copy(pins.map(entry => entry.name + "\t" + entry.state).join("\n"), e.currentTarget, "Copied"));
+$("stored-copy").addEventListener("click", e =>
+	copy(storedPalettes.map(entry => entry.name + "\t" + entry.state).join("\n"), e.currentTarget, "Copied"));
 
 // One entry per line, the name before the first tab. A line that is only a state string is taken as
 // one, so a single string pastes in as well. Appends, skipping states already listed.
 // Each entry's strip has to be generated: the copied text carries no colors.
-function loadPins(text) {
-	const known = new Set(pins.map(entry => entry.state));
+function loadStored(text) {
+	const known = new Set(storedPalettes.map(entry => entry.state));
 	let added = 0;
 
 	for (const line of text.split("\n")) {
@@ -2790,29 +2856,29 @@ function loadPins(text) {
 		const colors = generate(cfg).colors;
 		const sorted = parsed.numbers[STATE_IDS.length] !== 0;
 		known.add(state);
-		pins.push({
-			name: name || "Palette " + (++pinCount),
+		storedPalettes.push({
+			name: name || "Palette " + (++storedCount),
 			state,
 			hexes: (sorted ? sortedByHue(colors, cfg.hMin) : colors).map(c => c.hex)
 		});
 		++added;
 	}
 
-	renderPins();
-	savePins();
+	renderStored();
+	saveStored();
 	return added;
 }
 
 // Two presses: the first opens the box, the second reads it. An empty box closes without loading.
-$("pin-load").addEventListener("click", e => {
-	const box = $("pin-paste");
+$("stored-load").addEventListener("click", e => {
+	const box = $("stored-paste");
 	if (box.hidden) {
 		box.hidden = false;
 		box.focus();
 		return;
 	}
 
-	const added = loadPins(box.value);
+	const added = loadStored(box.value);
 	box.value = "";
 	box.hidden = true;
 	flashLabel(e.currentTarget, added ? "+" + added : "none");
@@ -2825,11 +2891,11 @@ function disarmClear() {
 		return;
 	clearTimeout(clearArmed.timer);
 	clearArmed = null;
-	$("pin-clear").textContent = "Clear all";
-	$("pin-clear").classList.remove("armed");
+	$("stored-clear").textContent = "Clear all";
+	$("stored-clear").classList.remove("armed");
 }
 
-$("pin-clear").addEventListener("click", e => {
+$("stored-clear").addEventListener("click", e => {
 	if (!clearArmed) {
 		e.currentTarget.textContent = "Sure?";
 		e.currentTarget.classList.add("armed");
@@ -2841,46 +2907,46 @@ $("pin-clear").addEventListener("click", e => {
 	if (performance.now() - clearArmed.at < 400)
 		return;
 
-	pins.length = 0;
+	storedPalettes.length = 0;
 	// No name survives the clear, so the next default name starts from one.
-	pinCount = 0;
-	renderPins();
-	savePins();
+	storedCount = 0;
+	renderStored();
+	saveStored();
 });
 
 // Renaming leaves the list alone: rebuilding it would take the focus out of the field mid-word.
-$("pin-list").addEventListener("input", e => {
-	const field = e.target.closest(".pin-name");
+$("stored-list").addEventListener("input", e => {
+	const field = e.target.closest(".stored-name");
 	if (field) {
-		pins[rowIndex(field)].name = field.value;
-		savePins();
+		storedPalettes[rowIndex(field)].name = field.value;
+		saveStored();
 	}
 });
 
-$("pin-list").addEventListener("click", e => {
-	const strip = e.target.closest(".pin-strip");
+$("stored-list").addEventListener("click", e => {
+	const strip = e.target.closest(".stored-strip");
 	if (strip) {
-		applyStateString(pins[rowIndex(strip)].state);
+		applyStateString(storedPalettes[rowIndex(strip)].state);
 		return;
 	}
 
-	const drop = e.target.closest(".pin-drop");
+	const drop = e.target.closest(".stored-drop");
 	if (drop) {
-		pins.splice(rowIndex(drop), 1);
-		renderPins();
-		savePins();
+		storedPalettes.splice(rowIndex(drop), 1);
+		renderStored();
+		saveStored();
 	}
 });
 
 // Fires in every other tab when one saves, so each tab writes from the latest list.
 window.addEventListener("storage", e => {
-	if (e.key !== PINS_KEY)
+	if (e.key !== STORED_KEY)
 		return;
-	takeStoredPins(e.newValue);
-	renderPins();
+	takeStoredJson(e.newValue);
+	renderStored();
 });
 
-renderPins();
+renderStored();
 
 // A new seed where no session is restored. Truncated to the 32 bits mulberry32 and the state string both
 // use, so the value in the box survives a save and restore unchanged.

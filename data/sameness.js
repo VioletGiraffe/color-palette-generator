@@ -6,7 +6,7 @@
 // Prints per box and page the score with its 10th and 90th percentiles over the pairs, the mean closest pair and the share
 // of palettes keeping the Min distance.
 //
-//     node data/sameness.js [--seeds 50] [--state "v6|..."] [page.html ...]
+//     node data/sameness.js [--seeds 50] [--state "v7|..."] [page.html ...]
 // Without a state string, the boxes of hue-boost.js. Pages default to index.html; a change is compared by passing the page
 // of `git show <rev>:index.html` saved to a file beside it.
 

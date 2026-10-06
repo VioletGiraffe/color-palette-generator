@@ -73,7 +73,7 @@ node data/make_member_deal.js [--palettes 120] [--count 8] [--box 20 60 20 100] 
 node data/fit_members.js log.json             # where the bad colors live and whether bad is the color or its company, from a calibrate-members.html log
 node data/fit_preference.js log.json          # the draw's preference density from a calibrate-members.html log, as the PREFERENCE constant
 node data/fit_hue_boost.js [--steps 12] [--seeds 40] [page.html] # HUE_BOOST_RANGES, one range per author's hue family, toward even color counts over fixed seeds in three boxes; the counts before and after and the ranges to paste
-node data/sameness.js [--seeds 50] [--state "v6|..."] [page.html ...] # how alike a page's palettes of a box are: the colors two palettes share within 3 on the metric, over every pair of seeds; the pages side by side
+node data/sameness.js [--seeds 50] [--state "v7|..."] [page.html ...] # how alike a page's palettes of a box are: the colors two palettes share within 3 on the metric, over every pair of seeds; the pages side by side
 node data/hue-marginals.js [--names] [--counts 7,10,14] [m/d ...] # the hue and name shares the generator delivers, metric and draw density set apart; runs a page with the box sampler, data/past-experiments/experimental-cells-pushes.html or earlier
 node data/fit_chroma.js chroma-log.json       # the chroma round's own question, see below
 node data/fit_names.js log.json               # fit the naming score to a calibrate-names.html log

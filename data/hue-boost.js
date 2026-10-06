@@ -16,8 +16,8 @@
 	// The box of a state string of index.html; its fixed, avoided and rerolled colors are not read
 	function boxOfState(state) {
 		const f = state.trim().split("|"), [count, minApart, hMin, hMax, c1, c2, l1, l2] = f.slice(1, 9).map(Number);
-		if (f[0] !== "v6" || f.length < 13 || [count, minApart, hMin, hMax, c1, c2, l1, l2].some(v => !Number.isFinite(v)))
-			throw new Error("not a v6 state string");
+		if (f[0] !== "v7" || f.length < 13 || [count, minApart, hMin, hMax, c1, c2, l1, l2].some(v => !Number.isFinite(v)))
+			throw new Error("not a v7 state string");
 		return { name: state.trim(), weight: 1, cfg: { count, minApart, hMin, hMax, cMinPercentage: Math.min(c1, c2), cMaxPercentage: Math.max(c1, c2), lMin: Math.min(l1, l2), lMax: Math.max(l1, l2),
 			lAbsolute: f[17] === "1", cAbsolute: f[21] === "1", ...(f[19] ? { vividControl: +f[19] } : {}), ...(f[22] ? { rMin: +f[22], rCusp: f[23] === "1", ...(f[24] ? { rMax: +f[24] } : {}) } : {}), ...(f[15] ? { names: f[15] } : {}) } };
 	}

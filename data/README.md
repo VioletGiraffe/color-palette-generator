@@ -11,7 +11,7 @@ the generator or the metric: most of the obvious alternatives have been measured
   `// ---------- name ----------` line, in this order: color math (sRGB, OKLab, OKLCh, the gamut's reach
   `gamutChroma`, the cusp search), lightness relative to the cusp (the cusp table, `absoluteL`, `relativeL`,
   `absoluteC`, `relativeC`), color naming (the embedded xkcd cell grid and `cellOf`), generation (the metric and
-  the generator, up to `generate`), ui, name controls, state string, cross-view highlight, pinned palettes. A
+  the generator, up to `generate`), ui, name controls, state string, cross-view highlight, stored palettes. A
   separate module script draws the 3D gamut with three.js from a CDN through an import map; the page runs without it.
 - The tables in the page (`CELL_GRID_CHARS`, `CELL_OVERLAP_B64`, `HUE_DENSITY`, `PREFERENCE`, the cusp table)
   are pasted in from the scripts in this directory; nothing here is loaded at runtime.
@@ -75,7 +75,8 @@ its own.
 
 ## The generator
 
-A palette is `count` colors that are, in this order of priority: distinct, every pair near the minimum spacing apart
+A palette is `count` colors, the config's fixed colors among them and the rest generated (`fixed`: pasted, or pinned on a
+swatch, where their lightness, chroma and hue are edited, `editedColor`). The generated ones are, in this order of priority: distinct, every pair near the minimum spacing apart
 on `apart2` (the Min distance control, `minApart`) or over it, as far as the box and the relaxation's reach allow; spread evenly over the hue
 families (`FAMILY_STARTS`); a sample of one stated density over the
 usable part of the box; different for every seed. `identification` reports `worstIdentified`, the worst color's chance of being identified,
@@ -95,7 +96,7 @@ The density carries every preference about where colors sit:
   read.
 - The density is the volume times those two factors, on usable points (`insideBox`, `usableLch`: inside the ranges and sRGB, a
   name in use, at or above the preference floor `PREFERENCE_FLOOR` of `preferenceOf`, outside every avoided color's
-  cone, `inAvoidCone`), zero elsewhere. The preferences act only through how often the pool draws a color: spacing is on
+  cone, `inAvoidCone`: what the color lacks, from `AVOID_RADIUS` short of it outward and that wide at least), zero elsewhere. The preferences act only through how often the pool draws a color: spacing is on
   `apart2` alone.
 
 `generate` makes `THROWS` throws, keeps the one with the most even family counts (`unevenness`, the sum of the squared
@@ -149,8 +150,9 @@ random step never lands inside it.
 
 `stateString` writes, `parseState` reads and `configFromState` turns into a generator config:
 
-    v6|count|minApart|hMin|hMax|cMinPercentage|cMaxPercentage|lMin|lMax|seed|sort|backdrop|custom|format|fixed|names|avoid|lAbsolute|rerolls|vividControl|unused|cAbsolute|rMin|rCusp|rMax|metric
+    v7|count|minApart|hMin|hMax|cMinPercentage|cMaxPercentage|lMin|lMax|seed|sort|backdrop|custom|format|fixed|names|avoid|lAbsolute|rerolls|vividControl|unused|cAbsolute|rMin|rCusp|rMax|metric
 
+- `count` is the palette's size, fixed colors included.
 - `minApart` is the Min distance value in weighted deltaE, plain OKLab deltaE with `metric` 0; the ranges are in the control coordinates above (hue in
   degrees, not the ridge coordinate); `seed` is written unsigned.
 - `sort` is 0 or 1; `backdrop` and `format` are option values matched by value, not position; `custom` is the
