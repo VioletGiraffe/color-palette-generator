@@ -273,13 +273,13 @@
 		<div class="range-pair" style="grid-template-columns: auto 1fr; align-items: center; margin-bottom: 0">
 			<label for="count">Colors</label>
 			<label for="min-apart" class="row" style="margin: 0"><span>Min distance</span><span class="value" id="min-apart-value">12.9</span></label>
-			<input type="number" id="count" min="1" max="40" step="1" value="8">
-			<input type="range" id="min-apart" min="3" max="40" step="0.1" value="12.9">
+			<input autocomplete="off" type="number" id="count" min="1" max="40" step="1" value="8">
+			<input autocomplete="off" type="range" id="min-apart" min="3" max="40" step="0.1" value="12.9">
 		</div>
 		<div class="hint">How different any two colors must be, in ΔE. Higher: harder to confuse. Lower: room for more colors.</div>
-		<label class="row" style="margin: 10px 0 0"><span>Calibrated metric</span><input type="checkbox" id="metric" checked></label>
+		<label class="row" style="margin: 10px 0 0"><span>Calibrated metric</span><input autocomplete="off" type="checkbox" id="metric" checked></label>
 		<label for="vivid" class="row" style="margin: 10px 0 0"><span>Vividness</span><span class="value" id="vivid-value"></span></label>
-		<input type="range" id="vivid" min="0" max="1" step="0.05" value="0">
+		<input autocomplete="off" type="range" id="vivid" min="0" max="1" step="0.05" value="0">
 		<div class="hint">Favors saturated colors. 0 draws evenly from the range.</div>
 	</div>
 
@@ -287,8 +287,8 @@
 
 	<div class="group">
 		<div class="bar" style="justify-content:space-between; margin-bottom:0">
-			<label class="row" style="margin:0"><span>Seed</span><input type="number" id="seed" value="1" min="0" step="1"></label>
-			<label class="row" style="margin:0"><span>Sort by hue</span><input type="checkbox" id="sort" checked></label>
+			<label class="row" style="margin:0"><span>Seed</span><input autocomplete="off" type="number" id="seed" value="1" min="0" step="1"></label>
+			<label class="row" style="margin:0"><span>Sort by hue</span><input autocomplete="off" type="checkbox" id="sort" checked></label>
 		</div>
 		<button class="primary" id="generate" style="width:100%; margin-top:10px">Generate</button>
 	</div>
@@ -301,8 +301,8 @@
 		<div class="range-pair">
 			<div class="caption"><span>Hue</span><span class="value" id="h-value"></span></div>
 			<div class="range-bar" id="hue-bar"><canvas id="hue-canvas"></canvas><div class="muted" id="hue-muted-a"></div><div class="muted" id="hue-muted-b"></div></div>
-			<label class="end"><span class="edge">min</span><input type="range" id="h-min" min="0" max="360" step="any" value="0"></label>
-			<label class="end"><input type="range" id="h-max" min="0" max="360" step="any" value="360"><span class="edge">max</span></label>
+			<label class="end"><span class="edge">min</span><input autocomplete="off" type="range" id="h-min" min="0" max="360" step="any" value="0"></label>
+			<label class="end"><input autocomplete="off" type="range" id="h-max" min="0" max="360" step="any" value="360"><span class="edge">max</span></label>
 			<div class="hint" style="grid-column: 1 / -1; margin: 0">Hue wraps when min &gt; max (e.g. 300 &rarr; 60 covers magenta through yellow).</div>
 		</div>
 
@@ -310,23 +310,23 @@
 		<div class="hint" style="margin: 0 0 12px">The selected range: hue across, lightness up. Hatched: excluded.</div>
 
 		<div class="range-pair">
-			<div class="caption"><span>Chroma <label style="font-weight: normal"><input type="checkbox" id="c-absolute"> absolute</label></span><span class="value" id="c-value"></span></div>
-			<label class="end"><span class="edge">min</span><input type="range" id="c-min" min="0" max="100" value="20"></label>
-			<label class="end"><input type="range" id="c-max" min="0" max="100" value="100"><span class="edge">max</span></label>
+			<div class="caption"><span>Chroma <label style="font-weight: normal"><input autocomplete="off" type="checkbox" id="c-absolute"> absolute</label></span><span class="value" id="c-value"></span></div>
+			<label class="end"><span class="edge">min</span><input autocomplete="off" type="range" id="c-min" min="0" max="100" value="20"></label>
+			<label class="end"><input autocomplete="off" type="range" id="c-max" min="0" max="100" value="100"><span class="edge">max</span></label>
 		</div>
 
 		<div class="range-pair" style="margin-bottom: 8px">
 			<div class="caption"><span>Relative saturation</span><span class="value" id="r-value"></span></div>
-			<label class="end"><span class="edge">min</span><input type="range" id="r-min" min="0" max="1" step="0.01" value="0"></label>
-			<label class="end"><input type="range" id="r-max" min="0" max="1" step="0.01" value="1"><span class="edge">max</span></label>
-			<label style="grid-column: 1 / -1; font-weight: normal"><input type="checkbox" id="r-cusp"> min stricter when light</label>
+			<label class="end"><span class="edge">min</span><input autocomplete="off" type="range" id="r-min" min="0" max="1" step="0.01" value="0"></label>
+			<label class="end"><input autocomplete="off" type="range" id="r-max" min="0" max="1" step="0.01" value="1"><span class="edge">max</span></label>
+			<label style="grid-column: 1 / -1; font-weight: normal"><input autocomplete="off" type="checkbox" id="r-cusp"> min stricter when light</label>
 		</div>
 		<div class="hint" style="margin: 0 0 12px">Min removes muted colors, max removes vivid ones. Min stricter when light: pale blues, purples and reds go first.</div>
 
 		<div class="range-pair" style="margin-bottom: 0">
-			<div class="caption"><span>Lightness <label style="font-weight: normal"><input type="checkbox" id="l-absolute"> absolute</label></span><span class="value" id="l-value"></span></div>
-			<label class="end"><span class="edge">min</span><input type="range" id="l-min" min="0" max="100" value="20"></label>
-			<label class="end"><input type="range" id="l-max" min="0" max="100" value="60"><span class="edge">max</span></label>
+			<div class="caption"><span>Lightness <label style="font-weight: normal"><input autocomplete="off" type="checkbox" id="l-absolute"> absolute</label></span><span class="value" id="l-value"></span></div>
+			<label class="end"><span class="edge">min</span><input autocomplete="off" type="range" id="l-min" min="0" max="100" value="20"></label>
+			<label class="end"><input autocomplete="off" type="range" id="l-max" min="0" max="100" value="60"><span class="edge">max</span></label>
 		</div>
 		<div class="hint" style="margin: 8px 0 0">Both are relative to each hue's most vivid color, which sits at lightness 50 and chroma 100, so one range suits every hue. Absolute: the same raw lightness or chroma at every hue.</div>
 	</div>
@@ -335,14 +335,14 @@
 
 	<div class="group">
 		<h2>Fixed colors</h2>
-		<textarea id="fixed-colors" spellcheck="false" placeholder="#1a73e8&#10;#e8710a"></textarea>
+		<textarea autocomplete="off" id="fixed-colors" spellcheck="false" placeholder="#1a73e8&#10;#e8710a"></textarea>
 		<div id="fixed-preview"></div>
 		<div class="hint">Six-digit hex, any separator. New colors are kept distinct from these. They do not count towards Colors and are not exported.</div>
 	</div>
 
 	<div class="group">
 		<h2>Avoid colors</h2>
-		<textarea id="avoid-colors" spellcheck="false" placeholder="#8b6b4a&#10;#7f7f7f"></textarea>
+		<textarea autocomplete="off" id="avoid-colors" spellcheck="false" placeholder="#8b6b4a&#10;#7f7f7f"></textarea>
 		<div id="avoid-preview"></div>
 		<div class="hint">Six-digit hex, any separator. Each bans itself and more of the same: a dull color bans duller ones, a dark one darker ones. Hatched on the charts. Right-click a palette color to add it.</div>
 	</div>
@@ -354,16 +354,16 @@
 	<div class="bar">
 		<h2 style="margin:0; flex:1">Palette</h2>
 		<label for="backdrop" style="font-size:12px; color:var(--ink-dim)">Backdrop</label>
-		<select id="backdrop">
+		<select autocomplete="off" id="backdrop">
 			<option value="panel" selected>Panel</option>
 			<option value="#ffffff">White</option>
 			<option value="#000000">Black</option>
 			<option value="#808080">Mid grey</option>
 			<option value="custom">Custom</option>
 		</select>
-		<input type="color" id="backdrop-color" value="#3c6ea5" title="Custom backdrop">
+		<input autocomplete="off" type="color" id="backdrop-color" value="#3c6ea5" title="Custom backdrop">
 		<label for="theme" style="font-size:12px; color:var(--ink-dim)">Theme</label>
-		<select id="theme">
+		<select autocomplete="off" id="theme">
 			<option value="auto" selected>Auto</option>
 			<option value="light">Light</option>
 			<option value="dark">Dark</option>
@@ -398,7 +398,7 @@
 
 	<div class="bar">
 		<h2 style="margin:0; flex:1">Export</h2>
-		<select id="format">
+		<select autocomplete="off" id="format">
 			<option value="hex">Hex list</option>
 			<option value="css">CSS custom properties</option>
 			<option value="json">JSON array</option>
@@ -406,7 +406,7 @@
 		</select>
 		<button id="copy">Copy</button>
 	</div>
-	<textarea id="export" readonly spellcheck="false"></textarea>
+	<textarea autocomplete="off" id="export" readonly spellcheck="false"></textarea>
 	<div class="hint">Click any swatch to copy its hex.</div>
 
 </div>
@@ -414,7 +414,7 @@
 <div class="panel" id="gamut">
 	<div class="bar">
 		<h2 style="margin:0; flex:1">3D gamut</h2>
-		<label class="row" style="margin:0"><span>In the metric</span><input type="checkbox" id="metric-3d"></label>
+		<label class="row" style="margin:0"><span>In the metric</span><input autocomplete="off" type="checkbox" id="metric-3d"></label>
 	</div>
 	<div class="plane" id="gamut-3d"></div>
 	<div class="hint">All displayable colors, lightness up. Solid body: the selected ranges. Cones: fixed colors. Amber line: hardest pair. Halos: half the Min distance, so two touching halos are a pair right at the limit. In the metric: reshaped so that distances look the way the generator measures them. Drag to rotate, double-click to reset and spin.</div>
@@ -424,7 +424,7 @@
 
 	<div class="group">
 		<h2>State</h2>
-		<input type="text" id="state" spellcheck="false" aria-label="State string">
+		<input autocomplete="off" type="text" id="state" spellcheck="false" aria-label="State string">
 		<div class="bar" style="margin-top:8px">
 			<button id="state-copy">Copy</button>
 			<button id="state-apply">Apply</button>
@@ -442,7 +442,7 @@
 			<button id="pin-load">Load</button>
 			<button id="pin-clear" hidden>Clear all</button>
 		</div>
-		<textarea id="pin-paste" spellcheck="false" hidden placeholder="Paste copied lines, then press Load again"></textarea>
+		<textarea autocomplete="off" id="pin-paste" spellcheck="false" hidden placeholder="Paste copied lines, then press Load again"></textarea>
 		<div id="pin-list"></div>
 		<div class="hint">Kept in this browser. Copy the list out to take it elsewhere, and paste it back with Load.</div>
 	</div>
@@ -2455,12 +2455,26 @@ function copy(text, label, message) {
 	writeClipboard(text).then(() => flashLabel(label, message), () => flashLabel(label, "failed"));
 }
 
+// The session: the state string, kept in localStorage on every pass and applied at load. Every control has autocomplete
+// off, so a reload starts from the markup, not from what the browser kept of the form.
+const SESSION_KEY = "color-palette-generator.session";
+function saveSession() {
+	try { localStorage.setItem(SESSION_KEY, stateString(readConfig())); } catch {}
+}
+// False when no state is stored or it no longer parses.
+function restoreSession() {
+	let state = null;
+	try { state = localStorage.getItem(SESSION_KEY); } catch {}
+	return state !== null && applyStateString(state);
+}
+
 function run() {
 	refreshLabels();
 	refreshState();
 	lastCfg = readConfig();
 	lastResult = generate(lastCfg);
 	render(lastResult, lastCfg);
+	saveSession();
 }
 
 // The views again from the last result. Sorting, the theme and the canvas sizes are all settled in
@@ -2468,6 +2482,7 @@ function run() {
 function redrawLastResult() {
 	refreshLabels();
 	render(lastResult, lastCfg);
+	saveSession();
 }
 
 // A control marks the result stale and nothing more; the timer below does the passes. A palette
@@ -2730,7 +2745,7 @@ function renderPins() {
 	$("pin-clear").hidden = pins.length === 0;
 	$("pin-list").innerHTML = pins.map((entry, i) =>
 		'<div class="pin" data-index="' + i + '">'
-			+ '<input type="text" class="pin-name" spellcheck="false" value="' + escapeAttribute(entry.name) + '">'
+			+ '<input autocomplete="off" type="text" class="pin-name" spellcheck="false" value="' + escapeAttribute(entry.name) + '">'
 			+ '<button class="pin-drop" title="Unpin">×</button>'
 			+ '<button class="pin-strip" title="Restore this palette">'
 				+ entry.hexes.map(hex => '<span style="background:' + hex + '"></span>').join("")
@@ -2867,12 +2882,13 @@ window.addEventListener("storage", e => {
 
 renderPins();
 
-// A different palette on every load. Truncated to the 32 bits mulberry32 and the state string both
+// A new seed where no session is restored. Truncated to the 32 bits mulberry32 and the state string both
 // use, so the value in the box survives a save and restore unchanged.
 $("seed").value = Date.now() >>> 0;
 
 renderNames();
-run();
+if (!restoreSession())
+	run();
 </script>
 
 <script type="importmap">

@@ -161,6 +161,9 @@ random step never lands inside it.
   Vividness value, 0 to 1; `unused` held the removed saturation floor, is written 0 and not read; `cAbsolute` is 0 or 1,
   the chroma range's coordinate; `rMin` and `rMax` are the Relative saturation range, 0 to 1 (`rMax` last in the string); `rCusp` is 0 or 1, the floor's cusp form; `metric` is 0 or 1, the Calibrated metric box, 1 by default. These twelve were
   added later in that order, so an older string ends earlier and the missing ones take their defaults.
+- The page keeps the current string in localStorage (`saveSession`) and applies it at load (`restoreSession`), seed
+  included; a new seed is rolled only when none is stored or it no longer parses. The controls have `autocomplete="off"`,
+  so the browser's own form restore does not act on a reload.
 - `STATE_VERSION` changes when a field's meaning changes or the generator would give a string another palette; an added
   field goes at the end.
 
